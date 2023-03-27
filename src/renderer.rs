@@ -27,12 +27,12 @@ use windows::{
 use winit::{platform::windows::WindowExtWindows, window::Window};
 
 use crate::{
+    buffer::Buffer,
     text_utils,
     theme::{
         BACKGROUND_COLOR, COMMENT_COLOR, DEFAULT_BRUSH_PROPERTIES, HIGHLIGHT_COLOR, KEYWORD_COLOR,
         TEXT_COLOR,
     },
-    view::View,
 };
 
 pub struct Renderer {
@@ -159,13 +159,13 @@ impl Renderer {
         }
     }
 
-    pub fn draw_buffer(&self, view: &View) {
+    pub fn draw_buffer(&self, buffer: &Buffer) {
         unsafe {
             self.render_target.BeginDraw();
             self.render_target.Clear(Some(&BACKGROUND_COLOR));
         }
 
-        view.visible_cursors_iter(|row, col| unsafe {
+        buffer.visible_cursors_iter(|row, col| unsafe {
             let (row_offset, col_offset) =
                 (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
             self.render_target.FillRectangle(
@@ -179,7 +179,7 @@ impl Renderer {
             )
         });
 
-        view.visible_lines_iter(|i, line| {
+        buffer.visible_lines_iter(|i, line| {
             let text_layout = unsafe {
                 self.dwrite_factory
                     .CreateTextLayout(
@@ -193,7 +193,7 @@ impl Renderer {
                     .unwrap()
             };
 
-            if let Some(keywords) = &view.language().keywords {
+            if let Some(keywords) = &buffer.language.keywords {
                 text_utils::find_keywords_iter(line, keywords, |start, len| unsafe {
                     text_layout
                         .SetDrawingEffect(
@@ -207,7 +207,7 @@ impl Renderer {
                 });
             }
 
-            if let Some(line_comment_tokens) = view.language().line_comment_token {
+            if let Some(line_comment_tokens) = buffer.language.line_comment_token {
                 if let Some(idx) = &line.find(line_comment_tokens) {
                     unsafe {
                         text_layout

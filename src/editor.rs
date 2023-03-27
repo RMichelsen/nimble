@@ -3,11 +3,12 @@ use std::{collections::HashMap, str::pattern::Pattern};
 use winit::window::Window;
 
 use crate::{
-    buffer::{Buffer, BufferCommand},
+    buffer::{Buffer, BufferCommand, CursorMotion},
     renderer::Renderer,
 };
 
-const NORMAL_MODE_COMMANDS: [&str; 10] = ["j", "k", "h", "l", "w", "b", "0", "$", "gg", "G"];
+const NORMAL_MODE_COMMANDS: [&str; 12] =
+    ["j", "k", "h", "l", "w", "b", "0", "$", "gg", "G", "x", "dd"];
 
 enum EditorMode {
     Normal,
@@ -41,7 +42,7 @@ impl Editor {
 
     pub fn update(&self) {
         if let Some(buffer) = &self.active_buffer {
-            self.renderer.draw_buffer(&self.buffers[buffer].view);
+            self.renderer.draw_buffer(&self.buffers[buffer]);
         }
     }
 
@@ -49,7 +50,7 @@ impl Editor {
         if let Some(buffer) = Editor::active_buffer(&self.active_buffer, &mut self.buffers) {
             match event {
                 InputEvent::MouseWheel(sign) => {
-                    buffer.view.scroll_vertical(-sign * SCROLL_LINES_PER_ROLL)
+                    buffer.scroll_vertical(-sign * SCROLL_LINES_PER_ROLL)
                 }
             }
         }
@@ -60,13 +61,18 @@ impl Editor {
             self.input.push(chr);
 
             match (self.input.chars().next(), self.input.chars().nth(1)) {
-                (Some('f'), Some(x)) => {
-                    buffer.command(BufferCommand::MoveForwardToChar(x as u8));
+                (Some('f'), Some(c)) => {
+                    buffer.motion(CursorMotion::ForwardToChar(c as u8));
                     self.input.clear();
                     return;
                 }
-                (Some('F'), Some(x)) => {
-                    buffer.command(BufferCommand::MoveBackwardToChar(x as u8));
+                (Some('F'), Some(c)) => {
+                    buffer.motion(CursorMotion::BackwardToChar(c as u8));
+                    self.input.clear();
+                    return;
+                }
+                (Some('r'), Some(c)) => {
+                    buffer.command(BufferCommand::ReplaceChar(c as u8));
                     self.input.clear();
                     return;
                 }
@@ -82,21 +88,25 @@ impl Editor {
             }
 
             match self.input.as_str() {
-                "j" => buffer.command(BufferCommand::MoveDown(1)),
-                "k" => buffer.command(BufferCommand::MoveUp(1)),
-                "h" => buffer.command(BufferCommand::MoveBackward(1)),
-                "l" => buffer.command(BufferCommand::MoveForward(1)),
-                "w" => buffer.command(BufferCommand::MoveForwardByWord),
-                "b" => buffer.command(BufferCommand::MoveBackwardByWord),
-                "0" => buffer.command(BufferCommand::MoveToStartOfLine),
-                "$" => buffer.command(BufferCommand::MoveToEndOfLine),
-                "gg" => buffer.command(BufferCommand::MoveToStartOfFile),
-                "G" => buffer.command(BufferCommand::MoveToEndOfFile),
+                "j" => buffer.motion(CursorMotion::Down(1)),
+                "k" => buffer.motion(CursorMotion::Up(1)),
+                "h" => buffer.motion(CursorMotion::Backward(1)),
+                "l" => buffer.motion(CursorMotion::Forward(1)),
+                "w" => buffer.motion(CursorMotion::ForwardByWord),
+                "b" => buffer.motion(CursorMotion::BackwardByWord),
+                "0" => buffer.motion(CursorMotion::ToStartOfLine),
+                "$" => buffer.motion(CursorMotion::ToEndOfLine),
+                "gg" => buffer.motion(CursorMotion::ToStartOfFile),
+                "G" => buffer.motion(CursorMotion::ToEndOfFile),
+                "x" => buffer.command(BufferCommand::CutSelection),
+                "dd" => buffer.command(BufferCommand::DeleteLine),
+                "J" => buffer.command(BufferCommand::InsertCursorBelow),
+                "K" => buffer.command(BufferCommand::InsertCursorAbove),
                 _ => return,
             }
             self.input.clear();
 
-            buffer.view.adjust();
+            buffer.adjust_view();
         }
     }
 

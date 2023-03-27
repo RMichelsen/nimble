@@ -11,7 +11,6 @@ mod language_support;
 mod renderer;
 mod text_utils;
 mod theme;
-mod view;
 
 use editor::{Editor, InputEvent};
 use winit::{
