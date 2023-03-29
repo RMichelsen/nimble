@@ -10,7 +10,7 @@ pub struct Buffer {
     pub language: Language,
     pub lines: Vec<Vec<u8>>,
     pub cursors: Vec<Cursor>,
-    mode: BufferMode,
+    pub mode: BufferMode,
     input: String,
 }
 
@@ -46,7 +46,7 @@ impl Buffer {
             BufferMode::Normal => {
                 self.input.push(c);
 
-                if !is_start_of_normal_command(&self.input) {
+                if !is_prefix_of_normal_command(&self.input) {
                     self.input.clear();
                     self.input.push(c);
                 }
@@ -80,6 +80,11 @@ impl Buffer {
 
                     "v" => {
                         self.switch_to_visual_mode();
+                        return;
+                    }
+                    "V" => {
+                        self.switch_to_visual_line_mode();
+                        return;
                     }
                     _ => return,
                 }
@@ -89,10 +94,10 @@ impl Buffer {
                     cursor.reset_anchor();
                 }
             }
-            BufferMode::Visual => {
+            BufferMode::Visual | BufferMode::VisualLine => {
                 self.input.push(c);
 
-                if !is_start_of_visual_command(&self.input) {
+                if !is_prefix_of_visual_command(&self.input) {
                     self.input.clear();
                     self.input.push(c);
                 }
@@ -115,6 +120,7 @@ impl Buffer {
                     s if s.starts_with("F") && s.len() == 2 => {
                         self.motion(CursorMotion::BackwardToChar(s.chars().nth(1).unwrap() as u8));
                     }
+
                     "x" => self.command(BufferCommand::CutSelection),
                     "d" => self.command(BufferCommand::CutSelection),
                     _ => return,
@@ -264,18 +270,37 @@ impl Buffer {
         self.mode = BufferMode::Visual;
         self.input.clear();
     }
+
+    fn switch_to_visual_line_mode(&mut self) {
+        self.mode = BufferMode::VisualLine;
+        self.input.clear();
+    }
 }
 
-fn is_start_of_normal_command(str: &str) -> bool {
+fn is_prefix_of_normal_command(str: &str) -> bool {
     NORMAL_MODE_COMMANDS.iter().any(|cmd| str.is_prefix_of(cmd))
         || (str.starts_with("f") && str.len() <= 2)
         || (str.starts_with("F") && str.len() <= 2)
         || (str.starts_with("r") && str.len() <= 2)
 }
-fn is_start_of_visual_command(str: &str) -> bool {
+fn is_prefix_of_visual_command(str: &str) -> bool {
     VISUAL_MODE_COMMANDS.iter().any(|cmd| str.is_prefix_of(cmd))
         || (str.starts_with("f") && str.len() <= 2)
         || (str.starts_with("F") && str.len() <= 2)
+}
+
+const NORMAL_MODE_COMMANDS: [&str; 16] = [
+    "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "dd", "J", "K", "v", "V",
+];
+const VISUAL_MODE_COMMANDS: [&str; 12] =
+    ["j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "d"];
+
+#[derive(PartialEq)]
+pub enum BufferMode {
+    Normal,
+    Insert,
+    Visual,
+    VisualLine,
 }
 
 pub enum CursorMotion {
@@ -304,14 +329,4 @@ pub enum BufferCommand {
 
 pub enum DeviceInput {
     MouseWheel(isize),
-}
-
-const NORMAL_MODE_COMMANDS: [&str; 12] =
-    ["j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "dd"];
-const VISUAL_MODE_COMMANDS: [&str; 6] = ["h", "l", "w", "b", "^", "$"];
-
-enum BufferMode {
-    Normal,
-    Insert,
-    Visual,
 }

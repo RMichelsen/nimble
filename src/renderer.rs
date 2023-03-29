@@ -253,7 +253,7 @@ impl Renderer {
             unsafe {
                 self.render_target.DrawTextLayout(
                     D2D_POINT_2F {
-                        x: 0.0,
+                        x: self.font_size.0 * -(view.col_offset as f32),
                         y: self.font_size.1 * i as f32,
                     },
                     &text_layout,

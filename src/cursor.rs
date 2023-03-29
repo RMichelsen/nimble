@@ -136,6 +136,31 @@ impl Cursor {
         self.anchor_col = self.col;
     }
 
+    pub fn get_selection_ranges(&self, lines: &[Vec<u8>]) -> Vec<(usize, usize, usize)> {
+        let mut ranges = vec![];
+        if self.row == self.anchor_row {
+            let first_col = min(self.col, self.anchor_col);
+            let last_col = max(self.col, self.anchor_col);
+            ranges.push((self.row, first_col, last_col));
+        } else {
+            let (first_row, first_col, last_row, last_col) = if self.row < self.anchor_row {
+                (self.row, self.col, self.anchor_row, self.anchor_col)
+            } else {
+                (self.anchor_row, self.anchor_col, self.row, self.col)
+            };
+            ranges.push((
+                first_row,
+                first_col,
+                lines[first_row].len().saturating_sub(1),
+            ));
+            for row in (first_row + 1)..last_row {
+                ranges.push((row, 0, lines[row].len().saturating_sub(1)));
+            }
+            ranges.push((last_row, 0, last_col));
+        }
+        ranges
+    }
+
     fn chars_until_pred<F>(&self, lines: &[Vec<u8>], pred: F) -> Option<usize>
     where
         F: Fn(u8) -> bool,
@@ -164,10 +189,10 @@ impl Cursor {
 
         let mut count = 0;
         for c in lines[self.row][..self.col].iter().rev() {
+            count += 1;
             if pred(*c) {
                 return Some(count);
             }
-            count += 1;
         }
         None
     }

@@ -1,6 +1,6 @@
 use std::cmp::{max, min};
 
-use crate::buffer::{Buffer, DeviceInput};
+use crate::buffer::{Buffer, BufferMode, DeviceInput};
 
 const SCROLL_LINES_PER_ROLL: isize = 3;
 
@@ -29,62 +29,37 @@ impl View {
     where
         F: Fn(usize, usize, usize),
     {
-        for cursor in buffer.cursors.iter() {
-            if cursor.row == cursor.anchor_row {
-                let first_col = min(cursor.col, cursor.anchor_col);
-                let last_col = max(cursor.col, cursor.anchor_col);
-
-                let num = (first_col..=last_col)
-                    .filter(|col| {
-                        self.pos_in_render_visible_range(cursor.row, *col, num_rows, num_cols)
-                    })
-                    .count();
-                f(
-                    self.absolute_to_view_row(cursor.row),
-                    self.absolute_to_view_col(first_col),
-                    num,
-                );
-            } else {
-                let (first_row, first_col, last_row, last_col) = if cursor.row < cursor.anchor_row {
-                    (cursor.row, cursor.col, cursor.anchor_row, cursor.anchor_col)
-                } else {
-                    (cursor.anchor_row, cursor.anchor_col, cursor.row, cursor.col)
-                };
-
-                let first_line_num = (first_col..=buffer.lines[first_row].len().saturating_sub(1))
-                    .filter(|col| {
-                        self.pos_in_render_visible_range(first_row, *col, num_rows, num_cols)
-                    })
-                    .count();
-                f(
-                    self.absolute_to_view_row(first_row),
-                    self.absolute_to_view_col(first_col),
-                    first_line_num,
-                );
-
-                for row in (first_row + 1)..last_row {
-                    let num = (0..=buffer.lines[row].len().saturating_sub(1))
+        if buffer.mode == BufferMode::VisualLine {
+            for cursor in buffer.cursors.iter() {
+                for row in min(cursor.row, cursor.anchor_row)..=max(cursor.row, cursor.anchor_row) {
+                    let start = 0;
+                    let end = buffer.lines[row].len().saturating_sub(1);
+                    let num = (start..=end)
                         .filter(|col| {
-                            self.pos_in_render_visible_range(row, *col, num_rows, num_cols)
+                            self.pos_in_render_visible_range(cursor.row, *col, num_rows, num_cols)
                         })
                         .count();
                     f(
                         self.absolute_to_view_row(row),
-                        self.absolute_to_view_col(0),
-                        max(num, 1),
+                        self.absolute_to_view_col(start),
+                        num,
                     );
                 }
-
-                let last_line_num = (0..=last_col)
-                    .filter(|col| {
-                        self.pos_in_render_visible_range(last_row, *col, num_rows, num_cols)
-                    })
-                    .count();
-                f(
-                    self.absolute_to_view_row(last_row),
-                    self.absolute_to_view_col(0),
-                    last_line_num,
-                );
+            }
+        } else {
+            for cursor in buffer.cursors.iter() {
+                for (row, start, end) in cursor.get_selection_ranges(&buffer.lines) {
+                    let num = (start..=end)
+                        .filter(|col| {
+                            self.pos_in_render_visible_range(cursor.row, *col, num_rows, num_cols)
+                        })
+                        .count();
+                    f(
+                        self.absolute_to_view_row(row),
+                        self.absolute_to_view_col(start),
+                        num,
+                    );
+                }
             }
         }
     }
@@ -131,8 +106,14 @@ impl View {
             ) {
                 if first_cursor.row < self.row_offset {
                     self.row_offset = first_cursor.row;
-                } else {
+                } else if first_cursor.row > (self.row_offset + (num_rows - 2)) {
                     self.row_offset += first_cursor.row - (self.row_offset + (num_rows - 2))
+                }
+
+                if first_cursor.col < self.col_offset {
+                    self.col_offset = first_cursor.col;
+                } else if first_cursor.col > (self.col_offset + (num_cols - 2)) {
+                    self.col_offset += first_cursor.col - (self.col_offset + (num_cols - 2))
                 }
             }
         }
@@ -152,7 +133,7 @@ impl View {
         num_cols: usize,
     ) -> bool {
         (self.row_offset..self.row_offset + num_rows.saturating_sub(1)).contains(&row)
-            && (self.col_offset..self.col_offset + num_cols).contains(&col)
+            && (self.col_offset..self.col_offset + num_cols.saturating_sub(1)).contains(&col)
     }
 
     fn pos_in_render_visible_range(
