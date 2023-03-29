@@ -1,70 +1,132 @@
-use std::{cmp::min, fs::File, io::BufReader};
+use std::{cmp::min, fs::File, io::BufReader, str::pattern::Pattern};
 
 use bstr::io::BufReadExt;
+use winit::event::VirtualKeyCode;
 
 use crate::{cursor::Cursor, language_support::Language};
-
-pub enum CursorMotion {
-    Forward(usize),
-    Backward(usize),
-    Up(usize),
-    Down(usize),
-    ForwardByWord,
-    BackwardByWord,
-    ToStartOfLine,
-    ToEndOfLine,
-    ToStartOfFile,
-    ToEndOfFile,
-    ForwardToChar(u8),
-    BackwardToChar(u8),
-}
-
-pub enum BufferCommand {
-    InsertCursorAbove,
-    InsertCursorBelow,
-    CutSelection,
-    ReplaceChar(u8),
-    DeleteLine,
-}
-
-struct View {
-    row_offset: usize,
-    col_offset: usize,
-    num_rows: usize,
-    num_cols: usize,
-}
-
-impl View {
-    pub fn new(num_rows: usize, num_cols: usize) -> Self {
-        Self {
-            row_offset: 0,
-            col_offset: 0,
-            num_rows,
-            num_cols,
-        }
-    }
-}
 
 pub struct Buffer {
     pub path: String,
     pub language: Language,
-    view: View,
-    lines: Vec<Vec<u8>>,
-    cursors: Vec<Cursor>,
+    pub lines: Vec<Vec<u8>>,
+    pub cursors: Vec<Cursor>,
+    mode: BufferMode,
+    input: String,
 }
 
 impl Buffer {
-    pub fn new(path: &str, num_rows: usize, num_cols: usize) -> Self {
+    pub fn new(path: &str) -> Self {
         Self {
             path: path.to_string(),
             language: Language::new(path),
-            view: View::new(num_rows, num_cols),
             lines: BufReader::new(File::open(path).unwrap())
                 .byte_lines()
                 .try_collect()
                 .unwrap(),
             cursors: vec![Cursor::new(0, 0)],
+            mode: BufferMode::Normal,
+            input: String::new(),
         }
+    }
+
+    pub fn handle_key(&mut self, key_code: VirtualKeyCode) {
+        match key_code {
+            VirtualKeyCode::Escape => {
+                self.switch_to_normal_mode();
+            }
+            _ => (),
+        }
+
+        self.cursors.sort_unstable();
+        self.cursors.dedup();
+    }
+
+    pub fn handle_char(&mut self, c: char) {
+        match self.mode {
+            BufferMode::Normal => {
+                self.input.push(c);
+
+                if !is_start_of_normal_command(&self.input) {
+                    self.input.clear();
+                    self.input.push(c);
+                }
+
+                match self.input.as_str() {
+                    "j" => self.motion(CursorMotion::Down(1)),
+                    "k" => self.motion(CursorMotion::Up(1)),
+                    "h" => self.motion(CursorMotion::Backward(1)),
+                    "l" => self.motion(CursorMotion::Forward(1)),
+                    "w" => self.motion(CursorMotion::ForwardByWord),
+                    "b" => self.motion(CursorMotion::BackwardByWord),
+                    "0" => self.motion(CursorMotion::ToStartOfLine),
+                    "$" => self.motion(CursorMotion::ToEndOfLine),
+                    "^" => self.motion(CursorMotion::ToFirstNonBlankChar),
+                    "gg" => self.motion(CursorMotion::ToStartOfFile),
+                    "G" => self.motion(CursorMotion::ToEndOfFile),
+                    s if s.starts_with("f") && s.len() == 2 => {
+                        self.motion(CursorMotion::ForwardToChar(s.chars().nth(1).unwrap() as u8));
+                    }
+                    s if s.starts_with("F") && s.len() == 2 => {
+                        self.motion(CursorMotion::BackwardToChar(s.chars().nth(1).unwrap() as u8));
+                    }
+
+                    "x" => self.command(BufferCommand::CutSelection),
+                    "dd" => self.command(BufferCommand::DeleteLine),
+                    "J" => self.command(BufferCommand::InsertCursorBelow),
+                    "K" => self.command(BufferCommand::InsertCursorAbove),
+                    s if s.starts_with("r") && s.len() == 2 => {
+                        self.command(BufferCommand::ReplaceChar(s.chars().nth(1).unwrap() as u8));
+                    }
+
+                    "v" => {
+                        self.switch_to_visual_mode();
+                    }
+                    _ => return,
+                }
+
+                self.input.clear();
+                for cursor in &mut self.cursors {
+                    cursor.reset_anchor();
+                }
+            }
+            BufferMode::Visual => {
+                self.input.push(c);
+
+                if !is_start_of_visual_command(&self.input) {
+                    self.input.clear();
+                    self.input.push(c);
+                }
+
+                match self.input.as_str() {
+                    "j" => self.motion(CursorMotion::Down(1)),
+                    "k" => self.motion(CursorMotion::Up(1)),
+                    "h" => self.motion(CursorMotion::Backward(1)),
+                    "l" => self.motion(CursorMotion::Forward(1)),
+                    "w" => self.motion(CursorMotion::ForwardByWord),
+                    "b" => self.motion(CursorMotion::BackwardByWord),
+                    "0" => self.motion(CursorMotion::ToStartOfLine),
+                    "$" => self.motion(CursorMotion::ToEndOfLine),
+                    "^" => self.motion(CursorMotion::ToFirstNonBlankChar),
+                    "gg" => self.motion(CursorMotion::ToStartOfFile),
+                    "G" => self.motion(CursorMotion::ToEndOfFile),
+                    s if s.starts_with("f") && s.len() == 2 => {
+                        self.motion(CursorMotion::ForwardToChar(s.chars().nth(1).unwrap() as u8));
+                    }
+                    s if s.starts_with("F") && s.len() == 2 => {
+                        self.motion(CursorMotion::BackwardToChar(s.chars().nth(1).unwrap() as u8));
+                    }
+                    "x" => self.command(BufferCommand::CutSelection),
+                    "d" => self.command(BufferCommand::CutSelection),
+                    _ => return,
+                }
+
+                self.input.clear();
+            }
+            _ => (),
+        }
+
+        self.cursors.sort_unstable();
+        self.cursors.dedup();
     }
 
     pub fn motion(&mut self, motion: CursorMotion) {
@@ -72,44 +134,58 @@ impl Buffer {
             match motion {
                 CursorMotion::Forward(count) => {
                     cursor.move_forward(&self.lines, count);
+                    cursor.unstick_col();
                 }
                 CursorMotion::Backward(count) => {
-                    cursor.move_backward(count);
+                    cursor.move_backward(&self.lines, count);
+                    cursor.unstick_col();
                 }
                 CursorMotion::Up(count) => {
                     cursor.move_up(&self.lines, count);
+                    cursor.stick_col();
                 }
                 CursorMotion::Down(count) => {
                     cursor.move_down(&self.lines, count);
+                    cursor.stick_col();
                 }
                 CursorMotion::ForwardByWord => {
                     cursor.move_forward_by_word(&self.lines);
+                    cursor.unstick_col();
                 }
                 CursorMotion::BackwardByWord => {
                     cursor.move_backward_by_word(&self.lines);
+                    cursor.unstick_col();
                 }
                 CursorMotion::ToStartOfLine => {
                     cursor.move_to_start_of_line();
+                    cursor.unstick_col();
                 }
                 CursorMotion::ToEndOfLine => {
                     cursor.move_to_end_of_line(&self.lines);
+                    cursor.unstick_col();
                 }
                 CursorMotion::ToStartOfFile => {
                     cursor.move_to_start_of_file();
+                    cursor.unstick_col();
                 }
                 CursorMotion::ToEndOfFile => {
                     cursor.move_to_end_of_file(&self.lines);
+                    cursor.unstick_col();
+                }
+                CursorMotion::ToFirstNonBlankChar => {
+                    cursor.move_to_first_non_blank_char(&self.lines);
+                    cursor.unstick_col();
                 }
                 CursorMotion::ForwardToChar(c) => {
                     cursor.move_forward_to_char(&self.lines, c);
+                    cursor.unstick_col();
                 }
                 CursorMotion::BackwardToChar(c) => {
                     cursor.move_backward_to_char(&self.lines, c);
+                    cursor.unstick_col();
                 }
             }
         }
-
-        self.cursors.dedup();
     }
 
     pub fn command(&mut self, command: BufferCommand) {
@@ -165,81 +241,77 @@ impl Buffer {
                 }
             }
             BufferCommand::DeleteLine => {
-                let mut deleted_lines = 0;
-                for cursor in &mut self.cursors {
+                for (deleted_lines, cursor) in self.cursors.iter_mut().enumerate() {
                     self.lines.remove(cursor.row - deleted_lines);
                     cursor.row = min(
                         cursor.row - deleted_lines,
                         self.lines.len().saturating_sub(1),
                     );
-                    deleted_lines += 1;
-                }
-            }
-        }
-
-        self.cursors.sort_unstable();
-        self.cursors.dedup();
-    }
-
-    pub fn visible_cursors_iter<F>(&self, f: F)
-    where
-        F: Fn(usize, usize),
-    {
-        for cursor in self.cursors.iter() {
-            if self.pos_in_render_visible_range(cursor.row, cursor.col) {
-                let (row, col) = self.absolute_to_view_pos(cursor.row, cursor.col);
-                f(row, col);
-            }
-        }
-    }
-
-    pub fn visible_lines_iter<F>(&self, f: F)
-    where
-        F: Fn(usize, &[u8]),
-    {
-        for (i, line) in self.lines
-            [self.view.row_offset..min(self.view.row_offset + self.view.num_rows, self.lines.len())]
-            .iter()
-            .enumerate()
-        {
-            f(i, line);
-        }
-    }
-
-    pub fn adjust_view(&mut self) {
-        if let Some(first_cursor) = self.cursors.first() {
-            if !self.pos_in_edit_visible_range(first_cursor.row, first_cursor.col) {
-                if first_cursor.row < self.view.row_offset {
-                    self.view.row_offset = first_cursor.row;
-                } else {
-                    self.view.row_offset +=
-                        first_cursor.row - (self.view.row_offset + (self.view.num_rows - 2))
+                    cursor.move_to_first_non_blank_char(&self.lines);
                 }
             }
         }
     }
 
-    pub fn scroll_vertical(&mut self, delta: isize) {
-        if let Some(result) = self.view.row_offset.checked_add_signed(delta) {
-            self.view.row_offset = min(result, self.lines.len().saturating_sub(1));
-        }
+    fn switch_to_normal_mode(&mut self) {
+        self.mode = BufferMode::Normal;
+        self.input.clear();
+        self.cursors.truncate(1);
+        self.cursors[0].reset_anchor();
     }
 
-    fn pos_in_edit_visible_range(&self, row: usize, col: usize) -> bool {
-        (self.view.row_offset..self.view.row_offset + self.view.num_rows.saturating_sub(1))
-            .contains(&row)
-            && (self.view.col_offset..self.view.col_offset + self.view.num_cols).contains(&col)
+    fn switch_to_visual_mode(&mut self) {
+        self.mode = BufferMode::Visual;
+        self.input.clear();
     }
+}
 
-    fn pos_in_render_visible_range(&self, row: usize, col: usize) -> bool {
-        (self.view.row_offset..self.view.row_offset + self.view.num_rows).contains(&row)
-            && (self.view.col_offset..self.view.col_offset + self.view.num_cols).contains(&col)
-    }
+fn is_start_of_normal_command(str: &str) -> bool {
+    NORMAL_MODE_COMMANDS.iter().any(|cmd| str.is_prefix_of(cmd))
+        || (str.starts_with("f") && str.len() <= 2)
+        || (str.starts_with("F") && str.len() <= 2)
+        || (str.starts_with("r") && str.len() <= 2)
+}
+fn is_start_of_visual_command(str: &str) -> bool {
+    VISUAL_MODE_COMMANDS.iter().any(|cmd| str.is_prefix_of(cmd))
+        || (str.starts_with("f") && str.len() <= 2)
+        || (str.starts_with("F") && str.len() <= 2)
+}
 
-    fn absolute_to_view_pos(&self, row: usize, col: usize) -> (usize, usize) {
-        (
-            row.saturating_sub(self.view.row_offset),
-            col.saturating_sub(self.view.col_offset),
-        )
-    }
+pub enum CursorMotion {
+    Forward(usize),
+    Backward(usize),
+    Up(usize),
+    Down(usize),
+    ForwardByWord,
+    BackwardByWord,
+    ToStartOfLine,
+    ToEndOfLine,
+    ToStartOfFile,
+    ToEndOfFile,
+    ToFirstNonBlankChar,
+    ForwardToChar(u8),
+    BackwardToChar(u8),
+}
+
+pub enum BufferCommand {
+    InsertCursorAbove,
+    InsertCursorBelow,
+    CutSelection,
+    ReplaceChar(u8),
+    DeleteLine,
+}
+
+pub enum DeviceInput {
+    MouseWheel(isize),
+}
+
+const NORMAL_MODE_COMMANDS: [&str; 12] =
+    ["j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "dd"];
+const VISUAL_MODE_COMMANDS: [&str; 6] = ["h", "l", "w", "b", "^", "$"];
+
+enum BufferMode {
+    Normal,
+    Insert,
+    Visual,
 }

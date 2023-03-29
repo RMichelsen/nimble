@@ -6,7 +6,9 @@ use crate::text_utils::{self, CharType};
 pub struct Cursor {
     pub row: usize,
     pub col: usize,
-    cached_col: usize,
+    pub anchor_row: usize,
+    pub anchor_col: usize,
+    pub cached_col: usize,
 }
 
 impl Cursor {
@@ -14,12 +16,21 @@ impl Cursor {
         Self {
             row,
             col,
+            anchor_row: row,
+            anchor_col: col,
             cached_col: col,
         }
     }
 
-    pub fn move_down(&mut self, lines: &[Vec<u8>], count: usize) {
+    pub fn stick_col(&mut self) {
         self.cached_col = max(self.cached_col, self.col);
+    }
+
+    pub fn unstick_col(&mut self) {
+        self.cached_col = self.col;
+    }
+
+    pub fn move_down(&mut self, lines: &[Vec<u8>], count: usize) {
         self.row = min(self.row + count, lines.len().saturating_sub(1));
         self.col = min(
             max(self.cached_col, self.col),
@@ -28,7 +39,6 @@ impl Cursor {
     }
 
     pub fn move_up(&mut self, lines: &[Vec<u8>], count: usize) {
-        self.cached_col = max(self.cached_col, self.col);
         self.row = self.row.saturating_sub(count);
         self.col = min(
             max(self.cached_col, self.col),
@@ -37,13 +47,22 @@ impl Cursor {
     }
 
     pub fn move_forward(&mut self, lines: &[Vec<u8>], count: usize) {
-        self.cached_col = 0;
-        self.col = min(self.col + count, lines[self.row].len().saturating_sub(1));
+        let line_length = lines[self.row].len().saturating_sub(1);
+        if self.col + count > line_length && self.row < lines.len().saturating_sub(1) {
+            self.row += 1;
+            self.col = (count - (line_length - self.col)).saturating_sub(1);
+        } else {
+            self.col = min(self.col + count, line_length);
+        }
     }
 
-    pub fn move_backward(&mut self, count: usize) {
-        self.cached_col = 0;
-        self.col = self.col.saturating_sub(count);
+    pub fn move_backward(&mut self, lines: &[Vec<u8>], count: usize) {
+        if self.col < count && self.row > 0 {
+            self.row -= 1;
+            self.col = lines[self.row].len().saturating_sub(count - self.col);
+        } else {
+            self.col = self.col.saturating_sub(count);
+        }
     }
 
     pub fn move_forward_by_word(&mut self, lines: &[Vec<u8>]) {
@@ -53,27 +72,40 @@ impl Cursor {
 
     pub fn move_backward_by_word(&mut self, lines: &[Vec<u8>]) {
         let count = self.chars_until_word_boundary_rev(lines);
-        self.move_backward(count);
+        self.move_backward(lines, count);
+        self.move_to_start_of_word(lines);
+    }
+
+    pub fn move_to_start_of_word(&mut self, lines: &[Vec<u8>]) {
+        if lines[self.row].is_empty() {
+            return;
+        }
+
+        let char_type = text_utils::get_ascii_char_type(lines[self.row][self.col]);
+
+        if let Some(count) =
+            self.chars_until_pred_rev(lines, |c| text_utils::get_ascii_char_type(c) != char_type)
+        {
+            self.move_backward(lines, count);
+        } else {
+            self.move_to_start_of_line();
+        }
     }
 
     pub fn move_to_start_of_line(&mut self) {
-        self.cached_col = 0;
         self.col = 0;
     }
 
     pub fn move_to_end_of_line(&mut self, lines: &[Vec<u8>]) {
-        self.cached_col = lines[self.row].len().saturating_sub(1);
         self.col = lines[self.row].len().saturating_sub(1);
     }
 
     pub fn move_to_start_of_file(&mut self) {
-        self.cached_col = 0;
         self.row = 0;
         self.col = 0;
     }
 
     pub fn move_to_end_of_file(&mut self, lines: &[Vec<u8>]) {
-        self.cached_col = lines[self.row].len().saturating_sub(1);
         self.row = lines.len().saturating_sub(1);
         self.col = lines[self.row].len().saturating_sub(1);
     }
@@ -85,49 +117,87 @@ impl Cursor {
 
     pub fn move_backward_to_char(&mut self, lines: &[Vec<u8>], search_char: u8) {
         let count = self.chars_until_char_rev(lines, search_char);
-        self.move_backward(count);
+        self.move_backward(lines, count);
     }
 
-    fn chars_until_char(&self, lines: &[Vec<u8>], search_char: u8) -> usize {
+    pub fn move_to_first_non_blank_char(&mut self, lines: &[Vec<u8>]) {
+        let mut col = 0;
+        for c in &lines[self.row] {
+            if !c.is_ascii_whitespace() {
+                break;
+            }
+            col += 1;
+        }
+        self.col = col
+    }
+
+    pub fn reset_anchor(&mut self) {
+        self.anchor_row = self.row;
+        self.anchor_col = self.col;
+    }
+
+    fn chars_until_pred<F>(&self, lines: &[Vec<u8>], pred: F) -> Option<usize>
+    where
+        F: Fn(u8) -> bool,
+    {
         if self.col == lines[self.row].len() {
-            return 0;
+            return None;
         }
 
         let mut count = 0;
         for c in lines[self.row][self.col + 1..].iter() {
             count += 1;
-            if c == &search_char {
-                return count;
+            if pred(*c) {
+                return Some(count);
             }
         }
-        0
+        None
     }
 
-    fn chars_until_char_rev(&self, lines: &[Vec<u8>], search_char: u8) -> usize {
+    fn chars_until_pred_rev<F>(&self, lines: &[Vec<u8>], pred: F) -> Option<usize>
+    where
+        F: Fn(u8) -> bool,
+    {
         if self.col == 0 {
-            return 0;
+            return None;
         }
 
         let mut count = 0;
         for c in lines[self.row][..self.col].iter().rev() {
-            count += 1;
-            if c == &search_char {
-                return count;
+            if pred(*c) {
+                return Some(count);
             }
+            count += 1;
         }
-        0
+        None
+    }
+
+    fn chars_until_char(&self, lines: &[Vec<u8>], search_char: u8) -> usize {
+        self.chars_until_pred(lines, |c| c == search_char)
+            .unwrap_or(0)
+    }
+
+    fn chars_until_char_rev(&self, lines: &[Vec<u8>], search_char: u8) -> usize {
+        self.chars_until_pred_rev(lines, |c| c == search_char)
+            .unwrap_or(0)
     }
 
     fn chars_until_word_boundary(&self, lines: &[Vec<u8>]) -> usize {
-        if lines[self.row].is_empty() {
-            return 0;
-        }
+        let line_iterator = lines[self.row][self.col..].iter();
+        let next_line_iterator = if self.row < lines.len().saturating_sub(1) {
+            lines[self.row + 1].iter()
+        } else {
+            [].iter()
+        };
 
-        let current_char_type = text_utils::get_ascii_char_type(lines[self.row][self.col]);
-
-        let mut count = 0;
+        let current_char_type = if lines[self.row].is_empty() {
+            CharType::Whitespace
+        } else {
+            text_utils::get_ascii_char_type(lines[self.row][self.col])
+        };
+        let mut count = if lines[self.row].is_empty() { 1 } else { 0 };
         let mut separator_found = false;
-        for c in lines[self.row][self.col..].iter() {
+        for c in line_iterator.chain(next_line_iterator) {
             let char_type = text_utils::get_ascii_char_type(*c);
             separator_found |= current_char_type != char_type;
             if separator_found && char_type != CharType::Whitespace {
@@ -139,24 +209,30 @@ impl Cursor {
     }
 
     fn chars_until_word_boundary_rev(&self, lines: &[Vec<u8>]) -> usize {
-        if lines[self.row].is_empty() {
-            return 0;
-        }
+        let line_iterator = if !lines[self.row].is_empty() {
+            lines[self.row][..=self.col].iter().rev()
+        } else {
+            [].iter().rev()
+        };
+        let prev_line_iterator = if self.row > 0 {
+            lines[self.row - 1].iter().rev()
+        } else {
+            [].iter().rev()
+        };
 
-        let mut current_char_type = None;
-        let mut count = 0;
-        for c in lines[self.row][..self.col].iter().rev() {
+        let current_char_type = if lines[self.row].is_empty() {
+            CharType::Whitespace
+        } else {
+            text_utils::get_ascii_char_type(lines[self.row][self.col])
+        };
+        let mut count = if lines[self.row].is_empty() { 1 } else { 0 };
+        let mut separator_found = false;
+        for c in line_iterator.chain(prev_line_iterator) {
             let char_type = text_utils::get_ascii_char_type(*c);
-            if char_type != CharType::Whitespace && current_char_type.is_none() {
-                current_char_type = Some(char_type);
+            separator_found |= current_char_type != char_type;
+            if separator_found && char_type != CharType::Whitespace {
+                break;
             }
-
-            if let Some(current_char_type) = current_char_type {
-                if char_type != current_char_type {
-                    break;
-                }
-            }
-
             count += 1;
         }
         count

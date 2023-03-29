@@ -25,9 +25,16 @@ pub const KEYWORD_COLOR: D2D1_COLOR_F = D2D1_COLOR_F {
 };
 
 pub const HIGHLIGHT_COLOR: D2D1_COLOR_F = D2D1_COLOR_F {
-    r: 0.25,
-    g: 0.25,
-    b: 0.70,
+    r: 0.21,
+    g: 0.31,
+    b: 0.33,
+    a: 1.0,
+};
+
+pub const CURSOR_COLOR: D2D1_COLOR_F = D2D1_COLOR_F {
+    r: 0.4,
+    g: 0.58,
+    b: 0.61,
     a: 1.0,
 };
 

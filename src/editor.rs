@@ -1,133 +1,80 @@
-use std::{collections::HashMap, str::pattern::Pattern};
+use std::collections::HashMap;
 
-use winit::window::Window;
+use winit::{event::VirtualKeyCode, window::Window};
 
 use crate::{
-    buffer::{Buffer, BufferCommand, CursorMotion},
+    buffer::{Buffer, DeviceInput},
     renderer::Renderer,
+    view::View,
 };
 
-const NORMAL_MODE_COMMANDS: [&str; 12] =
-    ["j", "k", "h", "l", "w", "b", "0", "$", "gg", "G", "x", "dd"];
-
-enum EditorMode {
-    Normal,
-    Insert,
-    Visual,
+struct Document {
+    buffer: Buffer,
+    view: View,
 }
 
 pub struct Editor {
     renderer: Renderer,
-    buffers: HashMap<String, Buffer>,
-    active_buffer: Option<String>,
-    mode: EditorMode,
-    input: String,
-}
-
-pub const SCROLL_LINES_PER_ROLL: isize = 3;
-pub enum InputEvent {
-    MouseWheel(isize),
+    documents: HashMap<String, Document>,
+    active_document: Option<String>,
 }
 
 impl Editor {
     pub fn new(window: &Window) -> Self {
         Self {
             renderer: Renderer::new(window),
-            buffers: HashMap::default(),
-            active_buffer: None,
-            mode: EditorMode::Normal,
-            input: String::default(),
+            documents: HashMap::default(),
+            active_document: None,
         }
     }
 
     pub fn update(&self) {
-        if let Some(buffer) = &self.active_buffer {
-            self.renderer.draw_buffer(&self.buffers[buffer]);
+        if let Some(document) = &self.active_document {
+            let document = &self.documents[document];
+            self.renderer.draw_buffer(&document.buffer, &document.view);
         }
     }
 
-    pub fn handle_input(&mut self, event: InputEvent) {
-        if let Some(buffer) = Editor::active_buffer(&self.active_buffer, &mut self.buffers) {
-            match event {
-                InputEvent::MouseWheel(sign) => {
-                    buffer.scroll_vertical(-sign * SCROLL_LINES_PER_ROLL)
-                }
-            }
+    pub fn handle_input(&mut self, event: DeviceInput) {
+        if let Some(document) = self.active_document() {
+            document.view.handle_input(&document.buffer, event);
         }
     }
 
-    pub fn handle_char(&mut self, chr: char) {
-        if let Some(buffer) = Editor::active_buffer(&self.active_buffer, &mut self.buffers) {
-            self.input.push(chr);
+    pub fn handle_key(&mut self, key_code: VirtualKeyCode) {
+        let (num_rows, num_cols) = (self.renderer.num_rows, self.renderer.num_cols);
+        if let Some(document) = self.active_document() {
+            document.buffer.handle_key(key_code);
+            document.view.adjust(&document.buffer, num_rows, num_cols);
+        }
+    }
 
-            match (self.input.chars().next(), self.input.chars().nth(1)) {
-                (Some('f'), Some(c)) => {
-                    buffer.motion(CursorMotion::ForwardToChar(c as u8));
-                    self.input.clear();
-                    return;
-                }
-                (Some('F'), Some(c)) => {
-                    buffer.motion(CursorMotion::BackwardToChar(c as u8));
-                    self.input.clear();
-                    return;
-                }
-                (Some('r'), Some(c)) => {
-                    buffer.command(BufferCommand::ReplaceChar(c as u8));
-                    self.input.clear();
-                    return;
-                }
-                _ => (),
-            }
-
-            if !NORMAL_MODE_COMMANDS
-                .iter()
-                .any(|cmd| self.input.is_prefix_of(cmd))
-            {
-                self.input.clear();
-                self.input.push(chr);
-            }
-
-            match self.input.as_str() {
-                "j" => buffer.motion(CursorMotion::Down(1)),
-                "k" => buffer.motion(CursorMotion::Up(1)),
-                "h" => buffer.motion(CursorMotion::Backward(1)),
-                "l" => buffer.motion(CursorMotion::Forward(1)),
-                "w" => buffer.motion(CursorMotion::ForwardByWord),
-                "b" => buffer.motion(CursorMotion::BackwardByWord),
-                "0" => buffer.motion(CursorMotion::ToStartOfLine),
-                "$" => buffer.motion(CursorMotion::ToEndOfLine),
-                "gg" => buffer.motion(CursorMotion::ToStartOfFile),
-                "G" => buffer.motion(CursorMotion::ToEndOfFile),
-                "x" => buffer.command(BufferCommand::CutSelection),
-                "dd" => buffer.command(BufferCommand::DeleteLine),
-                "J" => buffer.command(BufferCommand::InsertCursorBelow),
-                "K" => buffer.command(BufferCommand::InsertCursorAbove),
-                _ => return,
-            }
-            self.input.clear();
-
-            buffer.adjust_view();
+    pub fn handle_char(&mut self, c: char) {
+        let (num_rows, num_cols) = (self.renderer.num_rows, self.renderer.num_cols);
+        if let Some(document) = self.active_document() {
+            document.buffer.handle_char(c);
+            document.view.adjust(&document.buffer, num_rows, num_cols);
         }
     }
 
     pub fn open_file(&mut self, path: &str) {
-        if self.buffers.contains_key(path) {
-            self.active_buffer = Some(path.to_string());
+        if self.documents.contains_key(path) {
+            self.active_document = Some(path.to_string());
         } else {
-            self.buffers.insert(
+            self.documents.insert(
                 path.to_string(),
-                Buffer::new(path, self.renderer.num_rows, self.renderer.num_cols),
+                Document {
+                    buffer: Buffer::new(path),
+                    view: View::new(),
+                },
             );
-            self.active_buffer = Some(path.to_string());
+            self.active_document = Some(path.to_string());
         }
     }
 
-    fn active_buffer<'a>(
-        active_buffer: &Option<String>,
-        buffers: &'a mut HashMap<String, Buffer>,
-    ) -> Option<&'a mut Buffer> {
-        if let Some(buffer) = &active_buffer {
-            buffers.get_mut(buffer)
+    fn active_document(&mut self) -> Option<&mut Document> {
+        if let Some(document) = &self.active_document {
+            self.documents.get_mut(document)
         } else {
             None
         }

@@ -30,9 +30,10 @@ use crate::{
     buffer::Buffer,
     text_utils,
     theme::{
-        BACKGROUND_COLOR, COMMENT_COLOR, DEFAULT_BRUSH_PROPERTIES, HIGHLIGHT_COLOR, KEYWORD_COLOR,
-        TEXT_COLOR,
+        BACKGROUND_COLOR, COMMENT_COLOR, CURSOR_COLOR, DEFAULT_BRUSH_PROPERTIES, HIGHLIGHT_COLOR,
+        KEYWORD_COLOR, TEXT_COLOR,
     },
+    view::View,
 };
 
 pub struct Renderer {
@@ -41,6 +42,7 @@ pub struct Renderer {
     text_format: IDWriteTextFormat,
     text_brush: ID2D1SolidColorBrush,
     highlight_brush: ID2D1SolidColorBrush,
+    cursor_brush: ID2D1SolidColorBrush,
     keyword_brush: ID2D1SolidColorBrush,
     comment_brush: ID2D1SolidColorBrush,
     font_size: (f32, f32),
@@ -117,6 +119,11 @@ impl Renderer {
                 .CreateSolidColorBrush(&HIGHLIGHT_COLOR, Some(&DEFAULT_BRUSH_PROPERTIES))
                 .unwrap()
         };
+        let cursor_brush = unsafe {
+            render_target
+                .CreateSolidColorBrush(&CURSOR_COLOR, Some(&DEFAULT_BRUSH_PROPERTIES))
+                .unwrap()
+        };
         let comment_brush = unsafe {
             render_target
                 .CreateSolidColorBrush(&COMMENT_COLOR, Some(&DEFAULT_BRUSH_PROPERTIES))
@@ -151,6 +158,7 @@ impl Renderer {
             text_brush,
             keyword_brush,
             highlight_brush,
+            cursor_brush,
             comment_brush,
             font_size,
             window_size,
@@ -159,27 +167,46 @@ impl Renderer {
         }
     }
 
-    pub fn draw_buffer(&self, buffer: &Buffer) {
+    pub fn draw_buffer(&self, buffer: &Buffer, view: &View) {
         unsafe {
             self.render_target.BeginDraw();
-            self.render_target.Clear(Some(&BACKGROUND_COLOR));
+            self.render_target.Clear(Some(&BACKGROUND_COLOR)); //asdasdasds
         }
 
-        buffer.visible_cursors_iter(|row, col| unsafe {
+        view.visible_cursors_iter(
+            buffer,
+            self.num_rows,
+            self.num_cols,
+            |row, col, num| unsafe {
+                let (row_offset, col_offset) =
+                    (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
+                self.render_target.FillRectangle(
+                    &D2D_RECT_F {
+                        left: col_offset - 0.5,
+                        top: row_offset - 0.5,
+                        right: col_offset + self.font_size.0 * num as f32 + 0.5,
+                        bottom: row_offset + self.font_size.1 + 0.5,
+                    },
+                    &self.highlight_brush,
+                );
+            },
+        );
+
+        view.visible_cursor_leads_iter(buffer, self.num_rows, self.num_cols, |row, col| unsafe {
             let (row_offset, col_offset) =
                 (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
             self.render_target.FillRectangle(
                 &D2D_RECT_F {
-                    left: col_offset,
-                    top: row_offset,
-                    right: col_offset + self.font_size.0,
-                    bottom: row_offset + self.font_size.1,
+                    left: col_offset - 0.5,
+                    top: row_offset - 0.5,
+                    right: col_offset + self.font_size.0 + 0.5,
+                    bottom: row_offset + self.font_size.1 + 0.5,
                 },
-                &self.highlight_brush,
-            )
+                &self.cursor_brush,
+            );
         });
 
-        buffer.visible_lines_iter(|i, line| {
+        view.visible_lines_iter(buffer, self.num_rows, self.num_cols, |i, line| {
             let text_layout = unsafe {
                 self.dwrite_factory
                     .CreateTextLayout(

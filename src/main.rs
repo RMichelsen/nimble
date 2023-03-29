@@ -11,8 +11,10 @@ mod language_support;
 mod renderer;
 mod text_utils;
 mod theme;
+mod view;
 
-use editor::{Editor, InputEvent};
+use buffer::DeviceInput;
+use editor::Editor;
 use winit::{
     dpi::PhysicalSize,
     event::{Event, MouseScrollDelta, WindowEvent},
@@ -41,10 +43,10 @@ fn main() {
         } => {
             match delta {
                 MouseScrollDelta::LineDelta(_, lines) => {
-                    editor.handle_input(InputEvent::MouseWheel((lines as isize).signum()));
+                    editor.handle_input(DeviceInput::MouseWheel((lines as isize).signum()));
                 }
                 MouseScrollDelta::PixelDelta(pos) => {
-                    editor.handle_input(InputEvent::MouseWheel((pos.y as isize).signum()));
+                    editor.handle_input(DeviceInput::MouseWheel((pos.y as isize).signum()));
                 }
             }
             window.request_redraw();
@@ -55,6 +57,14 @@ fn main() {
         } => {
             editor.handle_char(chr);
             window.request_redraw();
+        }
+        Event::WindowEvent {
+            event: WindowEvent::KeyboardInput { input, .. },
+            ..
+        } => {
+            if let Some(keycode) = input.virtual_keycode {
+                editor.handle_key(keycode);
+            }
         }
         Event::WindowEvent {
             event: WindowEvent::CloseRequested,
