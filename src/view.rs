@@ -48,15 +48,15 @@ impl View {
             }
         } else {
             for cursor in buffer.cursors.iter() {
-                for (row, start, end) in cursor.get_selection_ranges(&buffer.lines) {
-                    let num = (start..=end)
+                for range in cursor.get_selection_ranges(&buffer.lines) {
+                    let num = (range.start..=range.end)
                         .filter(|col| {
                             self.pos_in_render_visible_range(cursor.row, *col, num_rows, num_cols)
                         })
                         .count();
                     f(
-                        self.absolute_to_view_row(row),
-                        self.absolute_to_view_col(start),
+                        self.absolute_to_view_row(range.row),
+                        self.absolute_to_view_col(range.start),
                         num,
                     );
                 }
