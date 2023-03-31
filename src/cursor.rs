@@ -65,84 +65,55 @@ impl Cursor {
     }
 
     pub fn move_forward_by_word(&mut self, lines: &[Vec<u8>]) {
-        let line_iterator = lines[self.row][self.col..].iter();
-        let next_line_iterator = if self.row < lines.len().saturating_sub(1) {
-            lines[self.row + 1].iter()
-        } else {
-            [].iter()
-        };
-
-        let current_char_type = if lines[self.row].is_empty() {
-            CharType::Whitespace
-        } else {
-            text_utils::get_ascii_char_type(lines[self.row][self.col])
-        };
-        let mut count = if lines[self.row].is_empty() { 1 } else { 0 };
-        let mut separator_found = false;
-        for c in line_iterator.chain(next_line_iterator) {
-            let char_type = text_utils::get_ascii_char_type(*c);
-            separator_found |= current_char_type != char_type;
-            if separator_found && char_type != CharType::Whitespace {
-                break;
-            }
+        let mut count = 0;
+        for chars in lines[self.row][self.col..].windows(2) {
             count += 1;
+            let type1 = text_utils::get_ascii_char_type(chars[0]);
+            let type2 = text_utils::get_ascii_char_type(chars[1]);
+
+            if type2 != CharType::Whitespace && type1 != type2 {
+                self.move_forward(lines, count);
+                return;
+            }
         }
 
-        // Move forward, going to the line below if necessary
-        let line_length = lines[self.row].len().saturating_sub(1);
-        if self.col + count > line_length && self.row < lines.len().saturating_sub(1) {
+        if self.row < lines.len().saturating_sub(1) {
             self.row += 1;
-            self.col = (count - (line_length - self.col)).saturating_sub(1);
-        } else {
-            self.col = min(self.col + count, line_length);
         }
+        self.move_to_first_non_blank_char(lines);
     }
 
     pub fn move_backward_by_word(&mut self, lines: &[Vec<u8>]) {
-        let line_iterator = if !lines[self.row].is_empty() {
-            lines[self.row][..=self.col].iter().rev()
-        } else {
-            [].iter().rev()
-        };
-        let prev_line_iterator = if self.row > 0 {
-            lines[self.row - 1].iter().rev()
-        } else {
-            [].iter().rev()
-        };
-
-        let current_char_type = if lines[self.row].is_empty() {
-            CharType::Whitespace
-        } else {
-            text_utils::get_ascii_char_type(lines[self.row][self.col])
-        };
-        let mut count = if lines[self.row].is_empty() { 1 } else { 0 };
-        let mut separator_found = false;
-        for c in line_iterator.chain(prev_line_iterator) {
-            let char_type = text_utils::get_ascii_char_type(*c);
-            separator_found |= current_char_type != char_type;
-            if separator_found && char_type != CharType::Whitespace {
-                break;
-            }
+        let mut count = 0;
+        for chars in lines[self.row][..self.col].windows(2).rev() {
             count += 1;
+            let type1 = text_utils::get_ascii_char_type(chars[0]);
+            let type2 = text_utils::get_ascii_char_type(chars[1]);
+
+            if type2 != CharType::Whitespace && type1 != type2 {
+                self.move_backward(lines, count);
+                return;
+            }
         }
 
-        // Move backward, going to the line above if necessary
-        if self.col < count && self.row > 0 {
+        if self.col != 0 && !lines[self.row][0].is_ascii_whitespace() {
+            self.col = 0;
+            return;
+        }
+
+        if self.row > 0 {
             self.row -= 1;
-            self.col = lines[self.row].len().saturating_sub(count - self.col);
-        } else {
-            self.col = self.col.saturating_sub(count);
         }
-
         self.move_to_start_of_word(lines)
     }
 
     pub fn move_to_start_of_word(&mut self, lines: &[Vec<u8>]) {
-        let char_type = if lines[self.row].is_empty() {
-            CharType::Whitespace
-        } else {
-            text_utils::get_ascii_char_type(lines[self.row][self.col])
-        };
+        if lines[self.row].is_empty() {
+            return;
+        }
+
+        self.move_to_last_non_blank_char(lines);
+        let char_type = text_utils::get_ascii_char_type(lines[self.row][self.col]);
         if let Some(count) =
             self.chars_until_pred_rev(lines, |c| text_utils::get_ascii_char_type(c) != char_type)
         {
@@ -170,14 +141,24 @@ impl Cursor {
         self.col = self.line_zero_indexed_length(lines);
     }
 
-    pub fn move_forward_to_char(&mut self, lines: &[Vec<u8>], search_char: u8) {
+    pub fn move_forward_to_char_inclusive(&mut self, lines: &[Vec<u8>], search_char: u8) {
         let count = self.chars_until_char(lines, search_char);
         self.move_forward(lines, count);
     }
 
-    pub fn move_backward_to_char(&mut self, lines: &[Vec<u8>], search_char: u8) {
+    pub fn move_backward_to_char_inclusive(&mut self, lines: &[Vec<u8>], search_char: u8) {
         let count = self.chars_until_char_rev(lines, search_char);
         self.move_backward(lines, count);
+    }
+
+    pub fn move_forward_to_char_exclusive(&mut self, lines: &[Vec<u8>], search_char: u8) {
+        let count = self.chars_until_char(lines, search_char);
+        self.move_forward(lines, count.saturating_sub(1));
+    }
+
+    pub fn move_backward_to_char_exclusive(&mut self, lines: &[Vec<u8>], search_char: u8) {
+        let count = self.chars_until_char_rev(lines, search_char);
+        self.move_backward(lines, count.saturating_sub(1));
     }
 
     pub fn move_to_first_non_blank_char(&mut self, lines: &[Vec<u8>]) {
@@ -187,6 +168,17 @@ impl Cursor {
                 break;
             }
             col += 1;
+        }
+        self.col = col
+    }
+
+    pub fn move_to_last_non_blank_char(&mut self, lines: &[Vec<u8>]) {
+        let mut col = self.line_zero_indexed_length(lines);
+        for c in lines[self.row].iter().rev() {
+            if !c.is_ascii_whitespace() {
+                break;
+            }
+            col -= 1;
         }
         self.col = col
     }

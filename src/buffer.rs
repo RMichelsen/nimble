@@ -74,10 +74,24 @@ impl Buffer {
                     "gg" => self.motion(CursorMotion::ToStartOfFile),
                     "G" => self.motion(CursorMotion::ToEndOfFile),
                     s if s.starts_with("f") && s.len() == 2 => {
-                        self.motion(CursorMotion::ForwardToChar(s.chars().nth(1).unwrap() as u8));
+                        self.motion(CursorMotion::ForwardToCharInclusive(
+                            s.chars().nth(1).unwrap() as u8,
+                        ));
                     }
                     s if s.starts_with("F") && s.len() == 2 => {
-                        self.motion(CursorMotion::BackwardToChar(s.chars().nth(1).unwrap() as u8));
+                        self.motion(CursorMotion::BackwardToCharInclusive(
+                            s.chars().nth(1).unwrap() as u8,
+                        ));
+                    }
+                    s if s.starts_with("t") && s.len() == 2 => {
+                        self.motion(CursorMotion::ForwardToCharExclusive(
+                            s.chars().nth(1).unwrap() as u8,
+                        ));
+                    }
+                    s if s.starts_with("T") && s.len() == 2 => {
+                        self.motion(CursorMotion::BackwardToCharExclusive(
+                            s.chars().nth(1).unwrap() as u8,
+                        ));
                     }
 
                     "x" => self.command(BufferCommand::CutSelection),
@@ -87,6 +101,7 @@ impl Buffer {
                     s if s.starts_with("r") && s.len() == 2 => {
                         self.command(BufferCommand::ReplaceChar(s.chars().nth(1).unwrap() as u8));
                     }
+
                     "i" => {
                         self.switch_to_insert_mode();
                         return;
@@ -131,14 +146,37 @@ impl Buffer {
                     "gg" => self.motion(CursorMotion::ToStartOfFile),
                     "G" => self.motion(CursorMotion::ToEndOfFile),
                     s if s.starts_with("f") && s.len() == 2 => {
-                        self.motion(CursorMotion::ForwardToChar(s.chars().nth(1).unwrap() as u8));
+                        self.motion(CursorMotion::ForwardToCharInclusive(
+                            s.chars().nth(1).unwrap() as u8,
+                        ));
                     }
                     s if s.starts_with("F") && s.len() == 2 => {
-                        self.motion(CursorMotion::BackwardToChar(s.chars().nth(1).unwrap() as u8));
+                        self.motion(CursorMotion::BackwardToCharInclusive(
+                            s.chars().nth(1).unwrap() as u8,
+                        ));
+                    }
+                    s if s.starts_with("t") && s.len() == 2 => {
+                        self.motion(CursorMotion::ForwardToCharExclusive(
+                            s.chars().nth(1).unwrap() as u8,
+                        ));
+                    }
+                    s if s.starts_with("T") && s.len() == 2 => {
+                        self.motion(CursorMotion::BackwardToCharExclusive(
+                            s.chars().nth(1).unwrap() as u8,
+                        ));
                     }
 
                     "x" => self.command(BufferCommand::CutSelection),
                     "d" => self.command(BufferCommand::CutSelection),
+
+                    "v" => {
+                        self.switch_to_visual_mode();
+                        return;
+                    }
+                    "V" => {
+                        self.switch_to_visual_line_mode();
+                        return;
+                    }
                     _ => return,
                 }
 
@@ -198,12 +236,20 @@ impl Buffer {
                     cursor.move_to_first_non_blank_char(&self.lines);
                     cursor.unstick_col();
                 }
-                CursorMotion::ForwardToChar(c) => {
-                    cursor.move_forward_to_char(&self.lines, c);
+                CursorMotion::ForwardToCharInclusive(c) => {
+                    cursor.move_forward_to_char_inclusive(&self.lines, c);
                     cursor.unstick_col();
                 }
-                CursorMotion::BackwardToChar(c) => {
-                    cursor.move_backward_to_char(&self.lines, c);
+                CursorMotion::BackwardToCharInclusive(c) => {
+                    cursor.move_backward_to_char_inclusive(&self.lines, c);
+                    cursor.unstick_col();
+                }
+                CursorMotion::ForwardToCharExclusive(c) => {
+                    cursor.move_forward_to_char_exclusive(&self.lines, c);
+                    cursor.unstick_col();
+                }
+                CursorMotion::BackwardToCharExclusive(c) => {
+                    cursor.move_backward_to_char_exclusive(&self.lines, c);
                     cursor.unstick_col();
                 }
             }
@@ -431,11 +477,15 @@ fn is_prefix_of_normal_command(str: &str) -> bool {
         || (str.starts_with("f") && str.len() <= 2)
         || (str.starts_with("F") && str.len() <= 2)
         || (str.starts_with("r") && str.len() <= 2)
+        || (str.starts_with("t") && str.len() <= 2)
+        || (str.starts_with("T") && str.len() <= 2)
 }
 fn is_prefix_of_visual_command(str: &str) -> bool {
     VISUAL_MODE_COMMANDS.iter().any(|cmd| str.is_prefix_of(cmd))
         || (str.starts_with("f") && str.len() <= 2)
         || (str.starts_with("F") && str.len() <= 2)
+        || (str.starts_with("t") && str.len() <= 2)
+        || (str.starts_with("T") && str.len() <= 2)
 }
 
 const NORMAL_MODE_COMMANDS: [&str; 16] = [
@@ -464,8 +514,10 @@ pub enum CursorMotion {
     ToStartOfFile,
     ToEndOfFile,
     ToFirstNonBlankChar,
-    ForwardToChar(u8),
-    BackwardToChar(u8),
+    ForwardToCharInclusive(u8),
+    BackwardToCharInclusive(u8),
+    ForwardToCharExclusive(u8),
+    BackwardToCharExclusive(u8),
 }
 
 pub enum BufferCommand {
