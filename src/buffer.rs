@@ -83,7 +83,10 @@ impl Buffer {
                     s if s.starts_with("r") && s.len() == 2 => {
                         self.command(BufferCommand::ReplaceChar(s.chars().nth(1).unwrap() as u8));
                     }
-
+                    "i" => {
+                        self.switch_to_insert_mode();
+                        return;
+                    }
                     "v" => {
                         self.switch_to_visual_mode();
                         return;
@@ -100,6 +103,9 @@ impl Buffer {
                     cursor.reset_anchor();
                 }
             }
+            BufferMode::Insert => {
+                self.command(BufferCommand::InsertChar(c as u8));
+            }
             BufferMode::Visual | BufferMode::VisualLine => {
                 self.input.push(c);
 
@@ -109,18 +115,8 @@ impl Buffer {
                 }
 
                 match self.input.as_str() {
-                    "j" => {
-                        if self.mode == BufferMode::Visual {
-                            self.cursors.truncate(1);
-                        }
-                        self.motion(CursorMotion::Down(1));
-                    }
-                    "k" => {
-                        if self.mode == BufferMode::Visual {
-                            self.cursors.truncate(1);
-                        }
-                        self.motion(CursorMotion::Up(1));
-                    }
+                    "j" => self.motion(CursorMotion::Down(1)),
+                    "k" => self.motion(CursorMotion::Up(1)),
                     "h" => self.motion(CursorMotion::Backward(1)),
                     "l" => self.motion(CursorMotion::Forward(1)),
                     "w" => self.motion(CursorMotion::ForwardByWord),
@@ -144,7 +140,6 @@ impl Buffer {
 
                 self.input.clear();
             }
-            _ => (),
         }
 
         self.cursors.sort_unstable();
@@ -272,18 +267,17 @@ impl Buffer {
                             self.lines.remove(cursor.row - deleted_lines);
                         }
 
-                        cursor.row = min(
-                            cursor.row - deleted_lines,
-                            self.lines.len().saturating_sub(1),
-                        );
+                        cursor.row = cursor.row.saturating_sub(deleted_lines);
                         cursor.move_to_first_non_blank_char(&self.lines);
                     }
                 }
+                _ => (),
             },
-
             BufferMode::Visual => match command {
                 BufferCommand::CutSelection => {
-                    for cursor in &mut self.cursors {
+                    let mut lines_to_delete = vec![];
+                    let mut deleted_lines = 0;
+                    for cursor in self.cursors.iter_mut() {
                         let selection_ranges = cursor.get_selection_ranges(&self.lines);
                         if selection_ranges.len() == 1 {
                             if let Some(range) = selection_ranges.first() {
@@ -299,6 +293,7 @@ impl Buffer {
                                     };
                                     cursor.col = col;
                                     cursor.anchor_col = col;
+                                    cursor.row = cursor.row.saturating_sub(deleted_lines);
                                 }
                             }
                         }
@@ -308,10 +303,8 @@ impl Buffer {
                             {
                                 self.lines[first.row].drain(first.start..);
                                 let end = Vec::from(
-                                    &self.lines[last.row][min(
-                                        last.end + 1,
-                                        self.lines[last.row].len().saturating_sub(1),
-                                    )..],
+                                    &self.lines[last.row]
+                                        [min(last.end + 1, self.lines[last.row].len())..],
                                 );
                                 self.lines[first.row].push_str(&end);
 
@@ -324,31 +317,58 @@ impl Buffer {
                                 };
                                 cursor.col = col;
                                 cursor.anchor_col = col;
-                                cursor.row = min(cursor.row, cursor.anchor_row);
+                                cursor.row = min(cursor.row, cursor.anchor_row)
+                                    .saturating_sub(deleted_lines);
+                                cursor.anchor_row = cursor.row;
                             }
 
-                            for range in selection_ranges[1..].iter().rev() {
-                                self.lines.remove(range.row);
+                            for range in selection_ranges[1..].iter() {
+                                lines_to_delete.push(range.row);
+                                deleted_lines += 1;
                             }
                         }
                     }
+
+                    lines_to_delete.sort();
+                    lines_to_delete.dedup();
+                    for line in lines_to_delete.iter().rev() {
+                        self.lines.remove(*line);
+                    }
+
                     self.switch_to_normal_mode();
                 }
                 _ => (),
             },
-
             BufferMode::VisualLine => match command {
                 BufferCommand::CutSelection => {
-                    if let Some(cursor) = self.cursors.first_mut() {
+                    let mut lines_to_delete = vec![];
+                    let mut deleted_lines = 0;
+                    for cursor in self.cursors.iter_mut() {
                         let first_row = min(cursor.row, cursor.anchor_row);
                         let last_row = max(cursor.row, cursor.anchor_row);
-                        for row in (first_row..=last_row).rev() {
-                            self.lines.remove(row);
-                        }
-                        cursor.row = first_row;
+                        cursor.row = first_row.saturating_sub(deleted_lines);
+                        cursor.anchor_row = cursor.row;
                         cursor.col = 0;
-                        self.switch_to_normal_mode();
+                        cursor.anchor_col = 0;
+
+                        for row in (first_row..=last_row).rev() {
+                            lines_to_delete.push(row);
+                            deleted_lines += 1;
+                        }
                     }
+
+                    lines_to_delete.sort();
+                    lines_to_delete.dedup();
+                    for line in lines_to_delete.iter().rev() {
+                        self.lines.remove(*line);
+                    }
+
+                    // Special case, if all lines deleted insert an empty line.
+                    if self.lines.is_empty() {
+                        self.lines.push(vec![]);
+                    }
+
+                    self.switch_to_normal_mode();
                 }
                 _ => (),
             },
@@ -362,13 +382,16 @@ impl Buffer {
         self.cursors[0].reset_anchor();
     }
 
+    fn switch_to_insert_mode(&mut self) {
+        self.mode = BufferMode::Insert;
+    }
+
     fn switch_to_visual_mode(&mut self) {
         self.mode = BufferMode::Visual;
         self.input.clear();
     }
 
     fn switch_to_visual_line_mode(&mut self) {
-        self.cursors.truncate(1);
         self.mode = BufferMode::VisualLine;
         self.input.clear();
     }
@@ -422,6 +445,7 @@ pub enum BufferCommand {
     CutSelection,
     ReplaceChar(u8),
     DeleteLine,
+    InsertChar(u8),
 }
 
 pub enum DeviceInput {
