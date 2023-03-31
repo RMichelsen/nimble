@@ -2,7 +2,7 @@ use std::cmp::{max, min, Ordering};
 
 use crate::text_utils::{self, CharType};
 
-#[derive(Clone, Eq)]
+#[derive(Copy, Clone, Eq, Debug)]
 pub struct Cursor {
     pub row: usize,
     pub col: usize,
@@ -15,6 +15,10 @@ pub struct SelectionRange {
     pub row: usize,
     pub start: usize,
     pub end: usize,
+}
+
+pub fn cursors_overlapping(c1: &Cursor, c2: &Cursor) -> bool {
+    c1.overlaps(c2) || c2.overlaps(c1)
 }
 
 impl Cursor {
@@ -227,6 +231,20 @@ impl Cursor {
             });
         }
         ranges
+    }
+
+    pub fn moving_forward(&self) -> bool {
+        self.row > self.anchor_row || (self.row == self.anchor_row && self.col >= self.anchor_col)
+    }
+
+    fn overlaps(&self, other: &Cursor) -> bool {
+        if self.moving_forward() {
+            (self.row > other.anchor_row && self.anchor_row < other.anchor_row)
+                || (self.row == other.anchor_row && self.col >= other.anchor_col)
+        } else {
+            (self.row < other.anchor_row && self.anchor_row > other.anchor_row)
+                || (self.row == other.anchor_row && self.col <= other.anchor_col)
+        }
     }
 
     fn line_zero_indexed_length(&self, lines: &[Vec<u8>]) -> usize {

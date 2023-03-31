@@ -8,7 +8,10 @@ use std::{
 use bstr::{io::BufReadExt, ByteVec};
 use winit::event::VirtualKeyCode;
 
-use crate::{cursor::Cursor, language_support::Language};
+use crate::{
+    cursor::{cursors_overlapping, Cursor},
+    language_support::Language,
+};
 
 pub struct Buffer {
     pub path: String,
@@ -45,6 +48,7 @@ impl Buffer {
 
         self.cursors.sort_unstable();
         self.cursors.dedup();
+        self.merge_cursors();
     }
 
     pub fn handle_char(&mut self, c: char) {
@@ -144,6 +148,7 @@ impl Buffer {
 
         self.cursors.sort_unstable();
         self.cursors.dedup();
+        self.merge_cursors();
     }
 
     pub fn motion(&mut self, motion: CursorMotion) {
@@ -374,6 +379,30 @@ impl Buffer {
             },
             _ => (),
         }
+    }
+
+    fn merge_cursors(&mut self) {
+        let mut merged = vec![];
+        let mut current_cursor = self.cursors.first().unwrap().clone();
+
+        // Since we are always moving all cursors at once, cursors can only merge in the "same direction"
+        for cursor in &self.cursors[1..] {
+            if cursors_overlapping(&current_cursor, cursor) {
+                if cursor.moving_forward() {
+                    current_cursor.row = cursor.row;
+                    current_cursor.col = cursor.col;
+                } else {
+                    current_cursor.anchor_row = cursor.anchor_row;
+                    current_cursor.anchor_col = cursor.anchor_col;
+                }
+            } else {
+                merged.push(current_cursor);
+                current_cursor = *cursor;
+            }
+        }
+        merged.push(current_cursor);
+
+        self.cursors = merged;
     }
 
     fn switch_to_normal_mode(&mut self) {
