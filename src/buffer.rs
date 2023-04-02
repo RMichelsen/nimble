@@ -47,6 +47,7 @@ impl Buffer {
                     VirtualKeyCode::Delete => {
                         self.normal_command(NormalBufferCommand::CutSelection)
                     }
+                    VirtualKeyCode::Return => self.motion(CursorMotion::Down(1)),
                     _ => (),
                 }
                 for cursor in &mut self.cursors {
@@ -62,6 +63,9 @@ impl Buffer {
                     VirtualKeyCode::Delete => {
                         self.insert_command(InsertBufferCommand::DeleteCharFront)
                     }
+                    VirtualKeyCode::Return => {
+                        self.insert_command(InsertBufferCommand::InsertLineBreak)
+                    }
                     _ => (),
                 }
                 for cursor in &mut self.cursors {
@@ -72,6 +76,7 @@ impl Buffer {
                 VirtualKeyCode::Escape => self.switch_to_normal_mode(),
                 VirtualKeyCode::Back => self.motion(CursorMotion::Backward(1)),
                 VirtualKeyCode::Delete => self.visual_command(VisualBufferCommand::CutSelection),
+                VirtualKeyCode::Return => self.motion(CursorMotion::Down(1)),
                 _ => (),
             },
             BufferMode::VisualLine => match key_code {
@@ -80,6 +85,7 @@ impl Buffer {
                 VirtualKeyCode::Delete => {
                     self.visual_line_command(VisualLineBufferCommand::CutSelection)
                 }
+                VirtualKeyCode::Return => self.motion(CursorMotion::Down(1)),
                 _ => (),
             },
         }
@@ -149,24 +155,20 @@ impl Buffer {
                     "i" => {
                         self.motion(CursorMotion::EnterInsertModeBeforeChar);
                         self.switch_to_insert_mode();
-                        return;
                     }
                     "I" => {
                         self.motion(CursorMotion::ToFirstNonBlankChar);
                         self.motion(CursorMotion::EnterInsertModeBeforeChar);
                         self.switch_to_insert_mode();
-                        return;
                     }
                     "a" => {
                         self.motion(CursorMotion::EnterInsertModeAfterChar);
                         self.switch_to_insert_mode();
-                        return;
                     }
                     "A" => {
                         self.motion(CursorMotion::ToEndOfLine);
                         self.motion(CursorMotion::EnterInsertModeAfterChar);
                         self.switch_to_insert_mode();
-                        return;
                     }
                     "o" => {
                         self.normal_command(NormalBufferCommand::InsertLineBelow);
@@ -174,22 +176,18 @@ impl Buffer {
                         self.motion(CursorMotion::ToStartOfLine);
                         self.motion(CursorMotion::EnterInsertModeBeforeChar);
                         self.switch_to_insert_mode();
-                        return;
                     }
                     "O" => {
                         self.normal_command(NormalBufferCommand::InsertLineAbove);
                         self.motion(CursorMotion::ToStartOfLine);
                         self.motion(CursorMotion::EnterInsertModeBeforeChar);
                         self.switch_to_insert_mode();
-                        return;
                     }
                     "v" => {
                         self.switch_to_visual_mode();
-                        return;
                     }
                     "V" => {
                         self.switch_to_visual_line_mode();
-                        return;
                     }
                     _ => return,
                 }
@@ -265,11 +263,9 @@ impl Buffer {
 
                     "v" => {
                         self.switch_to_visual_mode();
-                        return;
                     }
                     "V" => {
                         self.switch_to_visual_line_mode();
-                        return;
                     }
                     _ => return,
                 }
@@ -358,7 +354,7 @@ impl Buffer {
                     }
                 }
                 CursorMotion::EnterInsertModeAfterChar => {
-                    cursor.trailing = cursor.line_zero_indexed_length(&self.lines) > 0;
+                    cursor.trailing = !self.lines[cursor.row].is_empty();
                 }
             }
         }
@@ -572,10 +568,10 @@ impl Buffer {
                         }
                         let end = self.lines[cursor.row].clone();
                         cursor.col = self.lines[cursor.row - 1].len().saturating_sub(1);
+                        cursor.trailing = !self.lines[cursor.row - 1].is_empty();
                         self.lines[cursor.row - 1].push_str(&end);
                         self.lines.remove(cursor.row);
                         cursor.row -= 1;
-                        cursor.trailing = true;
                         deleted_lines += 1;
                     } else {
                         self.lines[cursor.row].remove(cursor.col);
@@ -598,8 +594,10 @@ impl Buffer {
                 let mut column_offsets = HashMap::<usize, isize>::new();
                 for cursor in &mut self.cursors {
                     cursor.row -= deleted_lines;
+                    let mut row_offset = 0;
                     if let Some(offset) = column_offsets.get(&cursor.row) {
                         cursor.col = cursor.col.saturating_add_signed(*offset);
+                        row_offset = *offset;
                     }
 
                     let line_length = cursor.line_zero_indexed_length(&self.lines);
@@ -611,11 +609,12 @@ impl Buffer {
                         self.lines[cursor.row].push_str(&end);
                         self.lines.remove(cursor.row + 1);
                         deleted_lines += 1;
+                        row_offset -= (line_length + 1) as isize;
                         match column_offsets.get_mut(&cursor.row) {
                             None => {
-                                column_offsets.insert(cursor.row, (line_length + 1) as isize);
+                                column_offsets.insert(cursor.row, row_offset as isize);
                             }
-                            Some(cols) => *cols = (line_length + 1) as isize,
+                            Some(cols) => *cols = row_offset as isize,
                         }
                     } else {
                         self.lines[cursor.row].remove(cursor.col + 1);
@@ -625,6 +624,34 @@ impl Buffer {
                             }
                             Some(cols) => *cols -= 1,
                         }
+                    }
+                }
+            }
+            InsertBufferCommand::InsertLineBreak => {
+                let mut inserted_lines = 0;
+                let mut column_offsets = HashMap::<usize, isize>::new();
+                for cursor in &mut self.cursors {
+                    cursor.row += inserted_lines;
+                    let mut row_offset = 0;
+                    if let Some(offset) = column_offsets.get(&cursor.row) {
+                        cursor.col = cursor.col.saturating_add_signed(*offset);
+                        row_offset = *offset;
+                    }
+
+                    let end =
+                        Vec::from(&self.lines[cursor.row][cursor.col + cursor.trailing as usize..]);
+                    self.lines[cursor.row].drain(cursor.col + cursor.trailing as usize..);
+                    row_offset -= self.lines[cursor.row].len() as isize;
+                    self.lines.insert(cursor.row + 1, end);
+                    cursor.row += 1;
+                    cursor.col = 0;
+                    cursor.trailing = false;
+                    inserted_lines += 1;
+                    match column_offsets.get_mut(&cursor.row) {
+                        None => {
+                            column_offsets.insert(cursor.row, row_offset as isize);
+                        }
+                        Some(cols) => *cols = row_offset as isize,
                     }
                 }
             }
@@ -753,6 +780,7 @@ pub enum InsertBufferCommand {
     InsertChar(u8),
     DeleteCharBack,
     DeleteCharFront,
+    InsertLineBreak,
 }
 
 pub enum DeviceInput {
