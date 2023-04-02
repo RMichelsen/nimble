@@ -17,7 +17,7 @@ use buffer::DeviceInput;
 use editor::Editor;
 use winit::{
     dpi::PhysicalSize,
-    event::{Event, MouseScrollDelta, WindowEvent},
+    event::{ElementState, Event, MouseScrollDelta, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
@@ -62,8 +62,10 @@ fn main() {
             event: WindowEvent::KeyboardInput { input, .. },
             ..
         } => {
-            if let Some(keycode) = input.virtual_keycode {
-                editor.handle_key(keycode);
+            if input.state == ElementState::Pressed {
+                if let Some(keycode) = input.virtual_keycode {
+                    editor.handle_key(keycode);
+                }
             }
         }
         Event::WindowEvent {

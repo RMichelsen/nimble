@@ -71,13 +71,14 @@ impl View {
         num_cols: usize,
         f: F,
     ) where
-        F: Fn(usize, usize),
+        F: Fn(usize, usize, bool),
     {
         for cursor in buffer.cursors.iter() {
             if self.pos_in_render_visible_range(cursor.row, cursor.col, num_rows, num_cols) {
                 f(
                     self.absolute_to_view_row(cursor.row),
                     self.absolute_to_view_col(cursor.col),
+                    cursor.trailing,
                 );
             }
         }

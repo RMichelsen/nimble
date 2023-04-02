@@ -9,6 +9,7 @@ pub struct Cursor {
     pub anchor_row: usize,
     pub anchor_col: usize,
     pub cached_col: usize,
+    pub trailing: bool,
 }
 
 pub struct SelectionRange {
@@ -29,6 +30,7 @@ impl Cursor {
             anchor_row: row,
             anchor_col: col,
             cached_col: col,
+            trailing: false,
         }
     }
 
@@ -104,6 +106,7 @@ impl Cursor {
         if self.row > 0 {
             self.row -= 1;
         }
+        self.move_to_last_non_blank_char(lines);
         self.move_to_start_of_word(lines)
     }
 
@@ -112,7 +115,6 @@ impl Cursor {
             return;
         }
 
-        self.move_to_last_non_blank_char(lines);
         let char_type = text_utils::get_ascii_char_type(lines[self.row][self.col]);
         if let Some(count) =
             self.chars_until_pred_rev(lines, |c| text_utils::get_ascii_char_type(c) != char_type)
@@ -229,18 +231,20 @@ impl Cursor {
         self.row > self.anchor_row || (self.row == self.anchor_row && self.col >= self.anchor_col)
     }
 
+    pub fn line_zero_indexed_length(&self, lines: &[Vec<u8>]) -> usize {
+        lines[self.row].len().saturating_sub(1)
+    }
+
     fn overlaps(&self, other: &Cursor) -> bool {
         if self.moving_forward() {
             (self.row > other.anchor_row && self.anchor_row < other.anchor_row)
-                || (self.row == other.anchor_row && self.col >= other.anchor_col)
+                || (self.row == other.anchor_row
+                    && (self.anchor_col..=self.col).contains(&other.anchor_col))
         } else {
             (self.row < other.anchor_row && self.anchor_row > other.anchor_row)
-                || (self.row == other.anchor_row && self.col <= other.anchor_col)
+                || (self.row == other.anchor_row
+                    && (self.anchor_col..=self.col).contains(&other.anchor_col))
         }
-    }
-
-    fn line_zero_indexed_length(&self, lines: &[Vec<u8>]) -> usize {
-        lines[self.row].len().saturating_sub(1)
     }
 
     fn chars_until_pred<F>(&self, lines: &[Vec<u8>], pred: F) -> Option<usize>
@@ -301,6 +305,6 @@ impl PartialOrd for Cursor {
 
 impl PartialEq for Cursor {
     fn eq(&self, other: &Self) -> bool {
-        self.row == other.row && self.col == other.col
+        self.row == other.row && self.col == other.col && self.trailing == other.trailing
     }
 }

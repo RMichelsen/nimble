@@ -1,4 +1,4 @@
-use bstr::ByteSlice; //aaaaaa aaaa
+use bstr::ByteSlice;
 use widestring::{u16str, U16CString};
 use windows::{
     core::PCWSTR,
@@ -27,7 +27,7 @@ use windows::{
 use winit::{platform::windows::WindowExtWindows, window::Window};
 
 use crate::{
-    buffer::Buffer,
+    buffer::{Buffer, BufferMode},
     text_utils,
     theme::{
         BACKGROUND_COLOR, COMMENT_COLOR, CURSOR_COLOR, DEFAULT_BRUSH_PROPERTIES, HIGHLIGHT_COLOR,
@@ -173,38 +173,60 @@ impl Renderer {
             self.render_target.Clear(Some(&BACKGROUND_COLOR)); //asdasdasds
         }
 
-        view.visible_cursors_iter(
+        if buffer.mode != BufferMode::Insert {
+            view.visible_cursors_iter(
+                buffer,
+                self.num_rows,
+                self.num_cols,
+                |row, col, num| unsafe {
+                    let (row_offset, col_offset) =
+                        (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
+                    self.render_target.FillRectangle(
+                        &D2D_RECT_F {
+                            left: col_offset - 0.5,
+                            top: row_offset - 0.5,
+                            right: col_offset + self.font_size.0 * num as f32 + 0.5,
+                            bottom: row_offset + self.font_size.1 + 0.5,
+                        },
+                        &self.highlight_brush,
+                    );
+                },
+            );
+        }
+
+        view.visible_cursor_leads_iter(
             buffer,
             self.num_rows,
             self.num_cols,
-            |row, col, num| unsafe {
+            |row, col, trailing| unsafe {
                 let (row_offset, col_offset) =
                     (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
-                self.render_target.FillRectangle(
-                    &D2D_RECT_F {
-                        left: col_offset - 0.5,
-                        top: row_offset - 0.5,
-                        right: col_offset + self.font_size.0 * num as f32 + 0.5,
-                        bottom: row_offset + self.font_size.1 + 0.5,
-                    },
-                    &self.highlight_brush,
-                );
+                if buffer.mode == BufferMode::Insert {
+                    self.render_target.FillRectangle(
+                        &D2D_RECT_F {
+                            left: col_offset + self.font_size.0 * if trailing { 0.9 } else { 0.0 }
+                                - 0.5,
+                            top: row_offset - 0.5,
+                            right: col_offset
+                                + self.font_size.0 * if trailing { 1.0 } else { 0.1 }
+                                + 0.5,
+                            bottom: row_offset + self.font_size.1 + 0.5,
+                        },
+                        &self.cursor_brush,
+                    );
+                } else {
+                    self.render_target.FillRectangle(
+                        &D2D_RECT_F {
+                            left: col_offset - 0.5,
+                            top: row_offset - 0.5,
+                            right: col_offset + self.font_size.0 + 0.5,
+                            bottom: row_offset + self.font_size.1 + 0.5,
+                        },
+                        &self.cursor_brush,
+                    );
+                }
             },
         );
-
-        view.visible_cursor_leads_iter(buffer, self.num_rows, self.num_cols, |row, col| unsafe {
-            let (row_offset, col_offset) =
-                (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
-            self.render_target.FillRectangle(
-                &D2D_RECT_F {
-                    left: col_offset - 0.5,
-                    top: row_offset - 0.5,
-                    right: col_offset + self.font_size.0 + 0.5,
-                    bottom: row_offset + self.font_size.1 + 0.5,
-                },
-                &self.cursor_brush,
-            );
-        });
 
         view.visible_lines_iter(buffer, self.num_rows, self.num_cols, |i, line| {
             let text_layout = unsafe {

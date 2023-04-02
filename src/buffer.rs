@@ -1,5 +1,6 @@
 use std::{
     cmp::{max, min},
+    collections::HashMap,
     fs::File,
     io::BufReader,
     str::pattern::Pattern,
@@ -38,17 +39,58 @@ impl Buffer {
     }
 
     pub fn handle_key(&mut self, key_code: VirtualKeyCode) {
-        match key_code {
-            VirtualKeyCode::Escape => {
-                self.cursors.truncate(1);
-                self.switch_to_normal_mode();
+        match self.mode {
+            BufferMode::Normal => {
+                match key_code {
+                    VirtualKeyCode::Escape => self.cursors.truncate(1),
+                    VirtualKeyCode::Back => self.motion(CursorMotion::Backward(1)),
+                    VirtualKeyCode::Delete => {
+                        self.normal_command(NormalBufferCommand::CutSelection)
+                    }
+                    _ => (),
+                }
+                for cursor in &mut self.cursors {
+                    cursor.reset_anchor();
+                }
             }
-            _ => (),
+            BufferMode::Insert => {
+                match key_code {
+                    VirtualKeyCode::Escape => self.switch_to_normal_mode(),
+                    VirtualKeyCode::Back => {
+                        self.insert_command(InsertBufferCommand::DeleteCharBack)
+                    }
+                    VirtualKeyCode::Delete => {
+                        self.insert_command(InsertBufferCommand::DeleteCharFront)
+                    }
+                    _ => (),
+                }
+                for cursor in &mut self.cursors {
+                    cursor.reset_anchor();
+                }
+            }
+            BufferMode::Visual => match key_code {
+                VirtualKeyCode::Escape => self.switch_to_normal_mode(),
+                VirtualKeyCode::Back => self.motion(CursorMotion::Backward(1)),
+                VirtualKeyCode::Delete => self.visual_command(VisualBufferCommand::CutSelection),
+                _ => (),
+            },
+            BufferMode::VisualLine => match key_code {
+                VirtualKeyCode::Escape => self.switch_to_normal_mode(),
+                VirtualKeyCode::Back => self.motion(CursorMotion::Backward(1)),
+                VirtualKeyCode::Delete => {
+                    self.visual_line_command(VisualLineBufferCommand::CutSelection)
+                }
+                _ => (),
+            },
         }
 
         self.cursors.sort_unstable();
         self.cursors.dedup();
-        self.merge_cursors();
+
+        // In insert mode, merging is impliclitly done by dedup.
+        if self.mode != BufferMode::Insert {
+            self.merge_cursors();
+        }
     }
 
     pub fn handle_char(&mut self, c: char) {
@@ -94,15 +136,50 @@ impl Buffer {
                         ));
                     }
 
-                    "x" => self.command(BufferCommand::CutSelection),
-                    "dd" => self.command(BufferCommand::DeleteLine),
-                    "J" => self.command(BufferCommand::InsertCursorBelow),
-                    "K" => self.command(BufferCommand::InsertCursorAbove),
+                    "x" => self.normal_command(NormalBufferCommand::CutSelection),
+                    "dd" => self.normal_command(NormalBufferCommand::DeleteLine),
+                    "J" => self.normal_command(NormalBufferCommand::InsertCursorBelow),
+                    "K" => self.normal_command(NormalBufferCommand::InsertCursorAbove),
                     s if s.starts_with("r") && s.len() == 2 => {
-                        self.command(BufferCommand::ReplaceChar(s.chars().nth(1).unwrap() as u8));
+                        self.normal_command(NormalBufferCommand::ReplaceChar(
+                            s.chars().nth(1).unwrap() as u8,
+                        ));
                     }
 
                     "i" => {
+                        self.motion(CursorMotion::EnterInsertModeBeforeChar);
+                        self.switch_to_insert_mode();
+                        return;
+                    }
+                    "I" => {
+                        self.motion(CursorMotion::ToFirstNonBlankChar);
+                        self.motion(CursorMotion::EnterInsertModeBeforeChar);
+                        self.switch_to_insert_mode();
+                        return;
+                    }
+                    "a" => {
+                        self.motion(CursorMotion::EnterInsertModeAfterChar);
+                        self.switch_to_insert_mode();
+                        return;
+                    }
+                    "A" => {
+                        self.motion(CursorMotion::ToEndOfLine);
+                        self.motion(CursorMotion::EnterInsertModeAfterChar);
+                        self.switch_to_insert_mode();
+                        return;
+                    }
+                    "o" => {
+                        self.normal_command(NormalBufferCommand::InsertLineBelow);
+                        self.motion(CursorMotion::Down(1));
+                        self.motion(CursorMotion::ToStartOfLine);
+                        self.motion(CursorMotion::EnterInsertModeBeforeChar);
+                        self.switch_to_insert_mode();
+                        return;
+                    }
+                    "O" => {
+                        self.normal_command(NormalBufferCommand::InsertLineAbove);
+                        self.motion(CursorMotion::ToStartOfLine);
+                        self.motion(CursorMotion::EnterInsertModeBeforeChar);
                         self.switch_to_insert_mode();
                         return;
                     }
@@ -123,7 +200,12 @@ impl Buffer {
                 }
             }
             BufferMode::Insert => {
-                self.command(BufferCommand::InsertChar(c as u8));
+                if c as u8 >= 0x20 && c as u8 <= 0x7E {
+                    self.insert_command(InsertBufferCommand::InsertChar(c as u8));
+                }
+                for cursor in &mut self.cursors {
+                    cursor.reset_anchor();
+                }
             }
             BufferMode::Visual | BufferMode::VisualLine => {
                 self.input.push(c);
@@ -166,8 +248,20 @@ impl Buffer {
                         ));
                     }
 
-                    "x" => self.command(BufferCommand::CutSelection),
-                    "d" => self.command(BufferCommand::CutSelection),
+                    "x" => {
+                        if self.mode == BufferMode::Visual {
+                            self.visual_command(VisualBufferCommand::CutSelection);
+                        } else {
+                            self.visual_line_command(VisualLineBufferCommand::CutSelection)
+                        }
+                    }
+                    "d" => {
+                        if self.mode == BufferMode::Visual {
+                            self.visual_command(VisualBufferCommand::CutSelection);
+                        } else {
+                            self.visual_line_command(VisualLineBufferCommand::CutSelection)
+                        }
+                    }
 
                     "v" => {
                         self.switch_to_visual_mode();
@@ -186,7 +280,10 @@ impl Buffer {
 
         self.cursors.sort_unstable();
         self.cursors.dedup();
-        self.merge_cursors();
+        // In insert mode, merging is impliclitly done by dedup.
+        if self.mode != BufferMode::Insert {
+            self.merge_cursors();
+        }
     }
 
     pub fn motion(&mut self, motion: CursorMotion) {
@@ -252,178 +349,285 @@ impl Buffer {
                     cursor.move_backward_to_char_exclusive(&self.lines, c);
                     cursor.unstick_col();
                 }
+                CursorMotion::EnterInsertModeBeforeChar => {
+                    if cursor.col == 0 {
+                        cursor.trailing = false;
+                    } else {
+                        cursor.move_backward(&self.lines, 1);
+                        cursor.trailing = true;
+                    }
+                }
+                CursorMotion::EnterInsertModeAfterChar => {
+                    cursor.trailing = cursor.line_zero_indexed_length(&self.lines) > 0;
+                }
             }
         }
     }
 
-    pub fn command(&mut self, command: BufferCommand) {
-        match self.mode {
-            BufferMode::Normal => match command {
-                BufferCommand::InsertCursorAbove => {
-                    if let Some(first_cursor) = self.cursors.first() {
-                        if first_cursor.row == 0 {
-                            return;
-                        }
+    pub fn normal_command(&mut self, command: NormalBufferCommand) {
+        match command {
+            NormalBufferCommand::InsertCursorAbove => {
+                if let Some(first_cursor) = self.cursors.first() {
+                    if first_cursor.row == 0 {
+                        return;
+                    }
 
-                        let row_above = first_cursor.row - 1;
+                    let row_above = first_cursor.row - 1;
 
-                        self.cursors.push(Cursor::new(
-                            row_above,
-                            min(
-                                first_cursor.col,
-                                self.lines[row_above].len().saturating_sub(1),
-                            ),
-                        ));
+                    self.cursors.push(Cursor::new(
+                        row_above,
+                        min(
+                            first_cursor.col,
+                            self.lines[row_above].len().saturating_sub(1),
+                        ),
+                    ));
+                }
+            }
+            NormalBufferCommand::InsertCursorBelow => {
+                if let Some(last_cursor) = self.cursors.last() {
+                    if last_cursor.row == self.lines.len().saturating_sub(1) {
+                        return;
+                    }
+
+                    let row_below = last_cursor.row + 1;
+
+                    self.cursors.push(Cursor::new(
+                        row_below,
+                        min(
+                            last_cursor.col,
+                            self.lines[row_below].len().saturating_sub(1),
+                        ),
+                    ));
+                }
+            }
+            NormalBufferCommand::CutSelection => {
+                for cursor in &mut self.cursors {
+                    if !self.lines[cursor.row].is_empty() {
+                        self.lines[cursor.row].remove(cursor.col);
+                        cursor.col =
+                            min(cursor.col, self.lines[cursor.row].len().saturating_sub(1));
                     }
                 }
-                BufferCommand::InsertCursorBelow => {
-                    if let Some(last_cursor) = self.cursors.last() {
-                        if last_cursor.row == self.lines.len().saturating_sub(1) {
-                            return;
-                        }
-
-                        let row_below = last_cursor.row + 1;
-
-                        self.cursors.push(Cursor::new(
-                            row_below,
-                            min(
-                                last_cursor.col,
-                                self.lines[row_below].len().saturating_sub(1),
-                            ),
-                        ));
+            }
+            NormalBufferCommand::ReplaceChar(c) => {
+                for cursor in &mut self.cursors {
+                    if !self.lines[cursor.row].is_empty() {
+                        self.lines[cursor.row][cursor.col] = c;
                     }
                 }
-                BufferCommand::CutSelection => {
-                    for cursor in &mut self.cursors {
-                        if !self.lines[cursor.row].is_empty() {
-                            self.lines[cursor.row].remove(cursor.col);
-                            cursor.col =
-                                min(cursor.col, self.lines[cursor.row].len().saturating_sub(1));
-                        }
+            }
+            NormalBufferCommand::DeleteLine => {
+                for (deleted_lines, cursor) in self.cursors.iter_mut().enumerate() {
+                    // Special case: if only the last line remains, simply delete its content.
+                    if cursor.row - deleted_lines == 0 && self.lines.len() == 1 {
+                        self.lines[0].clear();
+                    } else {
+                        self.lines.remove(cursor.row - deleted_lines);
                     }
-                }
-                BufferCommand::ReplaceChar(c) => {
-                    for cursor in &mut self.cursors {
-                        if !self.lines[cursor.row].is_empty() {
-                            self.lines[cursor.row][cursor.col] = c;
-                        }
-                    }
-                }
-                BufferCommand::DeleteLine => {
-                    for (deleted_lines, cursor) in self.cursors.iter_mut().enumerate() {
-                        // Special case: if only the last line remains, simply delete its content.
-                        if cursor.row - deleted_lines == 0 && self.lines.len() == 1 {
-                            self.lines[0].clear();
-                        } else {
-                            self.lines.remove(cursor.row - deleted_lines);
-                        }
 
-                        cursor.row = cursor.row.saturating_sub(deleted_lines);
-                        cursor.move_to_first_non_blank_char(&self.lines);
-                    }
+                    cursor.row = cursor.row.saturating_sub(deleted_lines);
+                    cursor.move_to_first_non_blank_char(&self.lines);
                 }
-                _ => (),
-            },
-            BufferMode::Visual => match command {
-                BufferCommand::CutSelection => {
-                    let mut lines_to_delete = vec![];
-                    let mut deleted_lines = 0;
-                    for cursor in self.cursors.iter_mut() {
-                        let selection_ranges = cursor.get_selection_ranges(&self.lines);
-                        if selection_ranges.len() == 1 {
-                            if let Some(range) = selection_ranges.first() {
-                                if !self.lines[range.row].is_empty() {
-                                    self.lines[range.row].drain(range.start..=range.end);
+            }
+            NormalBufferCommand::InsertLineAbove => {
+                for (insterted_lines, cursor) in self.cursors.iter_mut().enumerate() {
+                    cursor.row += insterted_lines;
+                    self.lines.insert(cursor.row, vec![]);
+                }
+            }
+            NormalBufferCommand::InsertLineBelow => {
+                for (insterted_lines, cursor) in self.cursors.iter_mut().enumerate() {
+                    cursor.row += insterted_lines;
+                    self.lines.insert(cursor.row + 1, vec![]);
+                }
+            }
+        }
+    }
+    pub fn visual_command(&mut self, command: VisualBufferCommand) {
+        match command {
+            VisualBufferCommand::CutSelection => {
+                let mut lines_to_delete = vec![];
+                let mut deleted_lines = 0;
+                for cursor in self.cursors.iter_mut() {
+                    let selection_ranges = cursor.get_selection_ranges(&self.lines);
+                    if selection_ranges.len() == 1 {
+                        if let Some(range) = selection_ranges.first() {
+                            if !self.lines[range.row].is_empty() {
+                                self.lines[range.row].drain(range.start..=range.end);
 
-                                    let col = if range.start
-                                        > self.lines[range.row].len().saturating_sub(1)
-                                    {
-                                        range.start.saturating_sub(1)
-                                    } else {
-                                        range.start
-                                    };
-                                    cursor.col = col;
-                                    cursor.anchor_col = col;
-                                    cursor.row = cursor.row.saturating_sub(deleted_lines);
-                                }
-                            }
-                        }
-                        if selection_ranges.len() > 1 {
-                            if let (Some(first), Some(last)) =
-                                (selection_ranges.first(), selection_ranges.last())
-                            {
-                                self.lines[first.row].drain(first.start..);
-                                let end = Vec::from(
-                                    &self.lines[last.row]
-                                        [min(last.end + 1, self.lines[last.row].len())..],
-                                );
-                                self.lines[first.row].push_str(&end);
-
-                                let col = if first.start
-                                    > self.lines[first.row].len().saturating_sub(1)
+                                let col = if range.start
+                                    > self.lines[range.row].len().saturating_sub(1)
                                 {
-                                    first.start.saturating_sub(1)
+                                    range.start.saturating_sub(1)
                                 } else {
-                                    first.start
+                                    range.start
                                 };
                                 cursor.col = col;
                                 cursor.anchor_col = col;
-                                cursor.row = min(cursor.row, cursor.anchor_row)
-                                    .saturating_sub(deleted_lines);
-                                cursor.anchor_row = cursor.row;
-                            }
-
-                            for range in selection_ranges[1..].iter() {
-                                lines_to_delete.push(range.row);
-                                deleted_lines += 1;
+                                cursor.row = cursor.row.saturating_sub(deleted_lines);
                             }
                         }
                     }
+                    if selection_ranges.len() > 1 {
+                        if let (Some(first), Some(last)) =
+                            (selection_ranges.first(), selection_ranges.last())
+                        {
+                            self.lines[first.row].drain(first.start..);
+                            let end = Vec::from(
+                                &self.lines[last.row]
+                                    [min(last.end + 1, self.lines[last.row].len())..],
+                            );
+                            self.lines[first.row].push_str(&end);
 
-                    lines_to_delete.sort();
-                    lines_to_delete.dedup();
-                    for line in lines_to_delete.iter().rev() {
-                        self.lines.remove(*line);
-                    }
+                            let col = if first.start > self.lines[first.row].len().saturating_sub(1)
+                            {
+                                first.start.saturating_sub(1)
+                            } else {
+                                first.start
+                            };
+                            cursor.col = col;
+                            cursor.anchor_col = col;
+                            cursor.row =
+                                min(cursor.row, cursor.anchor_row).saturating_sub(deleted_lines);
+                            cursor.anchor_row = cursor.row;
+                        }
 
-                    self.switch_to_normal_mode();
-                }
-                _ => (),
-            },
-            BufferMode::VisualLine => match command {
-                BufferCommand::CutSelection => {
-                    let mut lines_to_delete = vec![];
-                    let mut deleted_lines = 0;
-                    for cursor in self.cursors.iter_mut() {
-                        let first_row = min(cursor.row, cursor.anchor_row);
-                        let last_row = max(cursor.row, cursor.anchor_row);
-                        cursor.row = first_row.saturating_sub(deleted_lines);
-                        cursor.anchor_row = cursor.row;
-                        cursor.col = 0;
-                        cursor.anchor_col = 0;
-
-                        for row in (first_row..=last_row).rev() {
-                            lines_to_delete.push(row);
+                        for range in selection_ranges[1..].iter() {
+                            lines_to_delete.push(range.row);
                             deleted_lines += 1;
                         }
                     }
-
-                    lines_to_delete.sort();
-                    lines_to_delete.dedup();
-                    for line in lines_to_delete.iter().rev() {
-                        self.lines.remove(*line);
-                    }
-
-                    // Special case, if all lines deleted insert an empty line.
-                    if self.lines.is_empty() {
-                        self.lines.push(vec![]);
-                    }
-
-                    self.switch_to_normal_mode();
                 }
-                _ => (),
-            },
-            _ => (),
+
+                lines_to_delete.sort();
+                lines_to_delete.dedup();
+                for line in lines_to_delete.iter().rev() {
+                    self.lines.remove(*line);
+                }
+
+                self.switch_to_normal_mode();
+            }
+        }
+    }
+
+    pub fn visual_line_command(&mut self, command: VisualLineBufferCommand) {
+        match command {
+            VisualLineBufferCommand::CutSelection => {
+                let mut lines_to_delete = vec![];
+                let mut deleted_lines = 0;
+                for cursor in self.cursors.iter_mut() {
+                    let first_row = min(cursor.row, cursor.anchor_row);
+                    let last_row = max(cursor.row, cursor.anchor_row);
+                    cursor.row = first_row.saturating_sub(deleted_lines);
+                    cursor.anchor_row = cursor.row;
+                    cursor.col = 0;
+                    cursor.anchor_col = 0;
+
+                    for row in (first_row..=last_row).rev() {
+                        lines_to_delete.push(row);
+                        deleted_lines += 1;
+                    }
+                }
+
+                lines_to_delete.sort();
+                lines_to_delete.dedup();
+                for line in lines_to_delete.iter().rev() {
+                    self.lines.remove(*line);
+                }
+
+                // Special case, if all lines deleted insert an empty line.
+                if self.lines.is_empty() {
+                    self.lines.push(vec![]);
+                }
+
+                self.switch_to_normal_mode();
+            }
+        }
+    }
+
+    pub fn insert_command(&mut self, command: InsertBufferCommand) {
+        match command {
+            InsertBufferCommand::InsertChar(c) => {
+                for cursor in &mut self.cursors {
+                    self.lines[cursor.row].insert(cursor.col + cursor.trailing as usize, c);
+                    if cursor.trailing {
+                        cursor.col += 1;
+                    } else {
+                        cursor.trailing = true;
+                    }
+                }
+            }
+            InsertBufferCommand::DeleteCharBack => {
+                let mut deleted_lines = 0;
+                let mut deleted_cols = HashMap::<usize, usize>::new();
+                for cursor in &mut self.cursors {
+                    cursor.row -= deleted_lines;
+                    if let Some(deleted_cols) = deleted_cols.get(&cursor.row) {
+                        cursor.col -= deleted_cols;
+                    }
+
+                    if cursor.col == 0 && !cursor.trailing {
+                        if cursor.row == 0 {
+                            continue;
+                        }
+                        let end = self.lines[cursor.row].clone();
+                        cursor.col = self.lines[cursor.row - 1].len().saturating_sub(1);
+                        self.lines[cursor.row - 1].push_str(&end);
+                        self.lines.remove(cursor.row);
+                        cursor.row -= 1;
+                        cursor.trailing = true;
+                        deleted_lines += 1;
+                    } else {
+                        self.lines[cursor.row].remove(cursor.col);
+                        match deleted_cols.get_mut(&cursor.row) {
+                            None => {
+                                deleted_cols.insert(cursor.row, 1);
+                            }
+                            Some(cols) => *cols += 1,
+                        }
+                        if cursor.col == 0 {
+                            cursor.trailing = false;
+                        } else {
+                            cursor.col -= 1;
+                        }
+                    }
+                }
+            }
+            InsertBufferCommand::DeleteCharFront => {
+                let mut deleted_lines = 0;
+                let mut column_offsets = HashMap::<usize, isize>::new();
+                for cursor in &mut self.cursors {
+                    cursor.row -= deleted_lines;
+                    if let Some(offset) = column_offsets.get(&cursor.row) {
+                        cursor.col = cursor.col.saturating_add_signed(*offset);
+                    }
+
+                    let line_length = cursor.line_zero_indexed_length(&self.lines);
+                    if (cursor.col == line_length && cursor.trailing) || line_length == 0 {
+                        if cursor.row == self.lines.len().saturating_sub(1) {
+                            continue;
+                        }
+                        let end = self.lines[cursor.row + 1].clone();
+                        self.lines[cursor.row].push_str(&end);
+                        self.lines.remove(cursor.row + 1);
+                        deleted_lines += 1;
+                        match column_offsets.get_mut(&cursor.row) {
+                            None => {
+                                column_offsets.insert(cursor.row, (line_length + 1) as isize);
+                            }
+                            Some(cols) => *cols = (line_length + 1) as isize,
+                        }
+                    } else {
+                        self.lines[cursor.row].remove(cursor.col + 1);
+                        match column_offsets.get_mut(&cursor.row) {
+                            None => {
+                                column_offsets.insert(cursor.row, -1);
+                            }
+                            Some(cols) => *cols -= 1,
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -454,11 +658,16 @@ impl Buffer {
     fn switch_to_normal_mode(&mut self) {
         self.mode = BufferMode::Normal;
         self.input.clear();
-        self.cursors[0].reset_anchor();
+        for cursor in &mut self.cursors {
+            cursor.reset_anchor();
+        }
     }
 
     fn switch_to_insert_mode(&mut self) {
         self.mode = BufferMode::Insert;
+        for cursor in &mut self.cursors {
+            cursor.reset_anchor();
+        }
     }
 
     fn switch_to_visual_mode(&mut self) {
@@ -518,15 +727,32 @@ pub enum CursorMotion {
     BackwardToCharInclusive(u8),
     ForwardToCharExclusive(u8),
     BackwardToCharExclusive(u8),
+    EnterInsertModeBeforeChar,
+    EnterInsertModeAfterChar,
 }
 
-pub enum BufferCommand {
+pub enum VisualBufferCommand {
+    CutSelection,
+}
+
+pub enum VisualLineBufferCommand {
+    CutSelection,
+}
+
+pub enum NormalBufferCommand {
     InsertCursorAbove,
     InsertCursorBelow,
-    CutSelection,
     ReplaceChar(u8),
+    CutSelection,
     DeleteLine,
+    InsertLineAbove,
+    InsertLineBelow,
+}
+
+pub enum InsertBufferCommand {
     InsertChar(u8),
+    DeleteCharBack,
+    DeleteCharFront,
 }
 
 pub enum DeviceInput {
