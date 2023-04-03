@@ -8,6 +8,7 @@ pub const RUST_KEYWORDS: [&str; 38] = [
     "while", "async", "await", "dyn",
 ];
 pub const RUST_LINE_COMMENT_TOKEN: &str = "//";
+pub const RUST_LANGUAGE_SERVER: &str = "rust-analyzer";
 pub const RUST_FILE_EXTENSIONS: [&str; 1] = ["rs"];
 
 #[rustfmt::skip]
@@ -25,10 +26,12 @@ pub const CPP_KEYWORDS: [&str; 92] = [
     "virtual", "void", "volatile", "wchar_t", "while", "xor", "xor_eq"
 ];
 pub const CPP_LINE_COMMENT_TOKEN: &str = "//";
+pub const CPP_LANGUAGE_SERVER: &str = "clangd";
 pub const CPP_FILE_EXTENSIONS: [&str; 6] = ["c", "h", "cpp", "hpp", "cc", "cxx"];
 
 pub struct Language {
     pub identifier: &'static str,
+    pub lsp_executable: Option<&'static str>,
     pub keywords: Option<&'static [&'static str]>,
     pub line_comment_token: Option<&'static str>,
 }
@@ -40,12 +43,14 @@ impl Language {
                 if CPP_FILE_EXTENSIONS.contains(&extension) {
                     return Self {
                         identifier: "Cpp",
+                        lsp_executable: Some(CPP_LANGUAGE_SERVER),
                         keywords: Some(&CPP_KEYWORDS),
                         line_comment_token: Some(CPP_LINE_COMMENT_TOKEN),
                     };
                 } else if RUST_FILE_EXTENSIONS.contains(&extension) {
                     return Self {
                         identifier: "Rust",
+                        lsp_executable: Some(RUST_LANGUAGE_SERVER),
                         keywords: Some(&RUST_KEYWORDS),
                         line_comment_token: Some(RUST_LINE_COMMENT_TOKEN),
                     };
@@ -55,6 +60,7 @@ impl Language {
 
         Self {
             identifier: "Unknown",
+            lsp_executable: None,
             keywords: None,
             line_comment_token: None,
         }

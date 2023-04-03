@@ -4,33 +4,100 @@ use crate::text_utils::{self, CharType};
 
 #[derive(Copy, Clone, Eq, Debug)]
 pub struct Cursor {
-    pub row: usize,
+    pub line: usize,
     pub col: usize,
-    pub anchor_row: usize,
+    pub anchor_line: usize,
     pub anchor_col: usize,
     pub cached_col: usize,
-    pub trailing: bool,
+    pub completion_active: bool,
 }
 
+#[derive(Debug)]
 pub struct SelectionRange {
-    pub row: usize,
+    pub line: usize,
     pub start: usize,
     pub end: usize,
+}
+
+pub enum LineChange {
+    Inserted(usize),
+    Removed(usize),
+}
+
+#[derive(Debug)]
+pub enum ColChange {
+    Inserted(usize, usize),
+    Removed(usize, usize),
+}
+
+pub struct RemoveCols {
+    pub line: usize,
 }
 
 pub fn cursors_overlapping(c1: &Cursor, c2: &Cursor) -> bool {
     c1.overlaps(c2) || c2.overlaps(c1)
 }
 
+pub fn cursors_foreach_rebalance<F>(mut cursors: &mut [Cursor], mut f: F)
+where
+    F: FnMut(&mut Cursor) -> (Vec<LineChange>, Vec<ColChange>),
+{
+    while let Some((cursor, tail)) = cursors.split_first_mut() {
+        let (line_changes, col_changes) = f(cursor);
+        rebalance_cursors(tail, &line_changes, &col_changes);
+        cursors = tail;
+    }
+}
+
+pub fn rebalance_cursors(
+    cursors: &mut [Cursor],
+    line_changes: &[LineChange],
+    col_changes: &[ColChange],
+) {
+    for cursor in cursors {
+        for change in line_changes {
+            match change {
+                LineChange::Inserted(line) => {
+                    let offset = (cursor.line >= *line) as usize;
+                    cursor.line += offset;
+                    cursor.anchor_line += offset;
+                }
+                LineChange::Removed(line) => {
+                    let offset = (cursor.line >= *line) as usize;
+                    cursor.line -= offset;
+                    cursor.anchor_line -= offset;
+                }
+            }
+        }
+        for change in col_changes {
+            match change {
+                ColChange::Inserted(line, num) if cursor.line == *line => {
+                    cursor.col += *num;
+                }
+                ColChange::Inserted(line, num) if cursor.anchor_line == *line => {
+                    cursor.anchor_col += *num;
+                }
+                ColChange::Removed(line, num) if cursor.line == *line => {
+                    cursor.col -= *num;
+                }
+                ColChange::Removed(line, num) if cursor.anchor_line == *line => {
+                    cursor.anchor_col -= *num;
+                }
+                _ => (),
+            }
+        }
+    }
+}
+
 impl Cursor {
-    pub fn new(row: usize, col: usize) -> Self {
+    pub fn new(line: usize, col: usize) -> Self {
         Self {
-            row,
+            line,
             col,
-            anchor_row: row,
+            anchor_line: line,
             anchor_col: col,
             cached_col: col,
-            trailing: false,
+            completion_active: true,
         }
     }
 
@@ -43,7 +110,7 @@ impl Cursor {
     }
 
     pub fn move_down(&mut self, lines: &[Vec<u8>], count: usize) {
-        self.row = min(self.row + count, lines.len().saturating_sub(1));
+        self.line = min(self.line + count, lines.len().saturating_sub(1));
         self.col = min(
             max(self.cached_col, self.col),
             self.line_zero_indexed_length(lines),
@@ -51,7 +118,7 @@ impl Cursor {
     }
 
     pub fn move_up(&mut self, lines: &[Vec<u8>], count: usize) {
-        self.row = self.row.saturating_sub(count);
+        self.line = self.line.saturating_sub(count);
         self.col = min(
             max(self.cached_col, self.col),
             self.line_zero_indexed_length(lines),
@@ -68,7 +135,7 @@ impl Cursor {
 
     pub fn move_forward_by_word(&mut self, lines: &[Vec<u8>]) {
         let mut count = 0;
-        for chars in lines[self.row][self.col..].windows(2) {
+        for chars in lines[self.line][self.col..].windows(2) {
             count += 1;
             let type1 = text_utils::get_ascii_char_type(chars[0]);
             let type2 = text_utils::get_ascii_char_type(chars[1]);
@@ -79,15 +146,15 @@ impl Cursor {
             }
         }
 
-        if self.row < lines.len().saturating_sub(1) {
-            self.row += 1;
+        if self.line < lines.len().saturating_sub(1) {
+            self.line += 1;
         }
         self.move_to_first_non_blank_char(lines);
     }
 
     pub fn move_backward_by_word(&mut self, lines: &[Vec<u8>]) {
         let mut count = 0;
-        for chars in lines[self.row][..self.col].windows(2).rev() {
+        for chars in lines[self.line][..self.col].windows(2).rev() {
             count += 1;
             let type1 = text_utils::get_ascii_char_type(chars[0]);
             let type2 = text_utils::get_ascii_char_type(chars[1]);
@@ -98,24 +165,22 @@ impl Cursor {
             }
         }
 
-        if self.col != 0 && !lines[self.row][0].is_ascii_whitespace() {
+        if self.col != 0 && !lines[self.line][0].is_ascii_whitespace() {
             self.col = 0;
             return;
         }
 
-        if self.row > 0 {
-            self.row -= 1;
-        }
+        self.line = self.line.saturating_sub(1);
         self.move_to_last_non_blank_char(lines);
         self.move_to_start_of_word(lines)
     }
 
     pub fn move_to_start_of_word(&mut self, lines: &[Vec<u8>]) {
-        if lines[self.row].is_empty() {
+        if lines[self.line].is_empty() {
             return;
         }
 
-        let char_type = text_utils::get_ascii_char_type(lines[self.row][self.col]);
+        let char_type = text_utils::get_ascii_char_type(lines[self.line][self.col]);
         if let Some(count) =
             self.chars_until_pred_rev(lines, |c| text_utils::get_ascii_char_type(c) != char_type)
         {
@@ -134,12 +199,12 @@ impl Cursor {
     }
 
     pub fn move_to_start_of_file(&mut self) {
-        self.row = 0;
+        self.line = 0;
         self.col = 0;
     }
 
     pub fn move_to_end_of_file(&mut self, lines: &[Vec<u8>]) {
-        self.row = lines.len().saturating_sub(1);
+        self.line = lines.len().saturating_sub(1);
         self.col = self.line_zero_indexed_length(lines);
     }
 
@@ -165,7 +230,7 @@ impl Cursor {
 
     pub fn move_to_first_non_blank_char(&mut self, lines: &[Vec<u8>]) {
         let mut col = 0;
-        for c in &lines[self.row] {
+        for c in &lines[self.line] {
             if !c.is_ascii_whitespace() {
                 break;
             }
@@ -176,7 +241,7 @@ impl Cursor {
 
     pub fn move_to_last_non_blank_char(&mut self, lines: &[Vec<u8>]) {
         let mut col = self.line_zero_indexed_length(lines);
-        for c in lines[self.row].iter().rev() {
+        for c in lines[self.line].iter().rev() {
             if !c.is_ascii_whitespace() {
                 break;
             }
@@ -186,40 +251,47 @@ impl Cursor {
     }
 
     pub fn reset_anchor(&mut self) {
-        self.anchor_row = self.row;
+        self.anchor_line = self.line;
         self.anchor_col = self.col;
     }
 
     pub fn get_selection_ranges(&self, lines: &[Vec<u8>]) -> Vec<SelectionRange> {
         let mut ranges = vec![];
-        if self.row == self.anchor_row {
+        if self.line == self.anchor_line {
             let first_col = min(self.col, self.anchor_col);
             let last_col = max(self.col, self.anchor_col);
             ranges.push(SelectionRange {
-                row: self.row,
+                line: self.line,
                 start: first_col,
                 end: last_col,
             });
         } else {
-            let (first_row, first_col, last_row, last_col) = if self.row < self.anchor_row {
-                (self.row, self.col, self.anchor_row, self.anchor_col)
+            let (first_line, first_col, last_line, last_col) = if self.line < self.anchor_line {
+                (self.line, self.col, self.anchor_line, self.anchor_col)
             } else {
-                (self.anchor_row, self.anchor_col, self.row, self.col)
+                (self.anchor_line, self.anchor_col, self.line, self.col)
             };
             ranges.push(SelectionRange {
-                row: first_row,
+                line: first_line,
                 start: first_col,
-                end: lines[first_row].len().saturating_sub(1),
+                end: lines[first_line].len().saturating_sub(1),
             });
-            for row in (first_row + 1)..last_row {
+
+            for (i, line) in lines
+                .iter()
+                .enumerate()
+                .take(last_line)
+                .skip(first_line + 1)
+            {
                 ranges.push(SelectionRange {
-                    row,
+                    line: i,
                     start: 0,
-                    end: lines[row].len().saturating_sub(1),
+                    end: line.len().saturating_sub(1),
                 });
             }
+
             ranges.push(SelectionRange {
-                row: last_row,
+                line: last_line,
                 start: 0,
                 end: last_col,
             });
@@ -227,23 +299,24 @@ impl Cursor {
         ranges
     }
 
-    pub fn moving_forward(&self) -> bool {
-        self.row > self.anchor_row || (self.row == self.anchor_row && self.col >= self.anchor_col)
+    pub fn line_zero_indexed_length(&self, lines: &[Vec<u8>]) -> usize {
+        lines[self.line].len().saturating_sub(1)
     }
 
-    pub fn line_zero_indexed_length(&self, lines: &[Vec<u8>]) -> usize {
-        lines[self.row].len().saturating_sub(1)
+    pub fn moving_forward(&self) -> bool {
+        self.line > self.anchor_line
+            || (self.line == self.anchor_line && self.col >= self.anchor_col)
     }
 
     fn overlaps(&self, other: &Cursor) -> bool {
         if self.moving_forward() {
-            (self.row > other.anchor_row && self.anchor_row < other.anchor_row)
-                || (self.row == other.anchor_row
-                    && (self.anchor_col..=self.col).contains(&other.anchor_col))
+            (self.line > other.anchor_line && self.line <= other.line)
+                || (self.line == other.anchor_line
+                    && (other.anchor_col..=other.col).contains(&self.col))
         } else {
-            (self.row < other.anchor_row && self.anchor_row > other.anchor_row)
-                || (self.row == other.anchor_row
-                    && (self.anchor_col..=self.col).contains(&other.anchor_col))
+            (self.line < other.anchor_line && self.line >= other.line)
+                || (self.line == other.anchor_line
+                    && (other.col..=other.anchor_col).contains(&self.col))
         }
     }
 
@@ -251,7 +324,7 @@ impl Cursor {
     where
         F: Fn(u8) -> bool,
     {
-        if let Some(line) = lines.get(self.row) {
+        if let Some(line) = lines.get(self.line) {
             let mut count = 0;
             for c in line[self.col + 1..].iter() {
                 count += 1;
@@ -268,7 +341,7 @@ impl Cursor {
     where
         F: Fn(u8) -> bool,
     {
-        if let Some(line) = lines.get(self.row) {
+        if let Some(line) = lines.get(self.line) {
             let mut count = 0;
             for c in line[..self.col].iter().rev() {
                 count += 1;
@@ -293,7 +366,7 @@ impl Cursor {
 
 impl Ord for Cursor {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.row.cmp(&other.row).then(self.col.cmp(&other.col))
+        self.line.cmp(&other.line).then(self.col.cmp(&other.col))
     }
 }
 
@@ -305,6 +378,6 @@ impl PartialOrd for Cursor {
 
 impl PartialEq for Cursor {
     fn eq(&self, other: &Self) -> bool {
-        self.row == other.row && self.col == other.col && self.trailing == other.trailing
+        self.line == other.line && self.col == other.col
     }
 }

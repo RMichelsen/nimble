@@ -167,7 +167,7 @@ impl Renderer {
         }
     }
 
-    pub fn draw_buffer(&self, buffer: &Buffer, view: &View) {
+    pub fn draw_buffer(&mut self, buffer: &Buffer, view: &View) {
         unsafe {
             self.render_target.BeginDraw();
             self.render_target.Clear(Some(&BACKGROUND_COLOR)); //asdasdasds
@@ -194,39 +194,31 @@ impl Renderer {
             );
         }
 
-        view.visible_cursor_leads_iter(
-            buffer,
-            self.num_rows,
-            self.num_cols,
-            |row, col, trailing| unsafe {
-                let (row_offset, col_offset) =
-                    (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
-                if buffer.mode == BufferMode::Insert {
-                    self.render_target.FillRectangle(
-                        &D2D_RECT_F {
-                            left: col_offset + self.font_size.0 * if trailing { 0.9 } else { 0.0 }
-                                - 0.5,
-                            top: row_offset - 0.5,
-                            right: col_offset
-                                + self.font_size.0 * if trailing { 1.0 } else { 0.1 }
-                                + 0.5,
-                            bottom: row_offset + self.font_size.1 + 0.5,
-                        },
-                        &self.cursor_brush,
-                    );
-                } else {
-                    self.render_target.FillRectangle(
-                        &D2D_RECT_F {
-                            left: col_offset - 0.5,
-                            top: row_offset - 0.5,
-                            right: col_offset + self.font_size.0 + 0.5,
-                            bottom: row_offset + self.font_size.1 + 0.5,
-                        },
-                        &self.cursor_brush,
-                    );
-                }
-            },
-        );
+        view.visible_cursor_leads_iter(buffer, self.num_rows, self.num_cols, |row, col| unsafe {
+            let (row_offset, col_offset) =
+                (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
+            if buffer.mode == BufferMode::Insert {
+                self.render_target.FillRectangle(
+                    &D2D_RECT_F {
+                        left: col_offset - 0.5,
+                        top: row_offset - 0.5,
+                        right: col_offset + self.font_size.0 * 0.1 + 0.5,
+                        bottom: row_offset + self.font_size.1 + 0.5,
+                    },
+                    &self.cursor_brush,
+                );
+            } else {
+                self.render_target.FillRectangle(
+                    &D2D_RECT_F {
+                        left: col_offset - 0.5,
+                        top: row_offset - 0.5,
+                        right: col_offset + self.font_size.0 + 0.5,
+                        bottom: row_offset + self.font_size.1 + 0.5,
+                    },
+                    &self.cursor_brush,
+                );
+            }
+        });
 
         view.visible_lines_iter(buffer, self.num_rows, self.num_cols, |i, line| {
             let text_layout = unsafe {
@@ -284,6 +276,47 @@ impl Renderer {
                 );
             }
         });
+
+        // view.visible_cursor_leads_iter(
+        //     buffer,
+        //     self.num_rows,
+        //     self.num_cols,
+        //     |row, col, _| unsafe {
+        //         let (row_offset, col_offset) =
+        //             (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
+        //         let completion_rect = D2D_RECT_F {
+        //             left: col_offset - 0.5,
+        //             top: row_offset + self.font_size.1 - 0.5,
+        //             right: col_offset + self.font_size.0 * 25.0 + 0.5,
+        //             bottom: row_offset + self.font_size.1 * 11.0 + 0.5,
+        //         };
+        //         self.render_target
+        //             .FillRectangle(&completion_rect, &self.highlight_brush);
+
+        //         let text_layout = self
+        //             .dwrite_factory
+        //             .CreateTextLayout(
+        //                 U16CString::from_str(
+        //                     "Suggestion1\nSugg2\nSug3\nEpicSuggestion\nEvenMoreEpicSuggestion\n",
+        //                 )
+        //                 .unwrap()
+        //                 .as_slice(),
+        //                 &self.text_format,
+        //                 completion_rect.right - completion_rect.left,
+        //                 completion_rect.bottom - completion_rect.top,
+        //             )
+        //             .unwrap();
+        //         self.render_target.DrawTextLayout(
+        //             D2D_POINT_2F {
+        //                 x: completion_rect.left,
+        //                 y: completion_rect.top,
+        //             },
+        //             &text_layout,
+        //             &self.text_brush,
+        //             D2D1_DRAW_TEXT_OPTIONS_NONE,
+        //         );
+        //     },
+        // );
 
         unsafe {
             self.render_target.EndDraw(None, None).unwrap();

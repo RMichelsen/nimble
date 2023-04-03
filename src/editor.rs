@@ -4,6 +4,7 @@ use winit::{event::VirtualKeyCode, window::Window};
 
 use crate::{
     buffer::{Buffer, DeviceInput},
+    language_server::LanguageServer,
     renderer::Renderer,
     view::View,
 };
@@ -11,6 +12,7 @@ use crate::{
 struct Document {
     buffer: Buffer,
     view: View,
+    language_server: Option<LanguageServer>,
 }
 
 pub struct Editor {
@@ -28,7 +30,7 @@ impl Editor {
         }
     }
 
-    pub fn update(&self) {
+    pub fn update(&mut self) {
         if let Some(document) = &self.active_document {
             let document = &self.documents[document];
             self.renderer.draw_buffer(&document.buffer, &document.view);
@@ -66,6 +68,7 @@ impl Editor {
                 Document {
                     buffer: Buffer::new(path),
                     view: View::new(),
+                    language_server: LanguageServer::new(path),
                 },
             );
             self.active_document = Some(path.to_string());

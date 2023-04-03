@@ -4,7 +4,7 @@ where
 {
     let mut word = String::new();
     for (i, c) in line.iter().enumerate() {
-        if c.is_ascii_whitespace() {
+        if c.is_ascii_punctuation() || c.is_ascii_whitespace() {
             if keywords.contains(&word.as_str()) {
                 let len = word.len();
                 f(i - len, len);
@@ -13,6 +13,11 @@ where
         } else {
             word.push(*c as char);
         }
+    }
+
+    if keywords.contains(&word.as_str()) {
+        let len = word.len();
+        f(line.len() - len, len);
     }
 }
 

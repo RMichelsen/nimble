@@ -3,10 +3,12 @@
 #![feature(is_some_and)]
 #![feature(iterator_try_collect)]
 #![feature(pattern)]
+#![feature(slice_take)]
 
 mod buffer;
 mod cursor;
 mod editor;
+mod language_server;
 mod language_support;
 mod renderer;
 mod text_utils;
