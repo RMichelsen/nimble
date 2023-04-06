@@ -200,20 +200,20 @@ impl Renderer {
             if buffer.mode == BufferMode::Insert {
                 self.render_target.FillRectangle(
                     &D2D_RECT_F {
-                        left: col_offset - 0.5,
-                        top: row_offset - 0.5,
-                        right: col_offset + self.font_size.0 * 0.1 + 0.5,
-                        bottom: row_offset + self.font_size.1 + 0.5,
+                        left: col_offset,
+                        top: row_offset,
+                        right: col_offset + self.font_size.0 * 0.1,
+                        bottom: row_offset + self.font_size.1,
                     },
                     &self.cursor_brush,
                 );
             } else {
                 self.render_target.FillRectangle(
                     &D2D_RECT_F {
-                        left: col_offset - 0.5,
-                        top: row_offset - 0.5,
-                        right: col_offset + self.font_size.0 + 0.5,
-                        bottom: row_offset + self.font_size.1 + 0.5,
+                        left: col_offset,
+                        top: row_offset,
+                        right: col_offset + self.font_size.0,
+                        bottom: row_offset + self.font_size.1,
                     },
                     &self.cursor_brush,
                 );

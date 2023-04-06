@@ -2,14 +2,13 @@ use std::cmp::{max, min, Ordering};
 
 use crate::text_utils::{self, CharType};
 
-#[derive(Copy, Clone, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct Cursor {
     pub line: usize,
     pub col: usize,
     pub anchor_line: usize,
     pub anchor_col: usize,
     pub cached_col: usize,
-    pub completion_active: bool,
 }
 
 #[derive(Debug)]
@@ -19,73 +18,75 @@ pub struct SelectionRange {
     pub end: usize,
 }
 
-pub enum LineChange {
-    Inserted(usize),
-    Removed(usize),
-}
-
-#[derive(Debug)]
-pub enum ColChange {
-    Inserted(usize, usize),
-    Removed(usize, usize),
-}
-
-pub struct RemoveCols {
-    pub line: usize,
-}
-
 pub fn cursors_overlapping(c1: &Cursor, c2: &Cursor) -> bool {
     c1.overlaps(c2) || c2.overlaps(c1)
 }
 
 pub fn cursors_foreach_rebalance<F>(mut cursors: &mut [Cursor], mut f: F)
 where
-    F: FnMut(&mut Cursor) -> (Vec<LineChange>, Vec<ColChange>),
+    F: FnMut(&mut Cursor),
 {
     while let Some((cursor, tail)) = cursors.split_first_mut() {
-        let (line_changes, col_changes) = f(cursor);
-        rebalance_cursors(tail, &line_changes, &col_changes);
-        cursors = tail;
-    }
-}
+        let cursor_before = *cursor;
+        f(cursor);
 
-pub fn rebalance_cursors(
-    cursors: &mut [Cursor],
-    line_changes: &[LineChange],
-    col_changes: &[ColChange],
-) {
-    for cursor in cursors {
-        for change in line_changes {
-            match change {
-                LineChange::Inserted(line) => {
-                    let offset = (cursor.line >= *line) as usize;
-                    cursor.line += offset;
-                    cursor.anchor_line += offset;
+        let mut skip = 0;
+        for tail_cursor in &mut *tail {
+            // Single selection means content can either be inserted or deleted
+            if cursor_before.single_selection() {
+                if cursor_before.line == tail_cursor.line {
+                    tail_cursor.col = cursor.col + (tail_cursor.col - cursor_before.col);
                 }
-                LineChange::Removed(line) => {
-                    let offset = (cursor.line >= *line) as usize;
-                    cursor.line -= offset;
-                    cursor.anchor_line -= offset;
+                if cursor_before.line == tail_cursor.anchor_line {
+                    tail_cursor.anchor_col =
+                        cursor.col + (tail_cursor.anchor_col - cursor_before.col);
+                }
+
+                if cursor.line > cursor_before.line {
+                    let offset = cursor.line - cursor_before.line;
+                    tail_cursor.anchor_line += offset;
+                    tail_cursor.line += offset;
+                } else if cursor.line < cursor_before.line {
+                    let offset = cursor_before.line - cursor.line;
+                    tail_cursor.anchor_line -= offset;
+                    tail_cursor.line -= offset;
+                }
+            } else {
+                // Selection -> single selection means content was deleted
+                if cursor.single_selection() {
+                    let (first_line, first_col, last_line, last_col) =
+                        cursor_before.get_first_and_last_positions();
+
+                    if last_line == tail_cursor.line {
+                        if first_line == last_line {
+                            tail_cursor.col -= last_col - first_col + 1;
+                        } else {
+                            tail_cursor.col -= last_col;
+                        }
+                    }
+
+                    if last_line == tail_cursor.anchor_line {
+                        if first_line == last_line {
+                            tail_cursor.anchor_col -= last_col - first_col + 1;
+                        } else {
+                            tail_cursor.anchor_col -= last_col;
+                        }
+                    }
+
+                    let offset = last_line - cursor.line;
+                    tail_cursor.anchor_line -= offset;
+                    tail_cursor.line -= offset;
                 }
             }
-        }
-        for change in col_changes {
-            match change {
-                ColChange::Inserted(line, num) if cursor.line == *line => {
-                    cursor.col += *num;
-                }
-                ColChange::Inserted(line, num) if cursor.anchor_line == *line => {
-                    cursor.anchor_col += *num;
-                }
-                ColChange::Removed(line, num) if cursor.line == *line => {
-                    cursor.col -= *num;
-                }
-                ColChange::Removed(line, num) if cursor.anchor_line == *line => {
-                    cursor.anchor_col -= *num;
-                }
-                _ => (),
+
+            // If a tail cursor catches the main cursor, skip it (they will be merged).
+            if tail_cursor <= cursor {
+                *tail_cursor = *cursor;
+                skip += 1;
             }
         }
+
+        cursors = &mut tail[skip..];
     }
 }
 
@@ -97,7 +98,6 @@ impl Cursor {
             anchor_line: line,
             anchor_col: col,
             cached_col: col,
-            completion_active: true,
         }
     }
 
@@ -127,6 +127,15 @@ impl Cursor {
 
     pub fn move_forward(&mut self, lines: &[Vec<u8>], count: usize) {
         self.col = min(self.col + count, self.line_zero_indexed_length(lines));
+    }
+
+    pub fn move_forward_once_wrapping(&mut self, lines: &[Vec<u8>]) {
+        if self.col == lines[self.line].len() {
+            self.col = 0;
+            self.line = min(self.line + 1, lines.len().saturating_sub(1));
+        } else {
+            self.col = self.col + 1;
+        }
     }
 
     pub fn move_backward(&mut self, lines: &[Vec<u8>], count: usize) {
@@ -208,22 +217,22 @@ impl Cursor {
         self.col = self.line_zero_indexed_length(lines);
     }
 
-    pub fn move_forward_to_char_inclusive(&mut self, lines: &[Vec<u8>], search_char: u8) {
+    pub fn move_forward_to_char_inc(&mut self, lines: &[Vec<u8>], search_char: u8) {
         let count = self.chars_until_char(lines, search_char);
         self.move_forward(lines, count);
     }
 
-    pub fn move_backward_to_char_inclusive(&mut self, lines: &[Vec<u8>], search_char: u8) {
+    pub fn move_backward_to_char_inc(&mut self, lines: &[Vec<u8>], search_char: u8) {
         let count = self.chars_until_char_rev(lines, search_char);
         self.move_backward(lines, count);
     }
 
-    pub fn move_forward_to_char_exclusive(&mut self, lines: &[Vec<u8>], search_char: u8) {
+    pub fn move_forward_to_char_exc(&mut self, lines: &[Vec<u8>], search_char: u8) {
         let count = self.chars_until_char(lines, search_char);
         self.move_forward(lines, count.saturating_sub(1));
     }
 
-    pub fn move_backward_to_char_exclusive(&mut self, lines: &[Vec<u8>], search_char: u8) {
+    pub fn move_backward_to_char_exc(&mut self, lines: &[Vec<u8>], search_char: u8) {
         let count = self.chars_until_char_rev(lines, search_char);
         self.move_backward(lines, count.saturating_sub(1));
     }
@@ -245,9 +254,15 @@ impl Cursor {
             if !c.is_ascii_whitespace() {
                 break;
             }
-            col -= 1;
+            col = col.saturating_sub(1);
         }
         self.col = col
+    }
+
+    pub fn select_line(&mut self, lines: &[Vec<u8>]) {
+        self.anchor_line = self.line;
+        self.anchor_col = 0;
+        self.col = self.line_zero_indexed_length(lines);
     }
 
     pub fn reset_anchor(&mut self) {
@@ -266,11 +281,7 @@ impl Cursor {
                 end: last_col,
             });
         } else {
-            let (first_line, first_col, last_line, last_col) = if self.line < self.anchor_line {
-                (self.line, self.col, self.anchor_line, self.anchor_col)
-            } else {
-                (self.anchor_line, self.anchor_col, self.line, self.col)
-            };
+            let (first_line, first_col, last_line, last_col) = self.get_first_and_last_positions();
             ranges.push(SelectionRange {
                 line: first_line,
                 start: first_col,
@@ -308,6 +319,16 @@ impl Cursor {
             || (self.line == self.anchor_line && self.col >= self.anchor_col)
     }
 
+    fn get_first_and_last_positions(&self) -> (usize, usize, usize, usize) {
+        if self.line < self.anchor_line
+            || (self.line == self.anchor_line && self.col < self.anchor_col)
+        {
+            (self.line, self.col, self.anchor_line, self.anchor_col)
+        } else {
+            (self.anchor_line, self.anchor_col, self.line, self.col)
+        }
+    }
+
     fn overlaps(&self, other: &Cursor) -> bool {
         if self.moving_forward() {
             (self.line > other.anchor_line && self.line <= other.line)
@@ -318,6 +339,10 @@ impl Cursor {
                 || (self.line == other.anchor_line
                     && (other.col..=other.anchor_col).contains(&self.col))
         }
+    }
+
+    fn single_selection(&self) -> bool {
+        self.line == self.anchor_line && self.col == self.anchor_col
     }
 
     fn chars_until_pred<F>(&self, lines: &[Vec<u8>], pred: F) -> Option<usize>
@@ -373,11 +398,5 @@ impl Ord for Cursor {
 impl PartialOrd for Cursor {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for Cursor {
-    fn eq(&self, other: &Self) -> bool {
-        self.line == other.line && self.col == other.col
     }
 }

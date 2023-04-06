@@ -9,6 +9,7 @@ mod buffer;
 mod cursor;
 mod editor;
 mod language_server;
+mod language_server_types;
 mod language_support;
 mod renderer;
 mod text_utils;

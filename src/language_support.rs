@@ -10,6 +10,7 @@ pub const RUST_KEYWORDS: [&str; 38] = [
 pub const RUST_LINE_COMMENT_TOKEN: &str = "//";
 pub const RUST_LANGUAGE_SERVER: &str = "rust-analyzer";
 pub const RUST_FILE_EXTENSIONS: [&str; 1] = ["rs"];
+pub const RUST_IDENTIFIER: &str = "rust";
 
 #[rustfmt::skip]
 pub const CPP_KEYWORDS: [&str; 92] = [
@@ -28,6 +29,7 @@ pub const CPP_KEYWORDS: [&str; 92] = [
 pub const CPP_LINE_COMMENT_TOKEN: &str = "//";
 pub const CPP_LANGUAGE_SERVER: &str = "clangd";
 pub const CPP_FILE_EXTENSIONS: [&str; 6] = ["c", "h", "cpp", "hpp", "cc", "cxx"];
+pub const CPP_IDENTIFIER: &str = "cpp";
 
 pub struct Language {
     pub identifier: &'static str,
@@ -36,33 +38,29 @@ pub struct Language {
     pub line_comment_token: Option<&'static str>,
 }
 
-impl Language {
-    pub fn new(path: &str) -> Self {
-        if let Some(os_str) = Path::new(path).extension() {
-            if let Some(extension) = os_str.to_str() {
-                if CPP_FILE_EXTENSIONS.contains(&extension) {
-                    return Self {
-                        identifier: "Cpp",
-                        lsp_executable: Some(CPP_LANGUAGE_SERVER),
-                        keywords: Some(&CPP_KEYWORDS),
-                        line_comment_token: Some(CPP_LINE_COMMENT_TOKEN),
-                    };
-                } else if RUST_FILE_EXTENSIONS.contains(&extension) {
-                    return Self {
-                        identifier: "Rust",
-                        lsp_executable: Some(RUST_LANGUAGE_SERVER),
-                        keywords: Some(&RUST_KEYWORDS),
-                        line_comment_token: Some(RUST_LINE_COMMENT_TOKEN),
-                    };
-                }
+pub const CPP_LANGUAGE: Language = Language {
+    identifier: CPP_IDENTIFIER,
+    lsp_executable: Some(CPP_LANGUAGE_SERVER),
+    keywords: Some(&CPP_KEYWORDS),
+    line_comment_token: Some(CPP_LINE_COMMENT_TOKEN),
+};
+
+pub const RUST_LANGUAGE: Language = Language {
+    identifier: RUST_IDENTIFIER,
+    lsp_executable: Some(RUST_LANGUAGE_SERVER),
+    keywords: Some(&RUST_KEYWORDS),
+    line_comment_token: Some(RUST_LINE_COMMENT_TOKEN),
+};
+
+pub fn language_from_path(path: &str) -> Option<&'static Language> {
+    if let Some(os_str) = Path::new(path).extension() {
+        if let Some(extension) = os_str.to_str() {
+            if CPP_FILE_EXTENSIONS.contains(&extension) {
+                return Some(&CPP_LANGUAGE);
+            } else if RUST_FILE_EXTENSIONS.contains(&extension) {
+                return Some(&RUST_LANGUAGE);
             }
         }
-
-        Self {
-            identifier: "Unknown",
-            lsp_executable: None,
-            keywords: None,
-            line_comment_token: None,
-        }
     }
+    None
 }

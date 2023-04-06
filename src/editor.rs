@@ -1,10 +1,11 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use winit::{event::VirtualKeyCode, window::Window};
 
 use crate::{
     buffer::{Buffer, DeviceInput},
     language_server::LanguageServer,
+    language_support::language_from_path,
     renderer::Renderer,
     view::View,
 };
@@ -12,13 +13,13 @@ use crate::{
 struct Document {
     buffer: Buffer,
     view: View,
-    language_server: Option<LanguageServer>,
 }
 
 pub struct Editor {
     renderer: Renderer,
     documents: HashMap<String, Document>,
     active_document: Option<String>,
+    language_servers: HashMap<&'static str, Rc<RefCell<LanguageServer>>>,
 }
 
 impl Editor {
@@ -27,6 +28,7 @@ impl Editor {
             renderer: Renderer::new(window),
             documents: HashMap::default(),
             active_document: None,
+            language_servers: HashMap::default(),
         }
     }
 
@@ -60,15 +62,30 @@ impl Editor {
     }
 
     pub fn open_file(&mut self, path: &str) {
+        let language_server = {
+            if let Some(language) = language_from_path(path) {
+                if !self.language_servers.contains_key(language.identifier) {
+                    self.language_servers.insert(
+                        language.identifier,
+                        Rc::new(RefCell::new(LanguageServer::new(language).unwrap())),
+                    );
+                }
+                Some(Rc::clone(
+                    &self.language_servers.get(language.identifier).unwrap(),
+                ))
+            } else {
+                None
+            }
+        };
+
         if self.documents.contains_key(path) {
             self.active_document = Some(path.to_string());
         } else {
             self.documents.insert(
                 path.to_string(),
                 Document {
-                    buffer: Buffer::new(path),
+                    buffer: Buffer::new(path, language_server),
                     view: View::new(),
-                    language_server: LanguageServer::new(path),
                 },
             );
             self.active_document = Some(path.to_string());
