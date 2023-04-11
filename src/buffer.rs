@@ -47,9 +47,7 @@ impl Buffer {
     pub fn new(path: &str, language_server: Option<Rc<RefCell<LanguageServer>>>) -> Self {
         let uri = "file:///".to_string() + path;
         let language = language_from_path(path).unwrap();
-        let mut piece_table = PieceTable::from_file(path);
-
-        piece_table.insert(0, b"Hello World!\n");
+        let piece_table = PieceTable::from_file(path);
 
         let text = piece_table.iter_chars().collect();
 

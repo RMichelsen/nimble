@@ -2,8 +2,7 @@ use std::{
     borrow::{Borrow, BorrowMut},
     collections::HashMap,
     io::{BufRead, BufReader, Read, Write},
-    ops::DerefMut,
-    process::{ChildStdin, Command, Stdio},
+    process::{Child, ChildStdin, Command, Stdio},
     sync::{Arc, Mutex},
     thread::{self, JoinHandle},
 };
@@ -20,7 +19,7 @@ use crate::{
 
 pub struct LanguageServer {
     language: &'static Language,
-    stdin: Arc<Mutex<Option<ChildStdin>>>,
+    stdin: Arc<Mutex<ChildStdin>>,
     requests: Arc<Mutex<HashMap<i32, &'static str>>>,
     request_id: i32,
     // responses: Arc<Mutex<VecDeque<Response>>>
@@ -28,9 +27,15 @@ pub struct LanguageServer {
 
 impl LanguageServer {
     pub fn new(language: &'static Language) -> Option<Self> {
-        let stdin = Arc::new(Mutex::new(None));
+        let mut server = Command::new(language.lsp_executable.unwrap())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let stdin = Arc::new(Mutex::new(server.stdin.take().unwrap()));
         let requests = Arc::new(Mutex::new(HashMap::new()));
-        start_reader_thread(language, Arc::clone(&stdin), Arc::clone(&requests));
+
+        start_reader_thread(server, language, Arc::clone(&stdin), Arc::clone(&requests));
 
         let mut language_server = Self {
             language,
@@ -62,9 +67,11 @@ impl LanguageServer {
         let message = serde_json::to_string(&request).unwrap();
         let header = format!("Content-Length: {}\r\n\r\n", message.len());
         let composed = header + message.as_str();
-        if let Some(stdin) = self.stdin.lock().unwrap().deref_mut() {
-            stdin.write_all(composed.as_bytes()).unwrap();
-        }
+        self.stdin
+            .lock()
+            .unwrap()
+            .write_all(composed.as_bytes())
+            .unwrap();
 
         self.request_id += 1;
     }
@@ -74,29 +81,25 @@ impl LanguageServer {
         let message = serde_json::to_string(&notification).unwrap();
         let header = format!("Content-Length: {}\r\n\r\n", message.len());
         let composed = header + message.as_str();
-        if let Some(stdin) = self.stdin.lock().unwrap().deref_mut() {
-            stdin.write_all(composed.as_bytes()).unwrap();
-        }
+        self.stdin
+            .lock()
+            .unwrap()
+            .write_all(composed.as_bytes())
+            .unwrap();
         self.request_id += 1;
     }
 }
 
 fn start_reader_thread(
+    mut server: Child,
     language: &'static Language,
-    stdin: Arc<Mutex<Option<ChildStdin>>>,
+    stdin: Arc<Mutex<ChildStdin>>,
     requests: Arc<Mutex<HashMap<i32, &'static str>>>,
 ) -> JoinHandle<()> {
+    let stdout = server.stdout.take().unwrap();
+
     // TODO: Error handling
     thread::spawn(move || {
-        let mut server = Command::new(language.lsp_executable.unwrap())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-
-        let stdout = server.stdout.take().unwrap();
-        *stdin.lock().unwrap() = server.stdin.take();
-
         let mut buffer = vec![];
         let mut reader = BufReader::new(stdout);
 
