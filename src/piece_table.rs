@@ -267,12 +267,13 @@ impl PieceTable {
             offset += piece.length;
         }
 
-        if index == i {
+        let length = offset - start;
+        if index == i && length > 0 {
             Some(Line {
                 index,
                 start,
                 end: offset,
-                length: offset - start,
+                length,
             })
         } else {
             None

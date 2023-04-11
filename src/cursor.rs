@@ -120,7 +120,7 @@ impl Cursor {
     }
 
     pub fn move_forward_once_wrapping(&mut self, piece_table: &PieceTable) {
-        self.position = min(self.position + 1, piece_table.num_chars());
+        self.position = min(self.position + 1, piece_table.num_chars().saturating_sub(1));
     }
 
     pub fn move_backward(&mut self, piece_table: &PieceTable, count: usize) {
@@ -147,7 +147,7 @@ impl Cursor {
                 return;
             }
         }
-        self.position = piece_table.num_chars();
+        self.position = piece_table.num_chars().saturating_sub(1);
     }
 
     pub fn move_backward_by_word(&mut self, piece_table: &PieceTable) {
@@ -190,7 +190,7 @@ impl Cursor {
     }
 
     pub fn move_to_end_of_file(&mut self, piece_table: &PieceTable) {
-        self.position = piece_table.num_chars();
+        self.position = piece_table.num_chars().saturating_sub(1);
     }
 
     pub fn move_to_char_inc(&mut self, piece_table: &PieceTable, search_char: u8) {
@@ -232,6 +232,7 @@ impl Cursor {
 
     pub fn select_line(&mut self, piece_table: &PieceTable) {
         if let Some(line) = piece_table.line_at_char(self.position) {
+            println!("{:?}", line);
             self.anchor = line.start;
             self.position = line.end;
         }
