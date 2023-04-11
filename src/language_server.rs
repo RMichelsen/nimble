@@ -2,7 +2,8 @@ use std::{
     borrow::{Borrow, BorrowMut},
     collections::HashMap,
     io::{BufRead, BufReader, Read, Write},
-    process::{ChildStdin, ChildStdout, Command, Stdio},
+    ops::DerefMut,
+    process::{ChildStdin, Command, Stdio},
     sync::{Arc, Mutex},
     thread::{self, JoinHandle},
 };
@@ -19,7 +20,7 @@ use crate::{
 
 pub struct LanguageServer {
     language: &'static Language,
-    stdin: ChildStdin,
+    stdin: Arc<Mutex<Option<ChildStdin>>>,
     requests: Arc<Mutex<HashMap<i32, &'static str>>>,
     request_id: i32,
     // responses: Arc<Mutex<VecDeque<Response>>>
@@ -27,16 +28,9 @@ pub struct LanguageServer {
 
 impl LanguageServer {
     pub fn new(language: &'static Language) -> Option<Self> {
-        let mut server = Command::new(language.lsp_executable?)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .ok()?;
-        let stdin = server.stdin.take()?;
-        let stdout = server.stdout.take()?;
-
+        let stdin = Arc::new(Mutex::new(None));
         let requests = Arc::new(Mutex::new(HashMap::new()));
-        start_reader_thread(stdout, Arc::clone(&requests));
+        start_reader_thread(language, Arc::clone(&stdin), Arc::clone(&requests));
 
         let mut language_server = Self {
             language,
@@ -68,7 +62,10 @@ impl LanguageServer {
         let message = serde_json::to_string(&request).unwrap();
         let header = format!("Content-Length: {}\r\n\r\n", message.len());
         let composed = header + message.as_str();
-        self.stdin.write_all(composed.as_bytes()).unwrap();
+        if let Some(stdin) = self.stdin.lock().unwrap().deref_mut() {
+            stdin.write_all(composed.as_bytes()).unwrap();
+        }
+
         self.request_id += 1;
     }
 
@@ -77,16 +74,29 @@ impl LanguageServer {
         let message = serde_json::to_string(&notification).unwrap();
         let header = format!("Content-Length: {}\r\n\r\n", message.len());
         let composed = header + message.as_str();
-        self.stdin.write_all(composed.as_bytes()).unwrap();
+        if let Some(stdin) = self.stdin.lock().unwrap().deref_mut() {
+            stdin.write_all(composed.as_bytes()).unwrap();
+        }
         self.request_id += 1;
     }
 }
 
 fn start_reader_thread(
-    stdout: ChildStdout,
+    language: &'static Language,
+    stdin: Arc<Mutex<Option<ChildStdin>>>,
     requests: Arc<Mutex<HashMap<i32, &'static str>>>,
 ) -> JoinHandle<()> {
+    // TODO: Error handling
     thread::spawn(move || {
+        let mut server = Command::new(language.lsp_executable.unwrap())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+
+        let stdout = server.stdout.take().unwrap();
+        *stdin.lock().unwrap() = server.stdin.take();
+
         let mut buffer = vec![];
         let mut reader = BufReader::new(stdout);
 
@@ -94,54 +104,54 @@ fn start_reader_thread(
             buffer.clear();
 
             if let Ok(header_size) = reader.read_until(b'\n', &mut buffer) {
-                if let Ok(content_length) = usize::from_str_radix(
-                    unsafe { std::str::from_utf8_unchecked(&buffer[16..header_size - 2]) },
-                    10,
-                ) {
-                    if reader.read_until(b'\n', &mut buffer).is_ok() {
-                        if buffer.ends_with_str("\r\n\r\n")
+                // TODO: This sometimes fails
+                if let Ok(content_length) =
+                    unsafe { std::str::from_utf8_unchecked(&buffer[16..header_size - 2]) }
+                        .parse::<usize>()
+                {
+                    if reader.read_until(b'\n', &mut buffer).is_ok()
+                        && (buffer.ends_with_str("\r\n\r\n")
                             || (reader.read_until(b'\n', &mut buffer).is_ok()
-                                && buffer.ends_with_str("\r\n\r\n"))
-                        {
-                            let mut content = vec![0; content_length];
-                            if reader.read_exact(&mut content).is_ok() {
-                                let message =
-                                    serde_json::from_slice::<ServerMessage>(&content).unwrap();
+                                && buffer.ends_with_str("\r\n\r\n")))
+                    {
+                        let mut content = vec![0; content_length];
+                        if reader.read_exact(&mut content).is_ok() {
+                            let message =
+                                serde_json::from_slice::<ServerMessage>(&content).unwrap();
 
-                                match message {
-                                    ServerMessage::Response {
-                                        jsonrpc,
-                                        id,
-                                        result,
-                                        error,
-                                    } => {
-                                        if let Some(result) = result {
-                                            match requests.lock().unwrap().borrow().get(&id) {
-                                                Some(&"initialize") => {
-                                                    println!(
-                                                        "{:#?}",
-                                                        serde_json::from_value::<InitializeResult>(
-                                                            result
-                                                        )
-                                                        .unwrap()
-                                                    );
-                                                }
-                                                _ => (),
+                            match message {
+                                ServerMessage::Response {
+                                    jsonrpc,
+                                    id,
+                                    result,
+                                    error,
+                                } => {
+                                    if let Some(result) = result {
+                                        match requests.lock().unwrap().borrow().get(&id) {
+                                            Some(&"initialize") => {
+                                                println!(
+                                                    "{:#?}",
+                                                    serde_json::from_value::<InitializeResult>(
+                                                        result
+                                                    )
+                                                    .unwrap()
+                                                );
                                             }
-                                            requests.lock().unwrap().borrow_mut().remove(&id);
+                                            _ => (),
                                         }
-                                    }
-                                    ServerMessage::Notification {
-                                        jsonrpc,
-                                        method,
-                                        params,
-                                    } => {
-                                        println!("{:?}", params);
+                                        requests.lock().unwrap().borrow_mut().remove(&id);
                                     }
                                 }
-
-                                continue;
+                                ServerMessage::Notification {
+                                    jsonrpc,
+                                    method,
+                                    params,
+                                } => {
+                                    println!("{:?}", params);
+                                }
                             }
+
+                            continue;
                         }
                     }
                 }

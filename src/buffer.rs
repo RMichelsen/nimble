@@ -1,27 +1,41 @@
-use std::{
-    cell::RefCell,
-    cmp::{max, min},
-    fs::File,
-    io::BufReader,
-    rc::Rc,
-    str::pattern::Pattern,
-};
+use std::{cell::RefCell, rc::Rc, str::pattern::Pattern};
 
-use bstr::{io::BufReadExt, ByteVec};
-use winit::event::VirtualKeyCode;
+use winit::event::{ModifiersState, VirtualKeyCode};
+use BufferCommand::*;
+use BufferMode::*;
+use CursorMotion::*;
+use VirtualKeyCode::{Back, Delete, Escape, Return, Tab, R};
 
 use crate::{
     cursor::{cursors_foreach_rebalance, cursors_overlapping, Cursor},
     language_server::LanguageServer,
     language_server_types::{DidOpenTextDocumentParams, TextDocumentItem},
     language_support::{language_from_path, Language},
+    piece_table::{Piece, PieceTable},
 };
+
+#[derive(Copy, Clone, PartialEq)]
+pub enum BufferMode {
+    Normal,
+    Insert,
+    Visual,
+    VisualLine,
+}
+
+#[derive(Clone, Debug)]
+pub struct BufferState {
+    pieces: Vec<Piece>,
+    cursors: Vec<Cursor>,
+}
 
 pub struct Buffer {
     pub path: String,
+    pub uri: String,
     pub language: &'static Language,
-    pub lines: Vec<Vec<u8>>,
+    pub piece_table: PieceTable,
     pub cursors: Vec<Cursor>,
+    pub undo_stack: Vec<BufferState>,
+    pub redo_stack: Vec<BufferState>,
     pub mode: BufferMode,
     language_server: Option<Rc<RefCell<LanguageServer>>>,
     input: String,
@@ -31,16 +45,17 @@ pub struct Buffer {
 impl Buffer {
     // TODO: Error handling
     pub fn new(path: &str, language_server: Option<Rc<RefCell<LanguageServer>>>) -> Self {
-        let lines: Vec<Vec<u8>> = BufReader::new(File::open(path).unwrap())
-            .byte_lines()
-            .try_collect()
-            .unwrap();
+        let uri = "file:///".to_string() + path;
         let language = language_from_path(path).unwrap();
-        let text = lines.join(&b'\n');
+        let mut piece_table = PieceTable::from_file(path);
+
+        piece_table.insert(0, b"Hello World!\n");
+
+        let text = piece_table.iter_chars().collect();
 
         let open_params = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {
-                uri: "file:///".to_string() + path,
+                uri: uri.clone(),
                 language_id: language.identifier.to_string(),
                 version: 0,
                 text: unsafe { String::from_utf8_unchecked(text) },
@@ -54,9 +69,12 @@ impl Buffer {
 
         Self {
             path: path.to_string(),
+            uri,
             language,
-            lines,
-            cursors: vec![Cursor::new(0, 0)],
+            piece_table,
+            cursors: vec![Cursor::default()],
+            undo_stack: vec![],
+            redo_stack: vec![],
             mode: BufferMode::Normal,
             language_server,
             input: String::new(),
@@ -64,12 +82,7 @@ impl Buffer {
         }
     }
 
-    pub fn handle_key(&mut self, key_code: VirtualKeyCode) {
-        use BufferCommand::*;
-        use BufferMode::*;
-        use CursorMotion::*;
-        use VirtualKeyCode::{Back, Delete, Escape, Return, Tab};
-
+    pub fn handle_key(&mut self, key_code: VirtualKeyCode, modifiers: Option<ModifiersState>) {
         match (self.mode, key_code) {
             (Normal, Escape) => self.cursors.truncate(1),
             (Insert, Escape) => {
@@ -81,7 +94,7 @@ impl Buffer {
             (Insert, Back) => self.command(DeleteCharBack),
             (_, Back) => self.motion(Backward(1)),
 
-            (Insert, Return) => self.command(InsertLineBreak),
+            (Insert, Return) => self.command(InsertChar(b'\n')),
             (_, Return) => self.motion(Down(1)),
 
             (Normal, Delete) => self.command(CutChar),
@@ -94,28 +107,24 @@ impl Buffer {
                 self.switch_to_normal_mode();
             }
             (Insert, Delete) => self.command(DeleteCharFront),
+
             (Insert, Tab) => {
                 for _ in 0..SPACES_PER_TAB {
                     self.command(InsertChar(b' '));
                 }
             }
+
+            (Normal, R) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+                self.command(Redo);
+            }
+
             _ => (),
         }
 
-        self.cursors.sort_unstable();
-        self.cursors.dedup();
-
-        // In insert mode, merging is impliclitly done by dedup.
-        if self.mode != Insert {
-            self.merge_cursors();
-        }
+        self.merge_cursors();
     }
 
     pub fn handle_char(&mut self, c: char) {
-        use BufferCommand::*;
-        use BufferMode::*;
-        use CursorMotion::*;
-
         if self.mode == Insert {
             if c as u8 >= 0x20 && c as u8 <= 0x7E {
                 self.command(InsertChar(c as u8));
@@ -123,8 +132,7 @@ impl Buffer {
             for cursor in &mut self.cursors {
                 cursor.reset_anchor();
             }
-            self.cursors.sort_unstable();
-            self.cursors.dedup();
+            self.merge_cursors();
             return;
         }
 
@@ -160,59 +168,85 @@ impl Buffer {
                 self.motion(BackwardToCharExclusive(s.chars().nth(1).unwrap() as u8));
             }
 
-            (Normal, "x") => self.command(CutChar),
-            (Visual, "x") => self.command(CutSelection),
-            (VisualLine, "x") => self.command(CutLineSelection),
+            (Normal, "x") => {
+                self.push_undo_state();
+                self.command(CutChar);
+            }
+            (Visual, "x") => {
+                self.push_undo_state();
+                self.command(CutSelection);
+            }
+            (VisualLine, "x") => {
+                self.push_undo_state();
+                self.command(CutLineSelection);
+            }
 
             (Visual, "d") => {
+                self.push_undo_state();
                 self.command(CutSelection);
                 self.switch_to_normal_mode();
             }
             (VisualLine, "d") => {
+                self.push_undo_state();
                 self.command(CutLineSelection);
                 self.switch_to_normal_mode();
             }
 
-            (Normal, "dd") => self.command(DeleteLine),
+            (Normal, "dd") => {
+                self.push_undo_state();
+                self.switch_to_visual_mode();
+                self.command(DeleteLine);
+                self.switch_to_normal_mode();
+            }
             (Normal, "J") => self.command(InsertCursorBelow),
             (Normal, "K") => self.command(InsertCursorAbove),
             (Normal, s) if s.starts_with('r') && s.len() == 2 => {
-                self.command(ReplaceChar(s.chars().nth(1).unwrap() as u8));
+                let c = s.chars().nth(1).unwrap() as u8;
+                self.push_undo_state();
+                self.command(ReplaceChar(c));
             }
-            (Normal, "i") => self.switch_to_insert_mode(),
+            (Normal, "i") => {
+                self.push_undo_state();
+                self.switch_to_insert_mode();
+            }
             (Normal, "I") => {
+                self.push_undo_state();
                 self.motion(ToFirstNonBlankChar);
                 self.switch_to_insert_mode();
             }
             (Normal, "a") => {
-                for cursor in &mut self.cursors {
-                    if !self.lines[cursor.line].is_empty() {
-                        cursor.col += 1;
-                    }
-                }
+                self.push_undo_state();
                 self.switch_to_insert_mode();
+                self.motion(Forward(1));
             }
             (Normal, "A") => {
+                self.push_undo_state();
                 self.switch_to_insert_mode();
                 self.motion(ToEndOfLine);
                 self.motion(Forward(1));
             }
             (Normal, "o") => {
+                self.push_undo_state();
                 self.switch_to_insert_mode();
                 self.motion(ToEndOfLine);
                 self.motion(Forward(1));
-                self.command(InsertLineBreak);
+                self.command(InsertChar(b'\n'));
             }
             (Normal, "O") => {
+                self.push_undo_state();
                 self.switch_to_insert_mode();
                 self.motion(ToStartOfLine);
-                self.command(InsertLineBreak);
+                self.command(InsertChar(b'\n'));
                 self.motion(Up(1));
+            }
+            (Normal, "u") => {
+                self.command(Undo);
             }
             (Visual, "v") => self.switch_to_normal_mode(),
             (_, "v") => self.switch_to_visual_mode(),
             (VisualLine, "V") => self.switch_to_normal_mode(),
             (_, "V") => self.switch_to_visual_line_mode(),
+
             _ => return,
         }
 
@@ -223,49 +257,40 @@ impl Buffer {
         }
         self.input.clear();
 
-        self.cursors.sort_unstable();
-        self.cursors.dedup();
         self.merge_cursors();
     }
 
-    pub fn motion(&mut self, motion: CursorMotion) {
-        use BufferMode::*;
-        use CursorMotion::*;
+    fn motion(&mut self, motion: CursorMotion) {
         for cursor in &mut self.cursors {
-            // Cache the column position of the cursor when moving up or down
             match motion {
-                Up(_) | Down(_) => cursor.stick_col(),
-                _ => cursor.unstick_col(),
+                Forward(count) => cursor.move_forward(&self.piece_table, count),
+                Backward(count) => cursor.move_backward(&self.piece_table, count),
+                Up(count) => cursor.move_up(&self.piece_table, count),
+                Down(count) => cursor.move_down(&self.piece_table, count),
+                ForwardByWord => cursor.move_forward_by_word(&self.piece_table),
+                BackwardByWord => cursor.move_backward_by_word(&self.piece_table),
+                ForwardOnceWrapping => cursor.move_forward_once_wrapping(&self.piece_table),
+                ToStartOfLine => cursor.move_to_start_of_line(&self.piece_table),
+                ToEndOfLine => cursor.move_to_end_of_line(&self.piece_table),
+                ToStartOfFile => cursor.move_to_start_of_file(),
+                ToEndOfFile => cursor.move_to_end_of_file(&self.piece_table),
+                ToFirstNonBlankChar => cursor.move_to_first_non_blank_char(&self.piece_table),
+                ForwardToCharInclusive(c) => cursor.move_to_char_inc(&self.piece_table, c),
+                BackwardToCharInclusive(c) => cursor.move_back_to_char_inc(&self.piece_table, c),
+                ForwardToCharExclusive(c) => cursor.move_to_char_exc(&self.piece_table, c),
+                BackwardToCharExclusive(c) => cursor.move_back_to_char_exc(&self.piece_table, c),
+                SelectLine => cursor.select_line(&self.piece_table),
             }
 
+            // Normal mode does not allow cursors to be on newlines
+            if self.mode == Normal && cursor.at_line_end(&self.piece_table) {
+                cursor.move_backward(&self.piece_table, 1);
+            }
+
+            // Cache the column position of the cursor when moving up or down
             match motion {
-                Forward(count) => {
-                    if self.mode == Insert
-                        && count == 1
-                        && !self.lines[cursor.line].is_empty()
-                        && cursor.col == cursor.line_zero_indexed_length(&self.lines)
-                    {
-                        cursor.col += 1;
-                    } else {
-                        cursor.move_forward(&self.lines, count);
-                    }
-                }
-                Backward(count) => cursor.move_backward(&self.lines, count),
-                Up(count) => cursor.move_up(&self.lines, count),
-                Down(count) => cursor.move_down(&self.lines, count),
-                ForwardByWord => cursor.move_forward_by_word(&self.lines),
-                BackwardByWord => cursor.move_backward_by_word(&self.lines),
-                ForwardOnceWrapping => cursor.move_forward_once_wrapping(&self.lines),
-                ToStartOfLine => cursor.move_to_start_of_line(),
-                ToEndOfLine => cursor.move_to_end_of_line(&self.lines),
-                ToStartOfFile => cursor.move_to_start_of_file(),
-                ToEndOfFile => cursor.move_to_end_of_file(&self.lines),
-                ToFirstNonBlankChar => cursor.move_to_first_non_blank_char(&self.lines),
-                ForwardToCharInclusive(c) => cursor.move_forward_to_char_inc(&self.lines, c),
-                BackwardToCharInclusive(c) => cursor.move_backward_to_char_inc(&self.lines, c),
-                ForwardToCharExclusive(c) => cursor.move_forward_to_char_exc(&self.lines, c),
-                BackwardToCharExclusive(c) => cursor.move_backward_to_char_exc(&self.lines, c),
-                SelectLine => cursor.select_line(&self.lines),
+                Up(_) | Down(_) => cursor.stick_col(&self.piece_table),
+                _ => cursor.unstick_col(&self.piece_table),
             }
         }
 
@@ -276,159 +301,103 @@ impl Buffer {
         }
     }
 
-    pub fn command(&mut self, command: BufferCommand) {
-        use BufferCommand::*;
-        use BufferMode::*;
-        use CursorMotion::*;
+    fn command(&mut self, command: BufferCommand) {
         match command {
             InsertCursorAbove => {
-                if let Some(first_cursor) = self.cursors.first() {
-                    if first_cursor.line == 0 {
-                        return;
-                    }
-
-                    let line_above = first_cursor.line - 1;
-
-                    self.cursors.push(Cursor::new(
-                        line_above,
-                        min(
-                            first_cursor.col,
-                            self.lines[line_above].len().saturating_sub(1),
-                        ),
-                    ));
+                if let Some(first_cursor) = self
+                    .cursors
+                    .iter()
+                    .min_by(|c1, c2| c1.position.cmp(&c2.position))
+                {
+                    let mut cursor = *first_cursor;
+                    cursor.cached_col = 0;
+                    cursor.move_up(&self.piece_table, 1);
+                    self.cursors.push(cursor);
                 }
             }
             InsertCursorBelow => {
-                if let Some(last_cursor) = self.cursors.last() {
-                    if last_cursor.line == self.lines.len().saturating_sub(1) {
-                        return;
-                    }
-
-                    let line_below = last_cursor.line + 1;
-
-                    self.cursors.push(Cursor::new(
-                        line_below,
-                        min(
-                            last_cursor.col,
-                            self.lines[line_below].len().saturating_sub(1),
-                        ),
-                    ));
+                if let Some(first_cursor) = self
+                    .cursors
+                    .iter()
+                    .max_by(|c1, c2| c1.position.cmp(&c2.position))
+                {
+                    let mut cursor = *first_cursor;
+                    cursor.cached_col = 0;
+                    cursor.move_down(&self.piece_table, 1);
+                    self.cursors.push(cursor);
                 }
             }
             ReplaceChar(c) => {
-                for cursor in &mut self.cursors {
-                    if !self.lines[cursor.line].is_empty() {
-                        self.lines[cursor.line][cursor.col] = c;
-                    }
-                }
+                self.command(DeleteCharFront);
+                self.command(InsertChar(c));
+                self.motion(Backward(1));
             }
             CutChar => {
-                self.motion(Forward(1));
-                self.command(DeleteCharBack);
+                self.command(DeleteCharFront);
             }
             CutSelection => {
                 cursors_foreach_rebalance(&mut self.cursors, |cursor| {
-                    let selection_ranges = cursor.get_selection_ranges(&self.lines);
-                    if selection_ranges.len() == 1 {
-                        if let Some(range) = selection_ranges.first() {
-                            if !self.lines[range.line].is_empty() {
-                                self.lines[range.line].drain(range.start..=range.end);
-
-                                cursor.col = range.start;
-                                cursor.anchor_col = range.start;
-                            }
-                        }
-                    }
-                    if selection_ranges.len() > 1 {
-                        if let (Some(first), Some(last)) =
-                            (selection_ranges.first(), selection_ranges.last())
-                        {
-                            self.lines[first.line].drain(first.start..);
-                            let end = Vec::from(
-                                &self.lines[last.line]
-                                    [min(last.end + 1, self.lines[last.line].len())..],
-                            );
-                            self.lines[first.line].push_str(&end);
-
-                            cursor.col = first.start;
-                            cursor.anchor_col = first.start;
-                            cursor.line = min(cursor.line, cursor.anchor_line);
-                            cursor.anchor_line = cursor.line;
-                        }
-
-                        for range in selection_ranges[1..].iter().rev() {
-                            self.lines.remove(range.line);
-                        }
+                    if cursor.position < cursor.anchor {
+                        self.piece_table.delete(cursor.position, cursor.anchor + 1);
+                    } else {
+                        self.piece_table.delete(cursor.anchor, cursor.position + 1);
+                        cursor.position = cursor.anchor;
                     }
                 });
             }
             CutLineSelection => {
-                cursors_foreach_rebalance(self.cursors.as_mut_slice(), |cursor| {
-                    let first_line = min(cursor.line, cursor.anchor_line);
-                    let last_line = max(cursor.line, cursor.anchor_line);
-                    cursor.line = first_line;
-                    cursor.anchor_line = cursor.line;
-                    cursor.col = 0;
-                    cursor.anchor_col = 0;
-
-                    for line in (first_line..=last_line).rev() {
-                        self.lines.remove(line);
-                    }
-                });
-
-                // Special case, if all lines deleted insert an empty line.
-                if self.lines.is_empty() {
-                    self.lines.push(vec![]);
-                }
+                self.motion(ToEndOfLine);
+                self.command(CutSelection);
+                self.command(DeleteLine);
             }
             DeleteLine => {
                 self.motion(SelectLine);
                 self.command(CutSelection);
-                self.command(DeleteCharFront);
-            }
-            InsertLineBreak => {
-                cursors_foreach_rebalance(&mut self.cursors, |cursor| {
-                    let end = Vec::from(&self.lines[cursor.line][cursor.col..]);
-                    self.lines[cursor.line].drain(cursor.col..);
-                    self.lines.insert(cursor.line + 1, end);
-                    cursor.line += 1;
-                    cursor.col = 0;
-                });
             }
             InsertChar(c) => {
                 cursors_foreach_rebalance(&mut self.cursors, |cursor| {
-                    self.lines[cursor.line].insert(cursor.col, c);
-                    cursor.col += 1;
+                    self.piece_table.insert(cursor.position, &[c]);
+                    cursor.position += 1;
                 });
             }
             DeleteCharBack => {
                 cursors_foreach_rebalance(&mut self.cursors, |cursor| {
-                    let line_length = self.lines[cursor.line].len();
-                    if cursor.col == 0 {
-                        if cursor.line == 0 {
-                            return;
-                        }
-                        let end = self.lines[cursor.line].clone();
-                        cursor.col = self.lines[cursor.line - 1].len();
-                        self.lines[cursor.line - 1].push_str(&end);
-                        self.lines.remove(cursor.line);
-                        cursor.line -= 1;
-                    } else {
-                        self.lines[cursor.line].remove(cursor.col - 1);
-                        cursor.col -= 1;
-                    }
+                    self.piece_table
+                        .delete(cursor.position.saturating_sub(1), cursor.position);
+                    cursor.position = cursor.position.saturating_sub(1);
                 });
             }
             DeleteCharFront => {
                 self.motion(ForwardOnceWrapping);
                 self.command(DeleteCharBack);
             }
+            Undo => {
+                if let Some(state) = self.undo_stack.pop() {
+                    self.redo_stack.push(BufferState {
+                        pieces: self.piece_table.pieces.clone(),
+                        cursors: self.cursors.clone(),
+                    });
+                    self.piece_table.pieces = state.pieces;
+                    self.cursors = state.cursors;
+                }
+            }
+            Redo => {
+                if let Some(state) = self.redo_stack.pop() {
+                    self.undo_stack.push(BufferState {
+                        pieces: self.piece_table.pieces.clone(),
+                        cursors: self.cursors.clone(),
+                    });
+                    self.piece_table.pieces = state.pieces;
+                    self.cursors = state.cursors;
+                }
+            }
         }
 
-        if self.mode == Insert || self.mode == Normal {
-            for cursor in &mut self.cursors {
+        for cursor in &mut self.cursors {
+            if self.mode == Insert || self.mode == Normal {
                 cursor.reset_anchor();
             }
+            cursor.unstick_col(&self.piece_table)
         }
     }
 
@@ -440,11 +409,9 @@ impl Buffer {
         for cursor in &self.cursors[1..] {
             if cursors_overlapping(&current_cursor, cursor) {
                 if cursor.moving_forward() {
-                    current_cursor.line = cursor.line;
-                    current_cursor.col = cursor.col;
+                    current_cursor.position = cursor.position;
                 } else {
-                    current_cursor.anchor_line = cursor.anchor_line;
-                    current_cursor.anchor_col = cursor.anchor_col;
+                    current_cursor.anchor = cursor.anchor;
                 }
             } else {
                 merged.push(current_cursor);
@@ -456,8 +423,19 @@ impl Buffer {
         self.cursors = merged;
     }
 
+    fn push_undo_state(&mut self) {
+        let mut cursors = self.cursors.clone();
+        for cursor in &mut cursors {
+            cursor.position = cursor.anchor;
+        }
+        self.undo_stack.push(BufferState {
+            pieces: self.piece_table.pieces.clone(),
+            cursors,
+        });
+    }
+
     fn switch_to_normal_mode(&mut self) {
-        self.mode = BufferMode::Normal;
+        self.mode = Normal;
         self.input.clear();
         for cursor in &mut self.cursors {
             cursor.reset_anchor();
@@ -465,19 +443,19 @@ impl Buffer {
     }
 
     fn switch_to_insert_mode(&mut self) {
-        self.mode = BufferMode::Insert;
+        self.mode = Insert;
         for cursor in &mut self.cursors {
             cursor.reset_anchor();
         }
     }
 
     fn switch_to_visual_mode(&mut self) {
-        self.mode = BufferMode::Visual;
+        self.mode = Visual;
         self.input.clear();
     }
 
     fn switch_to_visual_line_mode(&mut self) {
-        self.mode = BufferMode::VisualLine;
+        self.mode = VisualLine;
         self.input.clear();
     }
 }
@@ -503,23 +481,15 @@ fn is_prefix_of_command(str: &str, mode: BufferMode) -> bool {
     }
 }
 
-const NORMAL_MODE_COMMANDS: [&str; 16] = [
-    "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "dd", "J", "K", "v", "V",
+const NORMAL_MODE_COMMANDS: [&str; 17] = [
+    "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "dd", "J", "K", "v", "V", "u",
 ];
 const VISUAL_MODE_COMMANDS: [&str; 12] =
     ["j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "d"];
 
 const SPACES_PER_TAB: usize = 4;
 
-#[derive(Copy, Clone, PartialEq)]
-pub enum BufferMode {
-    Normal,
-    Insert,
-    Visual,
-    VisualLine,
-}
-
-pub enum CursorMotion {
+enum CursorMotion {
     Forward(usize),
     Backward(usize),
     Up(usize),
@@ -539,7 +509,8 @@ pub enum CursorMotion {
     SelectLine,
 }
 
-pub enum BufferCommand {
+#[derive(PartialEq)]
+enum BufferCommand {
     InsertCursorAbove,
     InsertCursorBelow,
     ReplaceChar(u8),
@@ -547,12 +518,9 @@ pub enum BufferCommand {
     CutSelection,
     CutLineSelection,
     DeleteLine,
-    InsertLineBreak,
     InsertChar(u8),
     DeleteCharBack,
     DeleteCharFront,
-}
-
-pub enum DeviceInput {
-    MouseWheel(isize),
+    Undo,
+    Redo,
 }

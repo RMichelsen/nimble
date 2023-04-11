@@ -1,13 +1,17 @@
-use std::cmp::{max, min, Ordering};
+use std::{
+    cmp::{max, min},
+    ops::Range,
+};
 
-use crate::text_utils::{self, CharType};
+use crate::{
+    piece_table::PieceTable,
+    text_utils::{self, CharType},
+};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct Cursor {
-    pub line: usize,
-    pub col: usize,
-    pub anchor_line: usize,
-    pub anchor_col: usize,
+    pub position: usize,
+    pub anchor: usize,
     pub cached_col: usize,
 }
 
@@ -19,285 +23,255 @@ pub struct SelectionRange {
 }
 
 pub fn cursors_overlapping(c1: &Cursor, c2: &Cursor) -> bool {
-    c1.overlaps(c2) || c2.overlaps(c1)
+    min(c1.position, c1.anchor) <= max(c2.position, c2.anchor)
+        && min(c2.position, c2.anchor) <= max(c1.position, c1.anchor)
 }
 
 pub fn cursors_foreach_rebalance<F>(mut cursors: &mut [Cursor], mut f: F)
 where
     F: FnMut(&mut Cursor),
 {
-    while let Some((cursor, tail)) = cursors.split_first_mut() {
-        let cursor_before = *cursor;
-        f(cursor);
+    for i in 0..cursors.len() {
+        let cursor_before = cursors[i];
+        f(&mut cursors[i]);
 
-        let mut skip = 0;
-        for tail_cursor in &mut *tail {
-            // Single selection means content can either be inserted or deleted
-            if cursor_before.single_selection() {
-                if cursor_before.line == tail_cursor.line {
-                    tail_cursor.col = cursor.col + (tail_cursor.col - cursor_before.col);
-                }
-                if cursor_before.line == tail_cursor.anchor_line {
-                    tail_cursor.anchor_col =
-                        cursor.col + (tail_cursor.anchor_col - cursor_before.col);
-                }
-
-                if cursor.line > cursor_before.line {
-                    let offset = cursor.line - cursor_before.line;
-                    tail_cursor.anchor_line += offset;
-                    tail_cursor.line += offset;
-                } else if cursor.line < cursor_before.line {
-                    let offset = cursor_before.line - cursor.line;
-                    tail_cursor.anchor_line -= offset;
-                    tail_cursor.line -= offset;
-                }
-            } else {
-                // Selection -> single selection means content was deleted
-                if cursor.single_selection() {
-                    let (first_line, first_col, last_line, last_col) =
-                        cursor_before.get_first_and_last_positions();
-
-                    if last_line == tail_cursor.line {
-                        if first_line == last_line {
-                            tail_cursor.col -= last_col - first_col + 1;
-                        } else {
-                            tail_cursor.col -= last_col;
-                        }
-                    }
-
-                    if last_line == tail_cursor.anchor_line {
-                        if first_line == last_line {
-                            tail_cursor.anchor_col -= last_col - first_col + 1;
-                        } else {
-                            tail_cursor.anchor_col -= last_col;
-                        }
-                    }
-
-                    let offset = last_line - cursor.line;
-                    tail_cursor.anchor_line -= offset;
-                    tail_cursor.line -= offset;
-                }
+        for j in 0..cursors.len() {
+            if i == j {
+                continue;
             }
 
-            // If a tail cursor catches the main cursor, skip it (they will be merged).
-            if tail_cursor <= cursor {
-                *tail_cursor = *cursor;
-                skip += 1;
+            if cursor_before.single_selection() {
+                if cursor_before.position < cursors[j].position {
+                    let delta = cursors[i].position as isize - cursor_before.position as isize;
+                    cursors[j].anchor = cursors[j].anchor.saturating_add_signed(delta);
+                    cursors[j].position = cursors[j].position.saturating_add_signed(delta);
+                }
+            } else if cursor_before.position < cursors[j].position {
+                let delta = cursor_before.position.abs_diff(cursor_before.anchor) + 1;
+                cursors[j].anchor -= delta;
+                cursors[j].position -= delta;
             }
         }
-
-        cursors = &mut tail[skip..];
     }
 }
 
 impl Cursor {
-    pub fn new(line: usize, col: usize) -> Self {
+    pub fn new(position: usize) -> Self {
         Self {
-            line,
-            col,
-            anchor_line: line,
-            anchor_col: col,
-            cached_col: col,
+            position,
+            anchor: position,
+            cached_col: 0,
         }
     }
 
-    pub fn stick_col(&mut self) {
-        self.cached_col = max(self.cached_col, self.col);
+    pub fn range(&self) -> Range<usize> {
+        min(self.position, self.anchor)..max(self.position, self.anchor)
     }
 
-    pub fn unstick_col(&mut self) {
-        self.cached_col = self.col;
+    pub fn default() -> Self {
+        Self {
+            position: 0,
+            anchor: 0,
+            cached_col: 0,
+        }
     }
 
-    pub fn move_down(&mut self, lines: &[Vec<u8>], count: usize) {
-        self.line = min(self.line + count, lines.len().saturating_sub(1));
-        self.col = min(
-            max(self.cached_col, self.col),
-            self.line_zero_indexed_length(lines),
-        );
+    pub fn stick_col(&mut self, piece_table: &PieceTable) {
+        self.cached_col = max(self.cached_col, piece_table.col_index(self.position));
     }
 
-    pub fn move_up(&mut self, lines: &[Vec<u8>], count: usize) {
-        self.line = self.line.saturating_sub(count);
-        self.col = min(
-            max(self.cached_col, self.col),
-            self.line_zero_indexed_length(lines),
-        );
+    pub fn unstick_col(&mut self, piece_table: &PieceTable) {
+        self.cached_col = piece_table.col_index(self.position);
     }
 
-    pub fn move_forward(&mut self, lines: &[Vec<u8>], count: usize) {
-        self.col = min(self.col + count, self.line_zero_indexed_length(lines));
+    pub fn move_down(&mut self, piece_table: &PieceTable, count: usize) {
+        let index = piece_table.line_index(self.position);
+        if let Some(line) = piece_table.line_at_index(index + 1) {
+            let col = piece_table.col_index(self.position);
+            self.position =
+                line.start + min(max(col, self.cached_col), line.length.saturating_sub(1));
+        }
     }
 
-    pub fn move_forward_once_wrapping(&mut self, lines: &[Vec<u8>]) {
-        if self.col == lines[self.line].len() {
-            self.col = 0;
-            self.line = min(self.line + 1, lines.len().saturating_sub(1));
+    pub fn move_up(&mut self, piece_table: &PieceTable, count: usize) {
+        let index = piece_table.line_index(self.position);
+        if index == 0 {
+            return;
+        }
+
+        if let Some(line) = piece_table.line_at_index(index - 1) {
+            let col = piece_table.col_index(self.position);
+            self.position =
+                line.start + min(max(col, self.cached_col), line.length.saturating_sub(1));
+        }
+    }
+
+    pub fn move_forward(&mut self, piece_table: &PieceTable, count: usize) {
+        let c = piece_table.char_at(self.position);
+        if c.is_none() || c.is_some_and(|c| c == b'\n') {
+            return;
+        }
+
+        if let Some(chars_until_newline) = self.chars_until_char(piece_table, b'\n') {
+            self.position += min(count, chars_until_newline + 1);
         } else {
-            self.col = self.col + 1;
+            self.position += count;
         }
     }
 
-    pub fn move_backward(&mut self, lines: &[Vec<u8>], count: usize) {
-        self.col = self.col.saturating_sub(count);
+    pub fn move_forward_once_wrapping(&mut self, piece_table: &PieceTable) {
+        self.position = min(self.position + 1, piece_table.num_chars());
     }
 
-    pub fn move_forward_by_word(&mut self, lines: &[Vec<u8>]) {
+    pub fn move_backward(&mut self, piece_table: &PieceTable, count: usize) {
+        if let Some(chars_until_newline) = self.chars_until_char_rev(piece_table, b'\n') {
+            self.position -= min(count, chars_until_newline);
+        } else {
+            self.position = self.position.saturating_sub(count);
+        }
+    }
+
+    pub fn move_forward_by_word(&mut self, piece_table: &PieceTable) {
         let mut count = 0;
-        for chars in lines[self.line][self.col..].windows(2) {
-            count += 1;
-            let type1 = text_utils::get_ascii_char_type(chars[0]);
-            let type2 = text_utils::get_ascii_char_type(chars[1]);
-
-            if type2 != CharType::Whitespace && type1 != type2 {
-                self.move_forward(lines, count);
-                return;
-            }
-        }
-
-        if self.line < lines.len().saturating_sub(1) {
-            self.line += 1;
-        }
-        self.move_to_first_non_blank_char(lines);
-    }
-
-    pub fn move_backward_by_word(&mut self, lines: &[Vec<u8>]) {
-        let mut count = 0;
-        for chars in lines[self.line][..self.col].windows(2).rev() {
-            count += 1;
-            let type1 = text_utils::get_ascii_char_type(chars[0]);
-            let type2 = text_utils::get_ascii_char_type(chars[1]);
-
-            if type2 != CharType::Whitespace && type1 != type2 {
-                self.move_backward(lines, count);
-                return;
-            }
-        }
-
-        if self.col != 0 && !lines[self.line][0].is_ascii_whitespace() {
-            self.col = 0;
-            return;
-        }
-
-        self.line = self.line.saturating_sub(1);
-        self.move_to_last_non_blank_char(lines);
-        self.move_to_start_of_word(lines)
-    }
-
-    pub fn move_to_start_of_word(&mut self, lines: &[Vec<u8>]) {
-        if lines[self.line].is_empty() {
-            return;
-        }
-
-        let char_type = text_utils::get_ascii_char_type(lines[self.line][self.col]);
-        if let Some(count) =
-            self.chars_until_pred_rev(lines, |c| text_utils::get_ascii_char_type(c) != char_type)
+        for (c1, c2) in piece_table
+            .iter_chars_at(self.position)
+            .zip(piece_table.iter_chars_at(self.position).skip(1))
         {
-            self.move_backward(lines, count.saturating_sub(1));
-        } else {
-            self.move_to_start_of_line();
+            count += 1;
+            let type1 = text_utils::char_type(c1);
+            let type2 = text_utils::char_type(c2);
+
+            // Special case: empty line is considered a word
+            if (c1 == b'\n' && c2 == b'\n') || (type2 != CharType::Whitespace && type1 != type2) {
+                self.position += count;
+                return;
+            }
+        }
+        self.position = piece_table.num_chars();
+    }
+
+    pub fn move_backward_by_word(&mut self, piece_table: &PieceTable) {
+        let mut count = 0;
+        for (c1, c2) in piece_table
+            .iter_chars_at_rev(self.position.saturating_sub(1))
+            .zip(
+                piece_table
+                    .iter_chars_at_rev(self.position.saturating_sub(1))
+                    .skip(1),
+            )
+        {
+            count += 1;
+            let type1 = text_utils::char_type(c1);
+            let type2 = text_utils::char_type(c2);
+
+            // Special case: empty line is considered a word
+            if (c1 == b'\n' && c2 == b'\n') || (type1 != CharType::Whitespace && type1 != type2) {
+                self.position -= count;
+                return;
+            }
+        }
+        self.position = 0;
+    }
+
+    pub fn move_to_start_of_line(&mut self, piece_table: &PieceTable) {
+        if let Some(line) = piece_table.line_at_char(self.position) {
+            self.position = line.start;
         }
     }
 
-    pub fn move_to_start_of_line(&mut self) {
-        self.col = 0;
-    }
-
-    pub fn move_to_end_of_line(&mut self, lines: &[Vec<u8>]) {
-        self.col = self.line_zero_indexed_length(lines);
+    pub fn move_to_end_of_line(&mut self, piece_table: &PieceTable) {
+        if let Some(line) = piece_table.line_at_char(self.position) {
+            self.position = line.end;
+        }
     }
 
     pub fn move_to_start_of_file(&mut self) {
-        self.line = 0;
-        self.col = 0;
+        self.position = 0;
     }
 
-    pub fn move_to_end_of_file(&mut self, lines: &[Vec<u8>]) {
-        self.line = lines.len().saturating_sub(1);
-        self.col = self.line_zero_indexed_length(lines);
+    pub fn move_to_end_of_file(&mut self, piece_table: &PieceTable) {
+        self.position = piece_table.num_chars();
     }
 
-    pub fn move_forward_to_char_inc(&mut self, lines: &[Vec<u8>], search_char: u8) {
-        let count = self.chars_until_char(lines, search_char);
-        self.move_forward(lines, count);
-    }
-
-    pub fn move_backward_to_char_inc(&mut self, lines: &[Vec<u8>], search_char: u8) {
-        let count = self.chars_until_char_rev(lines, search_char);
-        self.move_backward(lines, count);
-    }
-
-    pub fn move_forward_to_char_exc(&mut self, lines: &[Vec<u8>], search_char: u8) {
-        let count = self.chars_until_char(lines, search_char);
-        self.move_forward(lines, count.saturating_sub(1));
-    }
-
-    pub fn move_backward_to_char_exc(&mut self, lines: &[Vec<u8>], search_char: u8) {
-        let count = self.chars_until_char_rev(lines, search_char);
-        self.move_backward(lines, count.saturating_sub(1));
-    }
-
-    pub fn move_to_first_non_blank_char(&mut self, lines: &[Vec<u8>]) {
-        let mut col = 0;
-        for c in &lines[self.line] {
-            if !c.is_ascii_whitespace() {
-                break;
-            }
-            col += 1;
+    pub fn move_to_char_inc(&mut self, piece_table: &PieceTable, search_char: u8) {
+        if let Some(count) = self.chars_until_char(piece_table, search_char) {
+            self.move_forward(piece_table, count + 1);
         }
-        self.col = col
     }
 
-    pub fn move_to_last_non_blank_char(&mut self, lines: &[Vec<u8>]) {
-        let mut col = self.line_zero_indexed_length(lines);
-        for c in lines[self.line].iter().rev() {
-            if !c.is_ascii_whitespace() {
-                break;
-            }
-            col = col.saturating_sub(1);
+    pub fn move_back_to_char_inc(&mut self, piece_table: &PieceTable, search_char: u8) {
+        if let Some(count) = self.chars_until_char_rev(piece_table, search_char) {
+            self.move_backward(piece_table, count + 1);
         }
-        self.col = col
     }
 
-    pub fn select_line(&mut self, lines: &[Vec<u8>]) {
-        self.anchor_line = self.line;
-        self.anchor_col = 0;
-        self.col = self.line_zero_indexed_length(lines);
+    pub fn move_to_char_exc(&mut self, piece_table: &PieceTable, search_char: u8) {
+        if let Some(count) = self.chars_until_char(piece_table, search_char) {
+            self.move_forward(piece_table, count);
+        }
+    }
+
+    pub fn move_back_to_char_exc(&mut self, piece_table: &PieceTable, search_char: u8) {
+        if let Some(count) = self.chars_until_char_rev(piece_table, search_char) {
+            self.move_backward(piece_table, count);
+        }
+    }
+
+    pub fn move_to_first_non_blank_char(&mut self, piece_table: &PieceTable) {
+        if let Some(line) = piece_table.line_at_char(self.position) {
+            self.position = line.start;
+            if line.length > 1 {
+                if let Some(count) =
+                    self.chars_until_pred(piece_table, |c| !c.is_ascii_whitespace() || c == b'\n')
+                {
+                    self.move_forward(piece_table, count);
+                }
+            }
+        }
+    }
+
+    pub fn select_line(&mut self, piece_table: &PieceTable) {
+        if let Some(line) = piece_table.line_at_char(self.position) {
+            self.anchor = line.start;
+            self.position = line.end;
+        }
     }
 
     pub fn reset_anchor(&mut self) {
-        self.anchor_line = self.line;
-        self.anchor_col = self.col;
+        self.anchor = self.position;
     }
 
-    pub fn get_selection_ranges(&self, lines: &[Vec<u8>]) -> Vec<SelectionRange> {
-        let mut ranges = vec![];
-        if self.line == self.anchor_line {
-            let first_col = min(self.col, self.anchor_col);
-            let last_col = max(self.col, self.anchor_col);
-            ranges.push(SelectionRange {
-                line: self.line,
-                start: first_col,
-                end: last_col,
-            });
+    pub fn get_selection_ranges(&self, piece_table: &PieceTable) -> Vec<SelectionRange> {
+        let line = piece_table.line_index(self.position);
+        let col = piece_table.col_index(self.position);
+        let anchor_line = piece_table.line_index(self.anchor);
+        let anchor_col = piece_table.col_index(self.anchor);
+
+        if line == anchor_line {
+            vec![SelectionRange {
+                line,
+                start: min(col, anchor_col),
+                end: max(col, anchor_col),
+            }]
         } else {
-            let (first_line, first_col, last_line, last_col) = self.get_first_and_last_positions();
+            let (first_line, first_col, last_line, last_col) = if self.position < self.anchor {
+                (line, col, anchor_line, anchor_col)
+            } else {
+                (anchor_line, anchor_col, line, col)
+            };
+
+            let mut ranges = vec![];
             ranges.push(SelectionRange {
                 line: first_line,
                 start: first_col,
-                end: lines[first_line].len().saturating_sub(1),
+                end: piece_table.line_at_index(first_line).unwrap().length,
             });
 
-            for (i, line) in lines
-                .iter()
-                .enumerate()
-                .take(last_line)
-                .skip(first_line + 1)
-            {
+            for line in first_line + 1..last_line {
                 ranges.push(SelectionRange {
-                    line: i,
+                    line,
                     start: 0,
-                    end: line.len().saturating_sub(1),
+                    end: piece_table.line_at_index(line).unwrap().length,
                 });
             }
 
@@ -306,97 +280,52 @@ impl Cursor {
                 start: 0,
                 end: last_col,
             });
+            ranges
         }
-        ranges
     }
 
-    pub fn line_zero_indexed_length(&self, lines: &[Vec<u8>]) -> usize {
-        lines[self.line].len().saturating_sub(1)
+    pub fn at_line_end(&self, piece_table: &PieceTable) -> bool {
+        piece_table
+            .line_at_char(self.position)
+            .is_some_and(|line| line.end == self.position)
     }
 
     pub fn moving_forward(&self) -> bool {
-        self.line > self.anchor_line
-            || (self.line == self.anchor_line && self.col >= self.anchor_col)
+        self.position >= self.anchor
     }
 
-    fn get_first_and_last_positions(&self) -> (usize, usize, usize, usize) {
-        if self.line < self.anchor_line
-            || (self.line == self.anchor_line && self.col < self.anchor_col)
-        {
-            (self.line, self.col, self.anchor_line, self.anchor_col)
-        } else {
-            (self.anchor_line, self.anchor_col, self.line, self.col)
-        }
-    }
-
-    fn overlaps(&self, other: &Cursor) -> bool {
-        if self.moving_forward() {
-            (self.line > other.anchor_line && self.line <= other.line)
-                || (self.line == other.anchor_line
-                    && (other.anchor_col..=other.col).contains(&self.col))
-        } else {
-            (self.line < other.anchor_line && self.line >= other.line)
-                || (self.line == other.anchor_line
-                    && (other.col..=other.anchor_col).contains(&self.col))
-        }
+    pub fn get_line_col(&self, piece_table: &PieceTable) -> (usize, usize) {
+        (
+            piece_table.line_index(self.position),
+            piece_table.col_index(self.position),
+        )
     }
 
     fn single_selection(&self) -> bool {
-        self.line == self.anchor_line && self.col == self.anchor_col
+        self.position == self.anchor
     }
 
-    fn chars_until_pred<F>(&self, lines: &[Vec<u8>], pred: F) -> Option<usize>
+    fn chars_until_pred<F>(&self, piece_table: &PieceTable, pred: F) -> Option<usize>
     where
         F: Fn(u8) -> bool,
     {
-        if let Some(line) = lines.get(self.line) {
-            let mut count = 0;
-            for c in line[self.col + 1..].iter() {
-                count += 1;
-                if pred(*c) {
-                    return Some(count);
-                }
-            }
-        }
-
-        None
+        piece_table.iter_chars_at(self.position + 1).position(pred)
     }
 
-    fn chars_until_pred_rev<F>(&self, lines: &[Vec<u8>], pred: F) -> Option<usize>
+    fn chars_until_pred_rev<F>(&self, piece_table: &PieceTable, pred: F) -> Option<usize>
     where
         F: Fn(u8) -> bool,
     {
-        if let Some(line) = lines.get(self.line) {
-            let mut count = 0;
-            for c in line[..self.col].iter().rev() {
-                count += 1;
-                if pred(*c) {
-                    return Some(count);
-                }
-            }
-        }
-        None
+        piece_table
+            .iter_chars_at_rev(self.position.saturating_sub(1))
+            .position(pred)
     }
 
-    fn chars_until_char(&self, lines: &[Vec<u8>], search_char: u8) -> usize {
-        self.chars_until_pred(lines, |c| c == search_char)
-            .unwrap_or(0)
+    fn chars_until_char(&self, piece_table: &PieceTable, search_char: u8) -> Option<usize> {
+        self.chars_until_pred(piece_table, |c| c == search_char)
     }
 
-    fn chars_until_char_rev(&self, lines: &[Vec<u8>], search_char: u8) -> usize {
-        self.chars_until_pred_rev(lines, |c| c == search_char)
-            .unwrap_or(0)
-    }
-}
-
-impl Ord for Cursor {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.line.cmp(&other.line).then(self.col.cmp(&other.col))
-    }
-}
-
-impl PartialOrd for Cursor {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+    fn chars_until_char_rev(&self, piece_table: &PieceTable, search_char: u8) -> Option<usize> {
+        self.chars_until_pred_rev(piece_table, |c| c == search_char)
     }
 }

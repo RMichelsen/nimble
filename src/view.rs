@@ -1,6 +1,9 @@
 use std::cmp::{max, min};
 
-use crate::buffer::{Buffer, BufferMode, DeviceInput};
+use crate::{
+    buffer::{Buffer, BufferMode},
+    DeviceInput,
+};
 
 const SCROLL_LINES_PER_ROLL: isize = 3;
 
@@ -31,14 +34,14 @@ impl View {
     {
         if buffer.mode == BufferMode::VisualLine {
             for cursor in buffer.cursors.iter() {
-                for line in
-                    min(cursor.line, cursor.anchor_line)..=max(cursor.line, cursor.anchor_line)
-                {
+                let line = buffer.piece_table.line_index(cursor.position);
+                let anchor_line = buffer.piece_table.line_index(cursor.anchor);
+                for line in min(line, anchor_line)..=max(line, anchor_line) {
                     let start = 0;
-                    let end = buffer.lines[line].len().saturating_sub(1);
+                    let end = buffer.piece_table.line_at_index(line).unwrap().length;
                     let num = (start..=end)
                         .filter(|col| {
-                            self.pos_in_render_visible_range(cursor.line, *col, num_rows, num_cols)
+                            self.pos_in_render_visible_range(line, *col, num_rows, num_cols)
                         })
                         .count();
                     f(
@@ -50,10 +53,10 @@ impl View {
             }
         } else {
             for cursor in buffer.cursors.iter() {
-                for range in cursor.get_selection_ranges(&buffer.lines) {
+                for range in cursor.get_selection_ranges(&buffer.piece_table) {
                     let num = (range.start..=range.end)
-                        .filter(|line| {
-                            self.pos_in_render_visible_range(cursor.line, *line, num_rows, num_cols)
+                        .filter(|col| {
+                            self.pos_in_render_visible_range(range.line, *col, num_rows, num_cols)
                         })
                         .count();
                     f(
@@ -76,10 +79,11 @@ impl View {
         F: Fn(usize, usize),
     {
         for cursor in buffer.cursors.iter() {
-            if self.pos_in_render_visible_range(cursor.line, cursor.col, num_rows, num_cols) {
+            let (line, col) = cursor.get_line_col(&buffer.piece_table);
+            if self.pos_in_render_visible_range(line, col, num_rows, num_cols) {
                 f(
-                    self.absolute_to_view_row(cursor.line),
-                    self.absolute_to_view_col(cursor.col),
+                    self.absolute_to_view_row(line),
+                    self.absolute_to_view_col(col),
                 );
             }
         }
@@ -89,33 +93,25 @@ impl View {
     where
         F: Fn(usize, &[u8]),
     {
-        for (i, line) in buffer.lines
-            [self.line_offset..min(self.line_offset + num_rows, buffer.lines.len())]
-            .iter()
-            .enumerate()
-        {
-            f(i, line);
-        }
+        buffer
+            .piece_table
+            .lines_foreach(self.line_offset, num_rows, |i, line| f(i, line));
     }
 
     pub fn adjust(&mut self, buffer: &Buffer, num_rows: usize, num_cols: usize) {
         if let Some(first_cursor) = buffer.cursors.first() {
-            if !self.pos_in_edit_visible_range(
-                first_cursor.line,
-                first_cursor.col,
-                num_rows,
-                num_cols,
-            ) {
-                if first_cursor.line < self.line_offset {
-                    self.line_offset = first_cursor.line;
-                } else if first_cursor.line > (self.line_offset + (num_rows - 2)) {
-                    self.line_offset += first_cursor.line - (self.line_offset + (num_rows - 2))
+            let (line, col) = first_cursor.get_line_col(&buffer.piece_table);
+            if !self.pos_in_edit_visible_range(line, col, num_rows, num_cols) {
+                if line < self.line_offset {
+                    self.line_offset = line;
+                } else if line > (self.line_offset + (num_rows - 2)) {
+                    self.line_offset += line - (self.line_offset + (num_rows - 2))
                 }
 
-                if first_cursor.col < self.col_offset {
-                    self.col_offset = first_cursor.col;
-                } else if first_cursor.col > (self.col_offset + (num_cols - 2)) {
-                    self.col_offset += first_cursor.col - (self.col_offset + (num_cols - 2))
+                if col < self.col_offset {
+                    self.col_offset = col;
+                } else if col > (self.col_offset + (num_cols - 2)) {
+                    self.col_offset += col - (self.col_offset + (num_cols - 2))
                 }
             }
         }
@@ -123,30 +119,38 @@ impl View {
 
     fn scroll_vertical(&mut self, buffer: &Buffer, delta: isize) {
         if let Some(result) = self.line_offset.checked_add_signed(delta) {
-            self.line_offset = min(result, buffer.lines.len().saturating_sub(1));
+            self.line_offset = min(
+                result,
+                buffer
+                    .piece_table
+                    .iter_chars()
+                    .filter(|c| *c == b'\n')
+                    .count()
+                    .saturating_sub(1),
+            );
         }
     }
 
     fn pos_in_edit_visible_range(
         &self,
-        row: usize,
+        line: usize,
         col: usize,
         num_rows: usize,
         num_cols: usize,
     ) -> bool {
-        (self.line_offset..self.line_offset + num_rows.saturating_sub(1)).contains(&row)
+        (self.line_offset..self.line_offset + num_rows.saturating_sub(1)).contains(&line)
             && (self.col_offset..self.col_offset + num_cols.saturating_sub(1)).contains(&col)
     }
 
     fn pos_in_render_visible_range(
         &self,
-        row: usize,
         line: usize,
+        col: usize,
         num_rows: usize,
         num_cols: usize,
     ) -> bool {
-        (self.line_offset..self.line_offset + num_rows).contains(&row)
-            && (self.col_offset..self.col_offset + num_cols).contains(&line)
+        (self.line_offset..self.line_offset + num_rows).contains(&line)
+            && (self.col_offset..self.col_offset + num_cols).contains(&col)
     }
 
     fn absolute_to_view_row(&self, line: usize) -> usize {

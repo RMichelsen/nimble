@@ -4,6 +4,7 @@
 #![feature(iterator_try_collect)]
 #![feature(pattern)]
 #![feature(slice_take)]
+#![feature(drain_filter)]
 
 mod buffer;
 mod cursor;
@@ -11,12 +12,16 @@ mod editor;
 mod language_server;
 mod language_server_types;
 mod language_support;
+mod piece_table;
 mod renderer;
 mod text_utils;
 mod theme;
 mod view;
 
-use buffer::DeviceInput;
+pub enum DeviceInput {
+    MouseWheel(isize),
+}
+
 use editor::Editor;
 use winit::{
     dpi::PhysicalSize,
@@ -34,8 +39,10 @@ fn main() {
         .unwrap();
 
     let mut editor = Editor::new(&window);
-    editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/renderer.rs");
+    // editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/renderer.rs");
+    editor.open_file("C:/VulkanSDK/1.3.239.0/Source/SPIRV-Reflect/spirv_reflect.c");
 
+    let mut modifiers = None;
     event_loop.run(move |event, _, control_flow| match event {
         Event::RedrawRequested(_) => {
             editor.update();
@@ -67,9 +74,15 @@ fn main() {
         } => {
             if input.state == ElementState::Pressed {
                 if let Some(keycode) = input.virtual_keycode {
-                    editor.handle_key(keycode);
+                    editor.handle_key(keycode, modifiers);
                 }
             }
+        }
+        Event::WindowEvent {
+            event: WindowEvent::ModifiersChanged(modifiers_state),
+            ..
+        } => {
+            modifiers = Some(modifiers_state);
         }
         Event::WindowEvent {
             event: WindowEvent::CloseRequested,

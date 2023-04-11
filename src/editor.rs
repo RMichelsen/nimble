@@ -1,13 +1,13 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use winit::{event::VirtualKeyCode, window::Window};
+use winit::{
+    event::{ModifiersState, VirtualKeyCode},
+    window::Window,
+};
 
 use crate::{
-    buffer::{Buffer, DeviceInput},
-    language_server::LanguageServer,
-    language_support::language_from_path,
-    renderer::Renderer,
-    view::View,
+    buffer::Buffer, language_server::LanguageServer, language_support::language_from_path,
+    renderer::Renderer, view::View, DeviceInput,
 };
 
 struct Document {
@@ -45,10 +45,10 @@ impl Editor {
         }
     }
 
-    pub fn handle_key(&mut self, key_code: VirtualKeyCode) {
+    pub fn handle_key(&mut self, key_code: VirtualKeyCode, modifiers: Option<ModifiersState>) {
         let (num_rows, num_cols) = (self.renderer.num_rows, self.renderer.num_cols);
         if let Some(document) = self.active_document() {
-            document.buffer.handle_key(key_code);
+            document.buffer.handle_key(key_code, modifiers);
             document.view.adjust(&document.buffer, num_rows, num_cols);
         }
     }
@@ -71,7 +71,7 @@ impl Editor {
                     );
                 }
                 Some(Rc::clone(
-                    &self.language_servers.get(language.identifier).unwrap(),
+                    self.language_servers.get(language.identifier).unwrap(),
                 ))
             } else {
                 None

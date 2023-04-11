@@ -28,14 +28,10 @@ pub enum CharType {
     Whitespace,
 }
 
-pub fn is_word(c: u8) -> bool {
-    c.is_ascii_alphanumeric() || c == 0x5F
-}
-
-pub fn get_ascii_char_type(c: u8) -> CharType {
+pub fn char_type(c: u8) -> CharType {
     match c {
-        x if is_word(x) => CharType::Word,
-        x if x.is_ascii_whitespace() => CharType::Whitespace,
+        c if c.is_ascii_alphanumeric() || c == b'_' => CharType::Word,
+        c if c.is_ascii_whitespace() => CharType::Whitespace,
         _ => CharType::Punctuation,
     }
 }
