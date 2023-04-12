@@ -13,7 +13,10 @@ use VirtualKeyCode::{Back, Delete, Escape, Return, Tab, R};
 use crate::{
     cursor::{cursors_foreach_rebalance, cursors_overlapping, Cursor},
     language_server::LanguageServer,
-    language_server_types::{DidOpenTextDocumentParams, TextDocumentItem},
+    language_server_types::{
+        DidChangeTextDocumentParams, DidOpenTextDocumentParams, Position, Range,
+        TextDocumentChangeEvent, TextDocumentItem, VersionedTextDocumentIdentifier,
+    },
     language_support::{language_from_path, Language},
     piece_table::{Piece, PieceTable},
 };
@@ -70,7 +73,6 @@ impl Buffer {
 
     pub fn send_did_open(&self, server: &mut RefMut<LanguageServer>) {
         let text = self.piece_table.iter_chars().collect();
-
         let open_params = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {
                 uri: self.uri.clone(),
@@ -339,8 +341,24 @@ impl Buffer {
             CutSelection => {
                 cursors_foreach_rebalance(&mut self.cursors, |cursor| {
                     if cursor.position < cursor.anchor {
+                        lsp_delete(
+                            &mut self.language_server,
+                            &self.piece_table,
+                            &self.path,
+                            &mut self.version,
+                            cursor.position,
+                            cursor.anchor + 1,
+                        );
                         self.piece_table.delete(cursor.position, cursor.anchor + 1);
                     } else {
+                        lsp_delete(
+                            &mut self.language_server,
+                            &self.piece_table,
+                            &self.path,
+                            &mut self.version,
+                            cursor.anchor,
+                            cursor.position + 1,
+                        );
                         self.piece_table.delete(cursor.anchor, cursor.position + 1);
                         cursor.position = cursor.anchor;
                     }
@@ -357,15 +375,31 @@ impl Buffer {
             }
             InsertChar(c) => {
                 cursors_foreach_rebalance(&mut self.cursors, |cursor| {
+                    lsp_insert(
+                        &mut self.language_server,
+                        &self.piece_table,
+                        &self.path,
+                        &mut self.version,
+                        cursor.position,
+                        (c as char).to_string(),
+                    );
                     self.piece_table.insert(cursor.position, &[c]);
                     cursor.position += 1;
                 });
             }
             DeleteCharBack => {
                 cursors_foreach_rebalance(&mut self.cursors, |cursor| {
-                    self.piece_table
-                        .delete(cursor.position.saturating_sub(1), cursor.position);
-                    cursor.position = cursor.position.saturating_sub(1);
+                    let new_position = cursor.position.saturating_sub(1);
+                    lsp_delete(
+                        &mut self.language_server,
+                        &self.piece_table,
+                        &self.path,
+                        &mut self.version,
+                        new_position,
+                        cursor.position,
+                    );
+                    self.piece_table.delete(new_position, cursor.position);
+                    cursor.position = new_position;
                 });
             }
             DeleteCharFront => {
@@ -381,6 +415,12 @@ impl Buffer {
                     self.piece_table.pieces = state.pieces;
                     self.cursors = state.cursors;
                 }
+                lsp_reload(
+                    &mut self.language_server,
+                    &self.piece_table,
+                    &self.path,
+                    &mut self.version,
+                );
             }
             Redo => {
                 if let Some(state) = self.redo_stack.pop() {
@@ -391,6 +431,12 @@ impl Buffer {
                     self.piece_table.pieces = state.pieces;
                     self.cursors = state.cursors;
                 }
+                lsp_reload(
+                    &mut self.language_server,
+                    &self.piece_table,
+                    &self.path,
+                    &mut self.version,
+                );
             }
         }
 
@@ -458,6 +504,105 @@ impl Buffer {
     fn switch_to_visual_line_mode(&mut self) {
         self.mode = VisualLine;
         self.input.clear();
+    }
+}
+
+fn lsp_reload(
+    language_server: &mut Option<Rc<RefCell<LanguageServer>>>,
+    piece_table: &PieceTable,
+    path: &str,
+    version: &mut i32,
+) {
+    if let Some(server) = &language_server {
+        let change_params = DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: "file:///".to_string() + &path,
+                version: *version,
+            },
+            content_changes: vec![TextDocumentChangeEvent {
+                range: None,
+                text: unsafe { String::from_utf8_unchecked(piece_table.iter_chars().collect()) },
+            }],
+        };
+        server
+            .borrow_mut()
+            .send_notification("textDocument/didChange", change_params);
+        *version += 1;
+    }
+}
+
+fn lsp_insert(
+    language_server: &mut Option<Rc<RefCell<LanguageServer>>>,
+    piece_table: &PieceTable,
+    path: &str,
+    version: &mut i32,
+    pos: usize,
+    text: String,
+) {
+    if let Some(server) = &language_server {
+        let (line, col) = (piece_table.line_index(pos), piece_table.col_index(pos));
+
+        let change_params = DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: "file:///".to_string() + &path,
+                version: *version,
+            },
+            content_changes: vec![TextDocumentChangeEvent {
+                range: Some(Range {
+                    start: Position {
+                        line: line as u32,
+                        character: col as u32,
+                    },
+                    end: Position {
+                        line: line as u32,
+                        character: col as u32,
+                    },
+                }),
+                text,
+            }],
+        };
+        server
+            .borrow_mut()
+            .send_notification("textDocument/didChange", change_params);
+        *version += 1;
+    }
+}
+
+fn lsp_delete(
+    language_server: &mut Option<Rc<RefCell<LanguageServer>>>,
+    piece_table: &PieceTable,
+    path: &str,
+    version: &mut i32,
+    pos1: usize,
+    pos2: usize,
+) {
+    if let Some(server) = &language_server {
+        let (line1, col1) = (piece_table.line_index(pos1), piece_table.col_index(pos1));
+        let (line2, col2) = (piece_table.line_index(pos2), piece_table.col_index(pos2));
+
+        let change_params = DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier {
+                uri: "file:///".to_string() + &path,
+                version: *version,
+            },
+            content_changes: vec![TextDocumentChangeEvent {
+                range: Some(Range {
+                    start: Position {
+                        line: line1 as u32,
+                        character: col1 as u32,
+                    },
+                    end: Position {
+                        line: line2 as u32,
+                        character: col2 as u32,
+                    },
+                }),
+                text: String::new(),
+            }],
+        };
+        server
+            .borrow_mut()
+            .send_notification("textDocument/didChange", change_params);
+        *version += 1;
     }
 }
 

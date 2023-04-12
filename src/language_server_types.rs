@@ -122,7 +122,8 @@ pub struct Range {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextDocumentChangeEvent {
-    pub range: Range,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub range: Option<Range>,
     pub text: String,
 }
 

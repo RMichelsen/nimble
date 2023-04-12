@@ -232,7 +232,6 @@ impl Cursor {
 
     pub fn select_line(&mut self, piece_table: &PieceTable) {
         if let Some(line) = piece_table.line_at_char(self.position) {
-            println!("{:?}", line);
             self.anchor = line.start;
             self.position = line.end;
         }
