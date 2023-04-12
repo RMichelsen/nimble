@@ -43,53 +43,58 @@ fn main() {
     editor.open_file("C:/VulkanSDK/1.3.239.0/Source/SPIRV-Reflect/spirv_reflect.c");
 
     let mut modifiers = None;
-    event_loop.run(move |event, _, control_flow| match event {
-        Event::RedrawRequested(_) => {
-            editor.update();
-        }
-        Event::WindowEvent {
-            event: WindowEvent::MouseWheel { delta, .. },
-            ..
-        } => {
-            match delta {
-                MouseScrollDelta::LineDelta(_, lines) => {
-                    editor.handle_input(DeviceInput::MouseWheel((lines as isize).signum()));
+    event_loop.run(move |event, _, control_flow| {
+        editor.update();
+
+        match event {
+            Event::RedrawRequested(_) => {
+                editor.render();
+            }
+            Event::WindowEvent {
+                event: WindowEvent::MouseWheel { delta, .. },
+                ..
+            } => {
+                match delta {
+                    MouseScrollDelta::LineDelta(_, lines) => {
+                        editor.handle_input(DeviceInput::MouseWheel((lines as isize).signum()));
+                    }
+                    MouseScrollDelta::PixelDelta(pos) => {
+                        editor.handle_input(DeviceInput::MouseWheel((pos.y as isize).signum()));
+                    }
                 }
-                MouseScrollDelta::PixelDelta(pos) => {
-                    editor.handle_input(DeviceInput::MouseWheel((pos.y as isize).signum()));
+                window.request_redraw();
+            }
+            Event::WindowEvent {
+                event: WindowEvent::ReceivedCharacter(chr),
+                ..
+            } => {
+                editor.handle_char(chr);
+                window.request_redraw();
+            }
+            Event::WindowEvent {
+                event: WindowEvent::KeyboardInput { input, .. },
+                ..
+            } => {
+                if input.state == ElementState::Pressed {
+                    if let Some(keycode) = input.virtual_keycode {
+                        editor.handle_key(keycode, modifiers);
+                    }
                 }
             }
-            window.request_redraw();
-        }
-        Event::WindowEvent {
-            event: WindowEvent::ReceivedCharacter(chr),
-            ..
-        } => {
-            editor.handle_char(chr);
-            window.request_redraw();
-        }
-        Event::WindowEvent {
-            event: WindowEvent::KeyboardInput { input, .. },
-            ..
-        } => {
-            if input.state == ElementState::Pressed {
-                if let Some(keycode) = input.virtual_keycode {
-                    editor.handle_key(keycode, modifiers);
-                }
+            Event::WindowEvent {
+                event: WindowEvent::ModifiersChanged(modifiers_state),
+                ..
+            } => {
+                modifiers = Some(modifiers_state);
             }
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => {
+                editor.shutdown();
+                *control_flow = ControlFlow::Exit;
+            }
+            _ => (),
         }
-        Event::WindowEvent {
-            event: WindowEvent::ModifiersChanged(modifiers_state),
-            ..
-        } => {
-            modifiers = Some(modifiers_state);
-        }
-        Event::WindowEvent {
-            event: WindowEvent::CloseRequested,
-            ..
-        } => {
-            *control_flow = ControlFlow::Exit;
-        }
-        _ => (),
     });
 }

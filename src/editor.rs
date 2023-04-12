@@ -6,8 +6,8 @@ use winit::{
 };
 
 use crate::{
-    buffer::Buffer, language_server::LanguageServer, language_support::language_from_path,
-    renderer::Renderer, view::View, DeviceInput,
+    buffer::Buffer, language_server::LanguageServer, language_server_types::VoidParams,
+    language_support::language_from_path, renderer::Renderer, view::View, DeviceInput,
 };
 
 struct Document {
@@ -33,9 +33,43 @@ impl Editor {
     }
 
     pub fn update(&mut self) {
+        for (identifier, server) in &mut self.language_servers {
+            let mut server = server.borrow_mut();
+            match server.handle_server_responses() {
+                Ok(responses) => {
+                    for (method, value) in responses {
+                        match method {
+                            "initialize" => {
+                                for (_, document) in &self.documents {
+                                    if *identifier == document.buffer.language.identifier {
+                                        document.buffer.send_did_open(&mut server);
+                                    }
+                                }
+                            }
+                            _ => (),
+                        }
+                    }
+                }
+                Err(_) => (),
+            }
+        }
+    }
+
+    pub fn render(&mut self) {
         if let Some(document) = &self.active_document {
             let document = &self.documents[document];
             self.renderer.draw_buffer(&document.buffer, &document.view);
+        }
+    }
+
+    pub fn shutdown(&mut self) {
+        for (identifier, server) in &mut self.language_servers {
+            let mut server = server.borrow_mut();
+            // According to the spec clients should wait for LSP response,
+            // but we don't have time for that..
+            server.send_request("shutdown", VoidParams {});
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            server.send_notification("exit", VoidParams {});
         }
     }
 

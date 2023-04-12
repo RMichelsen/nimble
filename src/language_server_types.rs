@@ -97,6 +97,9 @@ pub struct TextDocumentItem {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct VoidParams {}
+
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DidOpenTextDocumentParams {
     pub text_document: TextDocumentItem,

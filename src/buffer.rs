@@ -1,4 +1,8 @@
-use std::{cell::RefCell, rc::Rc, str::pattern::Pattern};
+use std::{
+    cell::{RefCell, RefMut},
+    rc::Rc,
+    str::pattern::Pattern,
+};
 
 use winit::event::{ModifiersState, VirtualKeyCode};
 use BufferCommand::*;
@@ -49,22 +53,6 @@ impl Buffer {
         let language = language_from_path(path).unwrap();
         let piece_table = PieceTable::from_file(path);
 
-        let text = piece_table.iter_chars().collect();
-
-        let open_params = DidOpenTextDocumentParams {
-            text_document: TextDocumentItem {
-                uri: uri.clone(),
-                language_id: language.identifier.to_string(),
-                version: 0,
-                text: unsafe { String::from_utf8_unchecked(text) },
-            },
-        };
-        if let Some(server) = &language_server {
-            server
-                .borrow_mut()
-                .send_notification("textDocument/didOpen", open_params);
-        }
-
         Self {
             path: path.to_string(),
             uri,
@@ -78,6 +66,21 @@ impl Buffer {
             input: String::new(),
             version: 1,
         }
+    }
+
+    pub fn send_did_open(&self, server: &mut RefMut<LanguageServer>) {
+        let text = self.piece_table.iter_chars().collect();
+
+        let open_params = DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: self.uri.clone(),
+                language_id: self.language.identifier.to_string(),
+                version: 0,
+                text: unsafe { String::from_utf8_unchecked(text) },
+            },
+        };
+
+        server.send_notification("textDocument/didOpen", Some(open_params));
     }
 
     pub fn handle_key(&mut self, key_code: VirtualKeyCode, modifiers: Option<ModifiersState>) {
