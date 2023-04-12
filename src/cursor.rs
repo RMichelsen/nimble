@@ -8,11 +8,19 @@ use crate::{
     text_utils::{self, CharType},
 };
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Cursor {
     pub position: usize,
     pub anchor: usize,
     pub cached_col: usize,
+    pub completion_request: Option<CompletionRequest>,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct CompletionRequest {
+    pub id: i32,
+    pub position: usize,
+    pub selection_index: usize,
 }
 
 #[derive(Debug)]
@@ -61,6 +69,7 @@ impl Cursor {
             position,
             anchor: position,
             cached_col: 0,
+            completion_request: None,
         }
     }
 
@@ -73,6 +82,7 @@ impl Cursor {
             position: 0,
             anchor: 0,
             cached_col: 0,
+            completion_request: None,
         }
     }
 

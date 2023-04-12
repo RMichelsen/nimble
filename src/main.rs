@@ -39,12 +39,14 @@ fn main() {
         .unwrap();
 
     let mut editor = Editor::new(&window);
-    editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/renderer.rs");
-    // editor.open_file("C:/VulkanSDK/1.3.239.0/Source/SPIRV-Reflect/spirv_reflect.c");
+    // editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/renderer.rs");
+    editor.open_file("C:/VulkanSDK/1.3.239.0/Source/SPIRV-Reflect/spirv_reflect.c");
 
     let mut modifiers = None;
     event_loop.run(move |event, _, control_flow| {
-        editor.update();
+        if editor.update() {
+            window.request_redraw();
+        }
 
         match event {
             Event::RedrawRequested(_) => {
@@ -78,6 +80,7 @@ fn main() {
                 if input.state == ElementState::Pressed {
                     if let Some(keycode) = input.virtual_keycode {
                         editor.handle_key(keycode, modifiers);
+                        window.request_redraw();
                     }
                 }
             }

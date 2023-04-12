@@ -1,5 +1,6 @@
 use std::{
     cell::{RefCell, RefMut},
+    cmp::min,
     rc::Rc,
     str::pattern::Pattern,
 };
@@ -8,14 +9,15 @@ use winit::event::{ModifiersState, VirtualKeyCode};
 use BufferCommand::*;
 use BufferMode::*;
 use CursorMotion::*;
-use VirtualKeyCode::{Back, Delete, Escape, Return, Tab, R};
+use VirtualKeyCode::{Back, Delete, Escape, Return, Tab, J, K, R};
 
 use crate::{
-    cursor::{cursors_foreach_rebalance, cursors_overlapping, Cursor},
+    cursor::{cursors_foreach_rebalance, cursors_overlapping, CompletionRequest, Cursor},
     language_server::LanguageServer,
     language_server_types::{
-        DidChangeTextDocumentParams, DidOpenTextDocumentParams, Position, Range,
-        TextDocumentChangeEvent, TextDocumentItem, VersionedTextDocumentIdentifier,
+        CompletionParams, DidChangeTextDocumentParams, DidOpenTextDocumentParams, Position, Range,
+        TextDocumentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
+        VersionedTextDocumentIdentifier,
     },
     language_support::{language_from_path, Language},
     piece_table::{Piece, PieceTable},
@@ -44,7 +46,7 @@ pub struct Buffer {
     pub undo_stack: Vec<BufferState>,
     pub redo_stack: Vec<BufferState>,
     pub mode: BufferMode,
-    language_server: Option<Rc<RefCell<LanguageServer>>>,
+    pub language_server: Option<Rc<RefCell<LanguageServer>>>,
     input: String,
     version: i32,
 }
@@ -121,6 +123,29 @@ impl Buffer {
                 self.command(Redo);
             }
 
+            (Insert, J) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+                for cursor in &mut self.cursors {
+                    if let Some(ref mut request) = cursor.completion_request {
+                        if let Some(server) = &self.language_server {
+                            if let Some(completions) =
+                                server.borrow().saved_completions.get(&request.id)
+                            {
+                                request.selection_index = min(
+                                    request.selection_index + 1,
+                                    completions.items.len().saturating_sub(1),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            (Insert, K) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+                for cursor in &mut self.cursors {
+                    if let Some(ref mut request) = cursor.completion_request {
+                        request.selection_index = request.selection_index.saturating_sub(1);
+                    }
+                }
+            }
             _ => (),
         }
 
@@ -383,6 +408,14 @@ impl Buffer {
                         cursor.position,
                         (c as char).to_string(),
                     );
+                    lsp_complete(
+                        cursor,
+                        c,
+                        &mut self.language_server,
+                        &self.piece_table,
+                        &self.path,
+                        cursor.position + 1,
+                    );
                     self.piece_table.insert(cursor.position, &[c]);
                     cursor.position += 1;
                 });
@@ -441,6 +474,19 @@ impl Buffer {
         }
 
         for cursor in &mut self.cursors {
+            if self.mode == Insert
+                && cursor
+                    .completion_request
+                    .is_some_and(|request| request.position > cursor.position)
+            {
+                if let Some(server) = &self.language_server {
+                    server
+                        .borrow_mut()
+                        .saved_completions
+                        .remove(&cursor.completion_request.unwrap().id);
+                }
+                cursor.completion_request = None;
+            }
             if self.mode == Insert || self.mode == Normal {
                 cursor.reset_anchor();
             }
@@ -486,6 +532,13 @@ impl Buffer {
         self.input.clear();
         for cursor in &mut self.cursors {
             cursor.reset_anchor();
+            if let Some(request) = cursor.completion_request {
+                if let Some(server) = &self.language_server {
+                    server.borrow_mut().saved_completions.remove(&request.id);
+                }
+            }
+
+            cursor.completion_request = None;
         }
     }
 
@@ -528,6 +581,43 @@ fn lsp_reload(
             .borrow_mut()
             .send_notification("textDocument/didChange", change_params);
         *version += 1;
+    }
+}
+
+fn lsp_complete(
+    cursor: &mut Cursor,
+    character: u8,
+    language_server: &mut Option<Rc<RefCell<LanguageServer>>>,
+    piece_table: &PieceTable,
+    path: &str,
+    position: usize,
+) {
+    if let Some(server) = &language_server {
+        if server.borrow().trigger_characters.contains(&character) {
+            let (line, col) = (
+                piece_table.line_index(position),
+                piece_table.col_index(position),
+            );
+            let completion_params = CompletionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: "file:///".to_string() + &path,
+                },
+                position: Position {
+                    line: line as u32,
+                    character: col as u32,
+                },
+            };
+            if let Some(id) = server
+                .borrow_mut()
+                .send_request("textDocument/completion", completion_params)
+            {
+                cursor.completion_request = Some(CompletionRequest {
+                    id,
+                    position,
+                    selection_index: 0,
+                });
+            }
+        }
     }
 }
 

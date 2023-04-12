@@ -2,6 +2,7 @@ use std::cmp::{max, min};
 
 use crate::{
     buffer::{Buffer, BufferMode},
+    cursor::CompletionRequest,
     DeviceInput,
 };
 
@@ -89,6 +90,28 @@ impl View {
         }
     }
 
+    pub fn visible_completions<F>(&self, buffer: &Buffer, num_rows: usize, num_cols: usize, f: F)
+    where
+        F: Fn(usize, usize, CompletionRequest),
+    {
+        if let Some(server) = &buffer.language_server {
+            for cursor in buffer.cursors.iter() {
+                if let Some(request) = cursor.completion_request {
+                    let line = buffer.piece_table.line_index(cursor.position);
+                    let col = buffer.piece_table.col_index(request.position);
+
+                    if self.pos_in_render_visible_range(line, col, num_rows, num_cols) {
+                        f(
+                            self.absolute_to_view_row(line),
+                            self.absolute_to_view_col(col),
+                            request,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     pub fn visible_lines_iter<F>(&self, buffer: &Buffer, num_rows: usize, num_cols: usize, f: F)
     where
         F: Fn(usize, &[u8]),
@@ -98,6 +121,7 @@ impl View {
             .lines_foreach(self.line_offset, num_rows, |i, line| f(i, line));
     }
 
+    // TODO: ASSUMES FIRST CURSOR IS FIRST
     pub fn adjust(&mut self, buffer: &Buffer, num_rows: usize, num_cols: usize) {
         if let Some(first_cursor) = buffer.cursors.first() {
             let (line, col) = first_cursor.get_line_col(&buffer.piece_table);

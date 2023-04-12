@@ -1,3 +1,5 @@
+use std::{cell::RefCell, cmp::min, rc::Rc};
+
 use bstr::ByteSlice;
 use widestring::{u16str, U16CString};
 use windows::{
@@ -28,6 +30,7 @@ use winit::{platform::windows::WindowExtWindows, window::Window};
 
 use crate::{
     buffer::{Buffer, BufferMode},
+    language_server::LanguageServer,
     text_utils,
     theme::{
         BACKGROUND_COLOR, COMMENT_COLOR, CURSOR_COLOR, DEFAULT_BRUSH_PROPERTIES, HIGHLIGHT_COLOR,
@@ -167,7 +170,12 @@ impl Renderer {
         }
     }
 
-    pub fn draw_buffer(&mut self, buffer: &Buffer, view: &View) {
+    pub fn draw_buffer(
+        &mut self,
+        buffer: &Buffer,
+        view: &View,
+        language_server: &Option<Rc<RefCell<LanguageServer>>>,
+    ) {
         unsafe {
             self.render_target.BeginDraw();
             self.render_target.Clear(Some(&BACKGROUND_COLOR)); //asdasdasds
@@ -277,46 +285,102 @@ impl Renderer {
             }
         });
 
-        // view.visible_cursor_leads_iter(
-        //     buffer,
-        //     self.num_rows,
-        //     self.num_cols,
-        //     |row, col, _| unsafe {
-        //         let (row_offset, col_offset) =
-        //             (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
-        //         let completion_rect = D2D_RECT_F {
-        //             left: col_offset - 0.5,
-        //             top: row_offset + self.font_size.1 - 0.5,
-        //             right: col_offset + self.font_size.0 * 25.0 + 0.5,
-        //             bottom: row_offset + self.font_size.1 * 11.0 + 0.5,
-        //         };
-        //         self.render_target
-        //             .FillRectangle(&completion_rect, &self.highlight_brush);
+        view.visible_completions(
+            buffer,
+            self.num_rows,
+            self.num_cols,
+            |row, col, request| unsafe {
+                if let Some(server) = language_server {
+                    if let Some(completions) = server.borrow().saved_completions.get(&request.id) {
+                        if completions.items.is_empty() {
+                            return;
+                        }
 
-        //         let text_layout = self
-        //             .dwrite_factory
-        //             .CreateTextLayout(
-        //                 U16CString::from_str(
-        //                     "Suggestion1\nSugg2\nSug3\nEpicSuggestion\nEvenMoreEpicSuggestion\n",
-        //                 )
-        //                 .unwrap()
-        //                 .as_slice(),
-        //                 &self.text_format,
-        //                 completion_rect.right - completion_rect.left,
-        //                 completion_rect.bottom - completion_rect.top,
-        //             )
-        //             .unwrap();
-        //         self.render_target.DrawTextLayout(
-        //             D2D_POINT_2F {
-        //                 x: completion_rect.left,
-        //                 y: completion_rect.top,
-        //             },
-        //             &text_layout,
-        //             &self.text_brush,
-        //             D2D1_DRAW_TEXT_OPTIONS_NONE,
-        //         );
-        //     },
-        // );
+                        let (row_offset, col_offset) =
+                            (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
+
+                        let mut completion_string = String::default();
+                        let longest_string = completions
+                            .items
+                            .iter()
+                            .max_by(|x, y| x.label.len().cmp(&y.label.len()))
+                            .map(|x| x.label.len() + 1)
+                            .unwrap_or(0);
+
+                        for item in completions
+                            .items
+                            .iter()
+                            .skip(request.selection_index.saturating_sub(14))
+                            .take(15)
+                        {
+                            completion_string.push_str(&item.label);
+                            completion_string.push('\n');
+                        }
+
+                        let completion_rect = D2D_RECT_F {
+                            left: col_offset - 0.5,
+                            top: row_offset + self.font_size.1 - 0.5,
+                            right: col_offset + self.font_size.0 * longest_string as f32 + 0.5,
+                            bottom: row_offset + self.font_size.1 * 16.0 + 0.5,
+                        };
+                        self.render_target
+                            .FillRectangle(&completion_rect, &self.highlight_brush);
+
+                        let selected_completion_rect = D2D_RECT_F {
+                            left: col_offset - 0.5,
+                            top: row_offset
+                                + self.font_size.1 * min(request.selection_index + 1, 15) as f32
+                                - 0.5,
+                            right: col_offset + self.font_size.0 * longest_string as f32 + 0.5,
+                            bottom: row_offset
+                                + self.font_size.1 * min(request.selection_index + 2, 16) as f32
+                                + 0.5,
+                        };
+                        self.render_target
+                            .FillRectangle(&selected_completion_rect, &self.cursor_brush);
+
+                        let start_position = completion_string
+                            .find(
+                                completions.items[request.selection_index as usize]
+                                    .label
+                                    .as_str(),
+                            )
+                            .unwrap() as u32;
+
+                        let text_layout = self
+                            .dwrite_factory
+                            .CreateTextLayout(
+                                U16CString::from_str(completion_string).unwrap().as_slice(),
+                                &self.text_format,
+                                completion_rect.right - completion_rect.left,
+                                completion_rect.bottom - completion_rect.top,
+                            )
+                            .unwrap();
+
+                        text_layout
+                            .SetDrawingEffect(
+                                &self.keyword_brush,
+                                DWRITE_TEXT_RANGE {
+                                    startPosition: start_position,
+                                    length: completions.items[request.selection_index].label.len()
+                                        as u32,
+                                },
+                            )
+                            .unwrap();
+
+                        self.render_target.DrawTextLayout(
+                            D2D_POINT_2F {
+                                x: completion_rect.left,
+                                y: completion_rect.top,
+                            },
+                            &text_layout,
+                            &self.text_brush,
+                            D2D1_DRAW_TEXT_OPTIONS_NONE,
+                        );
+                    }
+                }
+            },
+        );
 
         unsafe {
             self.render_target.EndDraw(None, None).unwrap();

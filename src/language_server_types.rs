@@ -129,6 +129,12 @@ pub struct TextDocumentChangeEvent {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TextDocumentIdentifier {
+    pub uri: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VersionedTextDocumentIdentifier {
     pub uri: String,
     pub version: i32,
@@ -139,6 +145,25 @@ pub struct VersionedTextDocumentIdentifier {
 pub struct DidChangeTextDocumentParams {
     pub text_document: VersionedTextDocumentIdentifier,
     pub content_changes: Vec<TextDocumentChangeEvent>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionParams {
+    pub text_document: TextDocumentIdentifier,
+    pub position: Position,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionItem {
+    pub label: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionList {
+    pub items: Vec<CompletionItem>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

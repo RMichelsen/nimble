@@ -12,8 +12,8 @@ use serde_json::Value;
 
 use crate::{
     language_server_types::{
-        ClientCapabilities, InitializeParams, InitializedParams, Notification, Request,
-        ServerMessage, TextDocumentClientCapabilities,
+        ClientCapabilities, CompletionList, InitializeParams, InitializeResult, InitializedParams,
+        Notification, Request, ServerMessage, TextDocumentClientCapabilities,
     },
     language_support::Language,
 };
@@ -26,6 +26,8 @@ pub struct LanguageServer {
     responses: Arc<Mutex<VecDeque<ServerMessage>>>,
     initialized: bool,
     terminated: bool,
+    pub saved_completions: HashMap<i32, CompletionList>,
+    pub trigger_characters: Vec<u8>,
 }
 
 impl LanguageServer {
@@ -64,19 +66,34 @@ impl LanguageServer {
             responses,
             initialized: false,
             terminated: false,
+            saved_completions: HashMap::new(),
+            trigger_characters: Vec::new(),
         })
     }
 
-    pub fn send_request<T: serde::Serialize>(&mut self, method: &'static str, params: T) {
+    pub fn save_completions(&mut self, request_id: i32, value: serde_json::Value) {
+        self.saved_completions.insert(
+            request_id,
+            serde_json::from_value::<CompletionList>(value).unwrap(),
+        );
+    }
+
+    pub fn send_request<T: serde::Serialize>(
+        &mut self,
+        method: &'static str,
+        params: T,
+    ) -> Option<i32> {
         if self.initialized {
             match send_request(&mut self.stdin, self.request_id, method, params) {
                 Ok(()) => {
                     self.requests.insert(self.request_id, method);
                     self.request_id += 1;
+                    return Some(self.request_id - 1);
                 }
                 Err(_) => self.terminated = true,
             }
         }
+        None
     }
 
     pub fn send_notification<T: serde::Serialize>(&mut self, method: &'static str, params: T) {
@@ -90,7 +107,7 @@ impl LanguageServer {
 
     pub fn handle_server_responses(
         &mut self,
-    ) -> Result<Vec<(&'static str, Option<Value>)>, std::io::Error> {
+    ) -> Result<Vec<(&'static str, i32, Option<Value>)>, std::io::Error> {
         if self.terminated {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::ConnectionAborted,
@@ -110,17 +127,35 @@ impl LanguageServer {
                                     "initialized",
                                     InitializedParams {},
                                 )?;
+
+                                if let Some(result) = result.clone() {
+                                    if let Ok(initialize_result) =
+                                        serde_json::from_value::<InitializeResult>(result)
+                                    {
+                                        if let Some(completion_provider) =
+                                            initialize_result.capabilities.completion_provider
+                                        {
+                                            if let Some(trigger_characters) =
+                                                completion_provider.trigger_characters
+                                            {
+                                                for c in trigger_characters {
+                                                    self.trigger_characters
+                                                        .push(c.as_bytes()[0] as u8);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
                                 self.initialized = true;
-                                server_responses.push(("initialize", result));
+                                server_responses.push(("initialize", id, result));
                             }
-                            Some(x) => server_responses.push((*x, result)),
+                            Some(x) => server_responses.push((*x, id, result)),
                             None => (),
                         }
                         self.requests.remove(&id);
                     }
-                    ServerMessage::Notification { method, params, .. } => {
-                        println!("{:?}", params);
-                    }
+                    ServerMessage::Notification { method, params, .. } => {}
                 }
             }
         }

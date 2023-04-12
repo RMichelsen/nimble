@@ -32,12 +32,13 @@ impl Editor {
         }
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self) -> bool {
         for (identifier, server) in &mut self.language_servers {
             let mut server = server.borrow_mut();
+
             match server.handle_server_responses() {
                 Ok(responses) => {
-                    for (method, value) in responses {
+                    for (method, id, value) in responses {
                         match method {
                             "initialize" => {
                                 for (_, document) in &self.documents {
@@ -46,6 +47,12 @@ impl Editor {
                                     }
                                 }
                             }
+                            "textDocument/completion" => {
+                                if let Some(value) = value {
+                                    server.save_completions(id, value);
+                                }
+                                return true;
+                            }
                             _ => (),
                         }
                     }
@@ -53,12 +60,17 @@ impl Editor {
                 Err(_) => (),
             }
         }
+        false
     }
 
     pub fn render(&mut self) {
         if let Some(document) = &self.active_document {
             let document = &self.documents[document];
-            self.renderer.draw_buffer(&document.buffer, &document.view);
+            self.renderer.draw_buffer(
+                &document.buffer,
+                &document.view,
+                &document.buffer.language_server,
+            );
         }
     }
 
