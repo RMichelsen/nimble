@@ -154,10 +154,13 @@ pub struct CompletionParams {
     pub position: Position,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompletionItem {
     pub label: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub insert_text: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

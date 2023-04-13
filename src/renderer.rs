@@ -1,4 +1,4 @@
-use std::{cell::RefCell, cmp::min, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use bstr::ByteSlice;
 use widestring::{u16str, U16CString};
@@ -30,6 +30,7 @@ use winit::{platform::windows::WindowExtWindows, window::Window};
 
 use crate::{
     buffer::{Buffer, BufferMode},
+    cursor::NUM_SHOWN_COMPLETION_ITEMS,
     language_server::LanguageServer,
     text_utils,
     theme::{
@@ -299,7 +300,6 @@ impl Renderer {
                         let (row_offset, col_offset) =
                             (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
 
-                        let mut completion_string = String::default();
                         let longest_string = completions
                             .items
                             .iter()
@@ -307,44 +307,42 @@ impl Renderer {
                             .map(|x| x.label.len() + 1)
                             .unwrap_or(0);
 
+                        let mut completion_string = String::default();
                         for item in completions
                             .items
                             .iter()
-                            .skip(request.selection_index.saturating_sub(14))
-                            .take(15)
+                            .skip(request.selection_view_offset)
+                            .take(NUM_SHOWN_COMPLETION_ITEMS)
                         {
                             completion_string.push_str(&item.label);
                             completion_string.push('\n');
                         }
+                        let selected_item = request.selection_index - request.selection_view_offset;
 
                         let completion_rect = D2D_RECT_F {
                             left: col_offset - 0.5,
                             top: row_offset + self.font_size.1 - 0.5,
                             right: col_offset + self.font_size.0 * longest_string as f32 + 0.5,
-                            bottom: row_offset + self.font_size.1 * 16.0 + 0.5,
+                            bottom: row_offset
+                                + self.font_size.1 * (NUM_SHOWN_COMPLETION_ITEMS + 1) as f32
+                                + 0.5,
                         };
                         self.render_target
                             .FillRectangle(&completion_rect, &self.highlight_brush);
 
                         let selected_completion_rect = D2D_RECT_F {
                             left: col_offset - 0.5,
-                            top: row_offset
-                                + self.font_size.1 * min(request.selection_index + 1, 15) as f32
-                                - 0.5,
+                            top: row_offset + self.font_size.1 * (selected_item + 1) as f32 - 0.5,
                             right: col_offset + self.font_size.0 * longest_string as f32 + 0.5,
                             bottom: row_offset
-                                + self.font_size.1 * min(request.selection_index + 2, 16) as f32
+                                + self.font_size.1 * (selected_item + 2) as f32
                                 + 0.5,
                         };
                         self.render_target
                             .FillRectangle(&selected_completion_rect, &self.cursor_brush);
 
                         let start_position = completion_string
-                            .find(
-                                completions.items[request.selection_index as usize]
-                                    .label
-                                    .as_str(),
-                            )
+                            .find(completions.items[request.selection_index].label.as_str())
                             .unwrap() as u32;
 
                         let text_layout = self

@@ -12,7 +12,10 @@ use CursorMotion::*;
 use VirtualKeyCode::{Back, Delete, Escape, Return, Tab, J, K, R};
 
 use crate::{
-    cursor::{cursors_foreach_rebalance, cursors_overlapping, CompletionRequest, Cursor},
+    cursor::{
+        cursors_foreach_rebalance, cursors_overlapping, CompletionRequest, Cursor,
+        NUM_SHOWN_COMPLETION_ITEMS,
+    },
     language_server::LanguageServer,
     language_server_types::{
         CompletionParams, DidChangeTextDocumentParams, DidOpenTextDocumentParams, Position, Range,
@@ -113,12 +116,6 @@ impl Buffer {
             }
             (Insert, Delete) => self.command(DeleteCharFront),
 
-            (Insert, Tab) => {
-                for _ in 0..SPACES_PER_TAB {
-                    self.command(InsertChar(b' '));
-                }
-            }
-
             (Normal, R) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 self.command(Redo);
             }
@@ -127,13 +124,18 @@ impl Buffer {
                 for cursor in &mut self.cursors {
                     if let Some(ref mut request) = cursor.completion_request {
                         if let Some(server) = &self.language_server {
-                            if let Some(completions) =
+                            if let Some(completion) =
                                 server.borrow().saved_completions.get(&request.id)
                             {
                                 request.selection_index = min(
                                     request.selection_index + 1,
-                                    completions.items.len().saturating_sub(1),
+                                    completion.items.len().saturating_sub(1),
                                 );
+                                if request.selection_index
+                                    >= request.selection_view_offset + NUM_SHOWN_COMPLETION_ITEMS
+                                {
+                                    request.selection_view_offset += 1;
+                                }
                             }
                         }
                     }
@@ -143,9 +145,27 @@ impl Buffer {
                 for cursor in &mut self.cursors {
                     if let Some(ref mut request) = cursor.completion_request {
                         request.selection_index = request.selection_index.saturating_sub(1);
+                        if request.selection_index < request.selection_view_offset {
+                            request.selection_view_offset -= 1;
+                        }
                     }
                 }
             }
+
+            (Insert, Tab)
+                if self
+                    .cursors
+                    .last()
+                    .is_some_and(|cursor| cursor.completion_request.is_some()) =>
+            {
+                self.command(Complete);
+            }
+            (Insert, Tab) => {
+                for _ in 0..SPACES_PER_TAB {
+                    self.command(InsertChar(b' '));
+                }
+            }
+
             _ => (),
         }
 
@@ -406,7 +426,7 @@ impl Buffer {
                         &self.path,
                         &mut self.version,
                         cursor.position,
-                        (c as char).to_string(),
+                        &(c as char).to_string(),
                     );
                     lsp_complete(
                         cursor,
@@ -471,9 +491,49 @@ impl Buffer {
                     &mut self.version,
                 );
             }
+            Complete => {
+                cursors_foreach_rebalance(&mut self.cursors, |cursor| {
+                    if let Some(ref mut request) = cursor.completion_request {
+                        let completion = self.language_server.as_ref().and_then(|server| {
+                            server.borrow().saved_completions.get(&request.id).and_then(
+                                |completion| {
+                                    Some(completion.items[request.selection_index].clone())
+                                },
+                            )
+                        });
+                        if let Some(completion) = completion {
+                            lsp_delete(
+                                &mut self.language_server,
+                                &self.piece_table,
+                                &self.path,
+                                &mut self.version,
+                                request.position,
+                                cursor.position,
+                            );
+                            self.piece_table.delete(request.position, cursor.position);
+                            cursor.position = request.position;
+
+                            let text = completion.insert_text.unwrap_or(completion.label);
+
+                            lsp_insert(
+                                &mut self.language_server,
+                                &self.piece_table,
+                                &self.path,
+                                &mut self.version,
+                                cursor.position,
+                                &text,
+                            );
+                            self.piece_table.insert(cursor.position, text.as_bytes());
+                            cursor.position += text.len();
+                        }
+                    }
+                    cursor.completion_request = None;
+                });
+            }
         }
 
         for cursor in &mut self.cursors {
+            // Remove completion requests if cursor is behind the request position
             if self.mode == Insert
                 && cursor
                     .completion_request
@@ -615,6 +675,7 @@ fn lsp_complete(
                     id,
                     position,
                     selection_index: 0,
+                    selection_view_offset: 0,
                 });
             }
         }
@@ -627,7 +688,7 @@ fn lsp_insert(
     path: &str,
     version: &mut i32,
     pos: usize,
-    text: String,
+    text: &String,
 ) {
     if let Some(server) = &language_server {
         let (line, col) = (piece_table.line_index(pos), piece_table.col_index(pos));
@@ -648,7 +709,7 @@ fn lsp_insert(
                         character: col as u32,
                     },
                 }),
-                text,
+                text: text.clone(),
             }],
         };
         server
@@ -759,4 +820,5 @@ enum BufferCommand {
     DeleteCharFront,
     Undo,
     Redo,
+    Complete,
 }

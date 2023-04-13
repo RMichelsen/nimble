@@ -5,6 +5,7 @@
 #![feature(pattern)]
 #![feature(slice_take)]
 #![feature(drain_filter)]
+#![feature(let_chains)]
 
 mod buffer;
 mod cursor;

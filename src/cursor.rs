@@ -16,11 +16,13 @@ pub struct Cursor {
     pub completion_request: Option<CompletionRequest>,
 }
 
+pub const NUM_SHOWN_COMPLETION_ITEMS: usize = 15;
 #[derive(Copy, Clone, Debug)]
 pub struct CompletionRequest {
     pub id: i32,
     pub position: usize,
     pub selection_index: usize,
+    pub selection_view_offset: usize,
 }
 
 #[derive(Debug)]

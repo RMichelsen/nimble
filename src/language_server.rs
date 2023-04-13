@@ -128,22 +128,12 @@ impl LanguageServer {
                                     InitializedParams {},
                                 )?;
 
-                                if let Some(result) = result.clone() {
-                                    if let Ok(initialize_result) =
-                                        serde_json::from_value::<InitializeResult>(result)
-                                    {
-                                        if let Some(completion_provider) =
-                                            initialize_result.capabilities.completion_provider
-                                        {
-                                            if let Some(trigger_characters) =
-                                                completion_provider.trigger_characters
-                                            {
-                                                for c in trigger_characters {
-                                                    self.trigger_characters
-                                                        .push(c.as_bytes()[0] as u8);
-                                                }
-                                            }
-                                        }
+                                if let Some(result) = result.clone() &&
+                                   let Ok(result) = serde_json::from_value::<InitializeResult>(result) &&
+                                   let Some(completion_provider) = result.capabilities.completion_provider &&
+                                   let Some(trigger_characters) = completion_provider.trigger_characters {
+                                    for c in trigger_characters {
+                                        self.trigger_characters.push(c.as_bytes()[0]);
                                     }
                                 }
 
