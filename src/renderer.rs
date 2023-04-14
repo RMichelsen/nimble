@@ -292,35 +292,49 @@ impl Renderer {
             self.num_cols,
             |row, col, request| unsafe {
                 if let Some(server) = language_server {
-                    if let Some(completions) = server.borrow().saved_completions.get(&request.id) {
-                        if completions.items.is_empty() {
+                    if let Some(completion) = server.borrow().saved_completions.get(&request.id) {
+                        if completion.items.is_empty() {
                             return;
                         }
 
-                        let (row_offset, col_offset) =
+                        let (row_offset, mut col_offset) =
                             (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
 
-                        let longest_string = completions
+                        let longest_string = completion
                             .items
                             .iter()
-                            .max_by(|x, y| x.label.len().cmp(&y.label.len()))
-                            .map(|x| x.label.len() + 1)
+                            .max_by(|x, y| {
+                                x.insert_text
+                                    .as_ref()
+                                    .unwrap_or(&x.label)
+                                    .len()
+                                    .cmp(&y.insert_text.as_ref().unwrap_or(&y.label).len())
+                            })
+                            .map(|x| x.insert_text.as_ref().unwrap_or(&x.label).len() + 1)
                             .unwrap_or(0);
 
                         let mut completion_string = String::default();
-                        for item in completions
+                        for item in completion
                             .items
                             .iter()
                             .skip(request.selection_view_offset)
                             .take(NUM_SHOWN_COMPLETION_ITEMS)
                         {
-                            completion_string.push_str(&item.label);
+                            completion_string
+                                .push_str(item.insert_text.as_ref().unwrap_or(&item.label));
                             completion_string.push('\n');
+
+                            if let Some(text_edit) = &item.text_edit {
+                                if text_edit.range.start.character != col as u32 {
+                                    col_offset =
+                                        text_edit.range.start.character as f32 * self.font_size.0;
+                                }
+                            }
                         }
                         let selected_item = request.selection_index - request.selection_view_offset;
 
                         let completion_rect = D2D_RECT_F {
-                            left: col_offset - 0.5,
+                            left: col_offset - self.font_size.0 - 0.5,
                             top: row_offset + self.font_size.1 - 0.5,
                             right: col_offset + self.font_size.0 * longest_string as f32 + 0.5,
                             bottom: row_offset
@@ -331,7 +345,7 @@ impl Renderer {
                             .FillRectangle(&completion_rect, &self.highlight_brush);
 
                         let selected_completion_rect = D2D_RECT_F {
-                            left: col_offset - 0.5,
+                            left: col_offset - self.font_size.0 - 0.5,
                             top: row_offset + self.font_size.1 * (selected_item + 1) as f32 - 0.5,
                             right: col_offset + self.font_size.0 * longest_string as f32 + 0.5,
                             bottom: row_offset
@@ -342,7 +356,12 @@ impl Renderer {
                             .FillRectangle(&selected_completion_rect, &self.cursor_brush);
 
                         let start_position = completion_string
-                            .find(completions.items[request.selection_index].label.as_str())
+                            .find(
+                                completion.items[request.selection_index]
+                                    .insert_text
+                                    .as_ref()
+                                    .unwrap_or(&completion.items[request.selection_index].label),
+                            )
                             .unwrap() as u32;
 
                         let text_layout = self
@@ -360,7 +379,7 @@ impl Renderer {
                                 &self.keyword_brush,
                                 DWRITE_TEXT_RANGE {
                                     startPosition: start_position,
-                                    length: completions.items[request.selection_index].label.len()
+                                    length: completion.items[request.selection_index].label.len()
                                         as u32,
                                 },
                             )
@@ -368,7 +387,7 @@ impl Renderer {
 
                         self.render_target.DrawTextLayout(
                             D2D_POINT_2F {
-                                x: completion_rect.left,
+                                x: completion_rect.left + self.font_size.0,
                                 y: completion_rect.top,
                             },
                             &text_layout,

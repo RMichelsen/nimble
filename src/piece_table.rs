@@ -303,6 +303,24 @@ impl PieceTable {
         linebreaks
     }
 
+    pub fn char_index_from_line_col(&self, line: usize, col: usize) -> Option<usize> {
+        let mut iterator = self.iter_chars();
+        let mut line_count = 0;
+        let mut count = 0;
+        while let Some(c) = iterator.next() {
+            count += 1;
+            line_count += (c == b'\n') as usize;
+            if line_count == line {
+                break;
+            }
+        }
+        if count + col < self.num_chars().saturating_sub(1) {
+            Some(count + col)
+        } else {
+            None
+        }
+    }
+
     pub fn col_index(&self, position: usize) -> usize {
         self.iter_chars_at_rev(position.saturating_sub(1))
             .position(|c| c == b'\n')

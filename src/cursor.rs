@@ -1,28 +1,36 @@
 use std::{
+    cell::RefCell,
     cmp::{max, min},
     ops::Range,
+    rc::Rc,
 };
 
 use crate::{
+    language_server::LanguageServer,
     piece_table::PieceTable,
     text_utils::{self, CharType},
 };
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct Cursor {
     pub position: usize,
     pub anchor: usize,
     pub cached_col: usize,
-    pub completion_request: Option<CompletionRequest>,
+    pub completion_context: CompletionContext,
 }
 
 pub const NUM_SHOWN_COMPLETION_ITEMS: usize = 15;
 #[derive(Copy, Clone, Debug)]
 pub struct CompletionRequest {
     pub id: i32,
-    pub position: usize,
     pub selection_index: usize,
     pub selection_view_offset: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct CompletionContext {
+    pub position: Option<usize>,
+    pub requests: Vec<CompletionRequest>,
 }
 
 #[derive(Debug)]
@@ -42,7 +50,7 @@ where
     F: FnMut(&mut Cursor),
 {
     for i in 0..cursors.len() {
-        let cursor_before = cursors[i];
+        let cursor_before = cursors[i].clone();
         f(&mut cursors[i]);
 
         for j in 0..cursors.len() {
@@ -71,7 +79,10 @@ impl Cursor {
             position,
             anchor: position,
             cached_col: 0,
-            completion_request: None,
+            completion_context: CompletionContext {
+                position: None,
+                requests: vec![],
+            },
         }
     }
 
@@ -84,7 +95,10 @@ impl Cursor {
             position: 0,
             anchor: 0,
             cached_col: 0,
-            completion_request: None,
+            completion_context: CompletionContext {
+                position: None,
+                requests: vec![],
+            },
         }
     }
 
@@ -253,6 +267,19 @@ impl Cursor {
         self.anchor = self.position;
     }
 
+    pub fn reset_completion_requests(
+        &mut self,
+        language_server: &Option<Rc<RefCell<LanguageServer>>>,
+    ) {
+        if let Some(server) = language_server {
+            for request in self.completion_context.requests.iter() {
+                server.borrow_mut().saved_completions.remove(&request.id);
+            }
+        }
+        self.completion_context.requests.clear();
+        self.completion_context.position = None;
+    }
+
     pub fn get_selection_ranges(&self, piece_table: &PieceTable) -> Vec<SelectionRange> {
         let line = piece_table.line_index(self.position);
         let col = piece_table.col_index(self.position);
@@ -339,5 +366,25 @@ impl Cursor {
 
     fn chars_until_char_rev(&self, piece_table: &PieceTable, search_char: u8) -> Option<usize> {
         self.chars_until_pred_rev(piece_table, |c| c == search_char)
+    }
+}
+
+impl CompletionContext {
+    pub fn get_last_request_mut<'a>(&'a mut self) -> Option<(usize, &mut CompletionRequest)> {
+        if let Some(position) = self.position {
+            for request in self.requests.iter_mut().rev() {
+                return Some((position, request));
+            }
+        }
+        None
+    }
+
+    pub fn get_last_request<'a>(&'a self) -> Option<(usize, &CompletionRequest)> {
+        if let Some(position) = self.position {
+            for request in self.requests.iter().rev() {
+                return Some((position, request));
+            }
+        }
+        None
     }
 }
