@@ -304,10 +304,9 @@ impl PieceTable {
     }
 
     pub fn char_index_from_line_col(&self, line: usize, col: usize) -> Option<usize> {
-        let mut iterator = self.iter_chars();
         let mut line_count = 0;
         let mut count = 0;
-        while let Some(c) = iterator.next() {
+        for c in self.iter_chars() {
             count += 1;
             line_count += (c == b'\n') as usize;
             if line_count == line {

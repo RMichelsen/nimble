@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, cmp::min, rc::Rc};
 
 use bstr::ByteSlice;
 use widestring::{u16str, U16CString};
@@ -30,7 +30,7 @@ use winit::{platform::windows::WindowExtWindows, window::Window};
 
 use crate::{
     buffer::{Buffer, BufferMode},
-    cursor::NUM_SHOWN_COMPLETION_ITEMS,
+    cursor::MAX_SHOWN_COMPLETION_ITEMS,
     language_server::LanguageServer,
     text_utils,
     theme::{
@@ -292,58 +292,81 @@ impl Renderer {
             self.num_cols,
             |row, col, request| unsafe {
                 if let Some(server) = language_server {
-                    if let Some(completions) = server.borrow().saved_completions.get(&request.id) {
-                        if completions.items.is_empty() {
+                    if let Some(completion) = server.borrow().saved_completions.get(&request.id) {
+                        if completion.items.is_empty() {
                             return;
                         }
 
-                        let (row_offset, col_offset) =
+                        let num_shown_completions_items =
+                            min(completion.items.len(), MAX_SHOWN_COMPLETION_ITEMS);
+
+                        let (row_offset, mut col_offset) =
                             (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
 
-                        let longest_string = completions
+                        let longest_string = completion
                             .items
                             .iter()
-                            .max_by(|x, y| x.label.len().cmp(&y.label.len()))
-                            .map(|x| x.label.len() + 1)
+                            .max_by(|x, y| {
+                                x.insert_text
+                                    .as_ref()
+                                    .unwrap_or(&x.label)
+                                    .len()
+                                    .cmp(&y.insert_text.as_ref().unwrap_or(&y.label).len())
+                            })
+                            .map(|x| x.insert_text.as_ref().unwrap_or(&x.label).len() + 1)
                             .unwrap_or(0);
 
+                        let selected_item = request.selection_index - request.selection_view_offset;
+                        let mut selected_item_start_position = 0;
                         let mut completion_string = String::default();
-                        for item in completions
+                        for (i, item) in completion
                             .items
                             .iter()
+                            .enumerate()
                             .skip(request.selection_view_offset)
-                            .take(NUM_SHOWN_COMPLETION_ITEMS)
+                            .take(num_shown_completions_items)
                         {
-                            completion_string.push_str(&item.label);
-                            completion_string.push('\n');
-                        }
-                        let selected_item = request.selection_index - request.selection_view_offset;
+                            if i == selected_item {
+                                selected_item_start_position = completion_string.len()
+                            }
 
-                        let completion_rect = D2D_RECT_F {
-                            left: col_offset - 0.5,
+                            completion_string
+                                .push_str(item.insert_text.as_ref().unwrap_or(&item.label));
+                            completion_string.push('\n');
+
+                            if let Some(edit) = &item.text_edit {
+                                col_offset = edit.range.start.character as f32 * self.font_size.0;
+                            }
+                        }
+
+                        let mut completion_rect = D2D_RECT_F {
+                            left: col_offset - self.font_size.0 - 0.5,
                             top: row_offset + self.font_size.1 - 0.5,
                             right: col_offset + self.font_size.0 * longest_string as f32 + 0.5,
                             bottom: row_offset
-                                + self.font_size.1 * (NUM_SHOWN_COMPLETION_ITEMS + 1) as f32
+                                + self.font_size.1 * (num_shown_completions_items + 1) as f32
                                 + 0.5,
                         };
-                        self.render_target
-                            .FillRectangle(&completion_rect, &self.highlight_brush);
-
-                        let selected_completion_rect = D2D_RECT_F {
-                            left: col_offset - 0.5,
+                        let mut selected_completion_rect = D2D_RECT_F {
+                            left: col_offset - self.font_size.0 - 0.5,
                             top: row_offset + self.font_size.1 * (selected_item + 1) as f32 - 0.5,
                             right: col_offset + self.font_size.0 * longest_string as f32 + 0.5,
                             bottom: row_offset
                                 + self.font_size.1 * (selected_item + 2) as f32
                                 + 0.5,
                         };
+                        if completion_rect.bottom > self.window_size.1 {
+                            let delta = self.font_size.1 * (num_shown_completions_items + 1) as f32;
+                            completion_rect.top -= delta;
+                            completion_rect.bottom -= delta;
+                            selected_completion_rect.top -= delta;
+                            selected_completion_rect.bottom -= delta;
+                        }
+
+                        self.render_target
+                            .FillRectangle(&completion_rect, &self.highlight_brush);
                         self.render_target
                             .FillRectangle(&selected_completion_rect, &self.cursor_brush);
-
-                        let start_position = completion_string
-                            .find(completions.items[request.selection_index].label.as_str())
-                            .unwrap() as u32;
 
                         let text_layout = self
                             .dwrite_factory
@@ -359,8 +382,8 @@ impl Renderer {
                             .SetDrawingEffect(
                                 &self.keyword_brush,
                                 DWRITE_TEXT_RANGE {
-                                    startPosition: start_position,
-                                    length: completions.items[request.selection_index].label.len()
+                                    startPosition: selected_item_start_position as u32,
+                                    length: completion.items[request.selection_index].label.len()
                                         as u32,
                                 },
                             )
@@ -368,7 +391,7 @@ impl Renderer {
 
                         self.render_target.DrawTextLayout(
                             D2D_POINT_2F {
-                                x: completion_rect.left,
+                                x: completion_rect.left + self.font_size.0,
                                 y: completion_rect.top,
                             },
                             &text_layout,

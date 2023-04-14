@@ -18,6 +18,12 @@ use crate::{
     language_support::Language,
 };
 
+pub struct ServerResponse {
+    pub method: &'static str,
+    pub id: i32,
+    pub value: Option<Value>,
+}
+
 pub struct LanguageServer {
     language: &'static Language,
     stdin: ChildStdin,
@@ -105,9 +111,7 @@ impl LanguageServer {
         }
     }
 
-    pub fn handle_server_responses(
-        &mut self,
-    ) -> Result<Vec<(&'static str, i32, Option<Value>)>, std::io::Error> {
+    pub fn handle_server_responses(&mut self) -> Result<Vec<ServerResponse>, std::io::Error> {
         if self.terminated {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::ConnectionAborted,
@@ -138,9 +142,17 @@ impl LanguageServer {
                                 }
 
                                 self.initialized = true;
-                                server_responses.push(("initialize", id, result));
+                                server_responses.push(ServerResponse {
+                                    method: "initialize",
+                                    id,
+                                    value: result,
+                                });
                             }
-                            Some(x) => server_responses.push((*x, id, result)),
+                            Some(x) => server_responses.push(ServerResponse {
+                                method: x,
+                                id,
+                                value: result,
+                            }),
                             None => (),
                         }
                         self.requests.remove(&id);

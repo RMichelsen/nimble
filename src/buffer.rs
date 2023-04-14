@@ -14,7 +14,7 @@ use VirtualKeyCode::{Back, Delete, Escape, Return, Space, Tab, J, K, R};
 use crate::{
     cursor::{
         cursors_foreach_rebalance, cursors_overlapping, CompletionRequest, Cursor,
-        NUM_SHOWN_COMPLETION_ITEMS,
+        MAX_SHOWN_COMPLETION_ITEMS,
     },
     language_server::LanguageServer,
     language_server_types::{
@@ -132,7 +132,7 @@ impl Buffer {
                                     completion.items.len().saturating_sub(1),
                                 );
                                 if request.selection_index
-                                    >= request.selection_view_offset + NUM_SHOWN_COMPLETION_ITEMS
+                                    >= request.selection_view_offset + MAX_SHOWN_COMPLETION_ITEMS
                                 {
                                     request.selection_view_offset += 1;
                                 }
@@ -393,7 +393,7 @@ impl Buffer {
                         lsp_delete(
                             &mut self.language_server,
                             &self.piece_table,
-                            &self.path,
+                            &self.uri,
                             &mut self.version,
                             cursor.position,
                             cursor.anchor + 1,
@@ -403,7 +403,7 @@ impl Buffer {
                         lsp_delete(
                             &mut self.language_server,
                             &self.piece_table,
-                            &self.path,
+                            &self.uri,
                             &mut self.version,
                             cursor.anchor,
                             cursor.position + 1,
@@ -414,7 +414,7 @@ impl Buffer {
                 });
             }
             CutLineSelection => {
-                self.motion(ToEndOfLine);
+                self.motion(ToStartOfLine);
                 self.command(CutSelection);
                 self.command(DeleteLine);
             }
@@ -428,17 +428,17 @@ impl Buffer {
                     lsp_insert(
                         &mut self.language_server,
                         &self.piece_table,
-                        &self.path,
+                        &self.uri,
                         &mut self.version,
                         cursor.position,
-                        &(c as char).to_string(),
+                        unsafe { std::str::from_utf8_unchecked(&[c]) },
                     );
                     lsp_complete(
                         cursor,
                         Some(c),
                         &mut self.language_server,
                         &self.piece_table,
-                        &self.path,
+                        &self.uri,
                         cursor.position + 1,
                     );
                     cursor.position += 1;
@@ -450,7 +450,7 @@ impl Buffer {
                     lsp_delete(
                         &mut self.language_server,
                         &self.piece_table,
-                        &self.path,
+                        &self.uri,
                         &mut self.version,
                         new_position,
                         cursor.position,
@@ -475,7 +475,7 @@ impl Buffer {
                 lsp_reload(
                     &mut self.language_server,
                     &self.piece_table,
-                    &self.path,
+                    &self.uri,
                     &mut self.version,
                 );
             }
@@ -491,7 +491,7 @@ impl Buffer {
                 lsp_reload(
                     &mut self.language_server,
                     &self.piece_table,
-                    &self.path,
+                    &self.uri,
                     &mut self.version,
                 );
             }
@@ -502,7 +502,7 @@ impl Buffer {
                         None,
                         &mut self.language_server,
                         &self.piece_table,
-                        &self.path,
+                        &self.uri,
                         cursor.position,
                     );
                 }
@@ -510,15 +510,14 @@ impl Buffer {
             Complete => {
                 cursors_foreach_rebalance(&mut self.cursors, |cursor| {
                     if let Some(ref mut request) = cursor.completion_request {
-                        let completion = self.language_server.as_ref().and_then(|server| {
-                            server.borrow().saved_completions.get(&request.id).and_then(
-                                |completion| {
-                                    Some(completion.items[request.selection_index].clone())
-                                },
-                            )
-                        });
-                        if let Some(completion) = completion {
-                            if let Some(text_edit) = completion.text_edit {
+                        let item =
+                            self.language_server.as_ref().and_then(|server| {
+                                server.borrow().saved_completions.get(&request.id).map(
+                                    |completion| completion.items[request.selection_index].clone(),
+                                )
+                            });
+                        if let Some(item) = item {
+                            if let Some(text_edit) = item.text_edit {
                                 let start = self
                                     .piece_table
                                     .char_index_from_line_col(
@@ -526,17 +525,23 @@ impl Buffer {
                                         text_edit.range.start.character as usize,
                                     )
                                     .unwrap_or(cursor.position);
+
+                                // The end of the completion is the original text edit range
+                                // plus the difference in cursor position
+                                // (from when the completion was triggered until now)
                                 let end = self
                                     .piece_table
                                     .char_index_from_line_col(
                                         text_edit.range.end.line as usize,
                                         text_edit.range.end.character as usize,
                                     )
-                                    .unwrap_or(cursor.position);
+                                    .unwrap_or(cursor.position)
+                                    + (cursor.position - request.position);
+
                                 lsp_delete(
                                     &mut self.language_server,
                                     &self.piece_table,
-                                    &self.path,
+                                    &self.uri,
                                     &mut self.version,
                                     start,
                                     end,
@@ -546,7 +551,7 @@ impl Buffer {
                                 lsp_insert(
                                     &mut self.language_server,
                                     &self.piece_table,
-                                    &self.path,
+                                    &self.uri,
                                     &mut self.version,
                                     cursor.position,
                                     &text_edit.new_text,
@@ -653,13 +658,13 @@ impl Buffer {
 fn lsp_reload(
     language_server: &mut Option<Rc<RefCell<LanguageServer>>>,
     piece_table: &PieceTable,
-    path: &str,
+    uri: &str,
     version: &mut i32,
 ) {
     if let Some(server) = &language_server {
         let change_params = DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier {
-                uri: "file:///".to_string() + &path,
+                uri: uri.to_string(),
                 version: *version,
             },
             content_changes: vec![TextDocumentChangeEvent {
@@ -679,12 +684,11 @@ fn lsp_complete(
     character: Option<u8>,
     language_server: &mut Option<Rc<RefCell<LanguageServer>>>,
     piece_table: &PieceTable,
-    path: &str,
+    uri: &str,
     position: usize,
 ) {
     if let Some(server) = &language_server {
-        if cursor.completion_request.is_some()
-            || character.is_none()
+        if character.is_none()
             || server
                 .borrow()
                 .trigger_characters
@@ -696,7 +700,7 @@ fn lsp_complete(
             );
             let completion_params = CompletionParams {
                 text_document: TextDocumentIdentifier {
-                    uri: "file:///".to_string() + &path,
+                    uri: uri.to_string(),
                 },
                 position: Position {
                     line: line as u32,
@@ -721,17 +725,17 @@ fn lsp_complete(
 fn lsp_insert(
     language_server: &mut Option<Rc<RefCell<LanguageServer>>>,
     piece_table: &PieceTable,
-    path: &str,
+    uri: &str,
     version: &mut i32,
     pos: usize,
-    text: &String,
+    text: &str,
 ) {
     if let Some(server) = &language_server {
         let (line, col) = (piece_table.line_index(pos), piece_table.col_index(pos));
 
         let change_params = DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier {
-                uri: "file:///".to_string() + &path,
+                uri: uri.to_string(),
                 version: *version,
             },
             content_changes: vec![TextDocumentChangeEvent {
@@ -745,7 +749,7 @@ fn lsp_insert(
                         character: col as u32,
                     },
                 }),
-                text: text.clone(),
+                text: text.to_string(),
             }],
         };
         server
@@ -758,7 +762,7 @@ fn lsp_insert(
 fn lsp_delete(
     language_server: &mut Option<Rc<RefCell<LanguageServer>>>,
     piece_table: &PieceTable,
-    path: &str,
+    uri: &str,
     version: &mut i32,
     pos1: usize,
     pos2: usize,
@@ -769,7 +773,7 @@ fn lsp_delete(
 
         let change_params = DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier {
-                uri: "file:///".to_string() + &path,
+                uri: uri.to_string(),
                 version: *version,
             },
             content_changes: vec![TextDocumentChangeEvent {

@@ -35,21 +35,20 @@ impl Editor {
     pub fn update(&mut self) -> bool {
         for (identifier, server) in &mut self.language_servers {
             let mut server = server.borrow_mut();
-
             match server.handle_server_responses() {
                 Ok(responses) => {
-                    for (method, id, value) in responses {
-                        match method {
+                    for response in responses {
+                        match response.method {
                             "initialize" => {
-                                for (_, document) in &self.documents {
+                                for document in self.documents.values() {
                                     if *identifier == document.buffer.language.identifier {
                                         document.buffer.send_did_open(&mut server);
                                     }
                                 }
                             }
                             "textDocument/completion" => {
-                                if let Some(value) = value {
-                                    server.save_completions(id, value);
+                                if let Some(value) = response.value {
+                                    server.save_completions(response.id, value);
                                 }
                                 return true;
                             }
@@ -57,7 +56,9 @@ impl Editor {
                         }
                     }
                 }
-                Err(_) => (),
+                Err(e) => {
+                    todo!();
+                }
             }
         }
         false
