@@ -9,7 +9,7 @@ use winit::event::{ModifiersState, VirtualKeyCode};
 use BufferCommand::*;
 use BufferMode::*;
 use CursorMotion::*;
-use VirtualKeyCode::{Back, Delete, Escape, Return, Tab, J, K, R};
+use VirtualKeyCode::{Back, Delete, Escape, Return, Space, Tab, J, K, R};
 
 use crate::{
     cursor::{
@@ -164,6 +164,10 @@ impl Buffer {
                 for _ in 0..SPACES_PER_TAB {
                     self.command(InsertChar(b' '));
                 }
+            }
+
+            (Insert, Space) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+                self.command(StartCompletion);
             }
 
             _ => (),
@@ -420,6 +424,7 @@ impl Buffer {
             }
             InsertChar(c) => {
                 cursors_foreach_rebalance(&mut self.cursors, |cursor| {
+                    self.piece_table.insert(cursor.position, &[c]);
                     lsp_insert(
                         &mut self.language_server,
                         &self.piece_table,
@@ -430,13 +435,12 @@ impl Buffer {
                     );
                     lsp_complete(
                         cursor,
-                        c,
+                        Some(c),
                         &mut self.language_server,
                         &self.piece_table,
                         &self.path,
                         cursor.position + 1,
                     );
-                    self.piece_table.insert(cursor.position, &[c]);
                     cursor.position += 1;
                 });
             }
@@ -491,6 +495,18 @@ impl Buffer {
                     &mut self.version,
                 );
             }
+            StartCompletion => {
+                for cursor in &mut self.cursors {
+                    lsp_complete(
+                        cursor,
+                        None,
+                        &mut self.language_server,
+                        &self.piece_table,
+                        &self.path,
+                        cursor.position,
+                    );
+                }
+            }
             Complete => {
                 cursors_foreach_rebalance(&mut self.cursors, |cursor| {
                     if let Some(ref mut request) = cursor.completion_request {
@@ -502,29 +518,43 @@ impl Buffer {
                             )
                         });
                         if let Some(completion) = completion {
-                            lsp_delete(
-                                &mut self.language_server,
-                                &self.piece_table,
-                                &self.path,
-                                &mut self.version,
-                                request.position,
-                                cursor.position,
-                            );
-                            self.piece_table.delete(request.position, cursor.position);
-                            cursor.position = request.position;
-
-                            let text = completion.insert_text.unwrap_or(completion.label);
-
-                            lsp_insert(
-                                &mut self.language_server,
-                                &self.piece_table,
-                                &self.path,
-                                &mut self.version,
-                                cursor.position,
-                                &text,
-                            );
-                            self.piece_table.insert(cursor.position, text.as_bytes());
-                            cursor.position += text.len();
+                            if let Some(text_edit) = completion.text_edit {
+                                let start = self
+                                    .piece_table
+                                    .char_index_from_line_col(
+                                        text_edit.range.start.line as usize,
+                                        text_edit.range.start.character as usize,
+                                    )
+                                    .unwrap_or(cursor.position);
+                                let end = self
+                                    .piece_table
+                                    .char_index_from_line_col(
+                                        text_edit.range.end.line as usize,
+                                        text_edit.range.end.character as usize,
+                                    )
+                                    .unwrap_or(cursor.position);
+                                lsp_delete(
+                                    &mut self.language_server,
+                                    &self.piece_table,
+                                    &self.path,
+                                    &mut self.version,
+                                    start,
+                                    end,
+                                );
+                                self.piece_table.delete(start, end);
+                                cursor.position = start;
+                                lsp_insert(
+                                    &mut self.language_server,
+                                    &self.piece_table,
+                                    &self.path,
+                                    &mut self.version,
+                                    cursor.position,
+                                    &text_edit.new_text,
+                                );
+                                self.piece_table
+                                    .insert(cursor.position, text_edit.new_text.as_bytes());
+                                cursor.position += text_edit.new_text.len();
+                            }
                         }
                     }
                     cursor.completion_request = None;
@@ -646,14 +676,20 @@ fn lsp_reload(
 
 fn lsp_complete(
     cursor: &mut Cursor,
-    character: u8,
+    character: Option<u8>,
     language_server: &mut Option<Rc<RefCell<LanguageServer>>>,
     piece_table: &PieceTable,
     path: &str,
     position: usize,
 ) {
     if let Some(server) = &language_server {
-        if server.borrow().trigger_characters.contains(&character) {
+        if cursor.completion_request.is_some()
+            || character.is_none()
+            || server
+                .borrow()
+                .trigger_characters
+                .contains(&character.unwrap())
+        {
             let (line, col) = (
                 piece_table.line_index(position),
                 piece_table.col_index(position),
@@ -820,5 +856,6 @@ enum BufferCommand {
     DeleteCharFront,
     Undo,
     Redo,
+    StartCompletion,
     Complete,
 }

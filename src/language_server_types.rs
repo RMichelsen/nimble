@@ -105,14 +105,14 @@ pub struct DidOpenTextDocumentParams {
     pub text_document: TextDocumentItem,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Position {
     pub line: u32,
     pub character: u32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Range {
     pub start: Position,
@@ -156,11 +156,21 @@ pub struct CompletionParams {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TextEdit {
+    pub range: Range,
+    pub new_text: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CompletionItem {
     pub label: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub insert_text: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_edit: Option<TextEdit>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
