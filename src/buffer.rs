@@ -247,7 +247,7 @@ impl Buffer {
             (Normal, "dd") => {
                 self.push_undo_state();
                 self.switch_to_visual_mode();
-                self.command(DeleteLine);
+                self.command(CutLineSelection);
                 self.switch_to_normal_mode();
             }
             (Normal, "J") => self.command(InsertCursorBelow),
@@ -331,7 +331,7 @@ impl Buffer {
                 BackwardToCharInclusive(c) => cursor.move_back_to_char_inc(&self.piece_table, c),
                 ForwardToCharExclusive(c) => cursor.move_to_char_exc(&self.piece_table, c),
                 BackwardToCharExclusive(c) => cursor.move_back_to_char_exc(&self.piece_table, c),
-                SelectLine => cursor.select_line(&self.piece_table),
+                ExtendSelection => cursor.extend_selection(&self.piece_table),
             }
 
             // Normal mode does not allow cursors to be on newlines
@@ -414,12 +414,7 @@ impl Buffer {
                 });
             }
             CutLineSelection => {
-                self.motion(ToStartOfLine);
-                self.command(CutSelection);
-                self.command(DeleteLine);
-            }
-            DeleteLine => {
-                self.motion(SelectLine);
+                self.motion(ExtendSelection);
                 self.command(CutSelection);
             }
             InsertChar(c) => {
@@ -843,7 +838,7 @@ enum CursorMotion {
     BackwardToCharInclusive(u8),
     ForwardToCharExclusive(u8),
     BackwardToCharExclusive(u8),
-    SelectLine,
+    ExtendSelection,
 }
 
 #[derive(PartialEq)]
@@ -854,7 +849,6 @@ enum BufferCommand {
     CutChar,
     CutSelection,
     CutLineSelection,
-    DeleteLine,
     InsertChar(u8),
     DeleteCharBack,
     DeleteCharFront,

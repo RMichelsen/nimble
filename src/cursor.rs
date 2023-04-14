@@ -242,10 +242,22 @@ impl Cursor {
         }
     }
 
-    pub fn select_line(&mut self, piece_table: &PieceTable) {
-        if let Some(line) = piece_table.line_at_char(self.position) {
-            self.anchor = line.start;
-            self.position = line.end;
+    pub fn extend_selection(&mut self, piece_table: &PieceTable) {
+        if self.position == self.anchor {
+            if let Some(line) = piece_table.line_at_char(self.position) {
+                self.anchor = line.start;
+                self.position = line.end;
+            }
+        } else if let Some(line) = piece_table.line_at_char(self.position) 
+            && let Some(anchor_line) = piece_table.line_at_char(self.anchor) {
+            if self.moving_forward() {
+                self.anchor = anchor_line.start;
+                self.position = line.end;
+            }
+            else {
+                self.anchor = anchor_line.end;
+                self.position = line.start;
+            }
         }
     }
 

@@ -9,6 +9,7 @@ pub struct PieceTable {
     pub pieces: Vec<Piece>,
     original: Vec<u8>,
     add: Vec<u8>,
+    indent_width: usize,
 }
 
 #[derive(Debug)]
@@ -40,28 +41,70 @@ impl PieceTable {
         let mut bytes = BufReader::new(File::open(path).unwrap()).bytes().peekable();
         let mut linebreaks = vec![];
         let mut index = 0;
+
+        let mut indentations = [0; 9];
+        let mut indent_counter = usize::MAX;
+        let mut previous_indent = 0;
         while let Some(byte) = bytes.next() {
             let byte = byte.unwrap();
+
+            // Basic but probably effective indentation guess
+            if indent_counter < usize::MAX {
+                if byte == b'\t' {
+                    indent_counter += 4;
+                } else if byte.is_ascii_whitespace() {
+                    indent_counter += 1;
+                } else {
+                    let indent_guess = indent_counter.abs_diff(previous_indent);
+                    if (2..=8).contains(&indent_guess) {
+                        indentations[indent_guess] += 1;
+                        previous_indent = indent_counter;
+                        indent_counter = usize::MAX;
+                    } else {
+                        previous_indent = indent_counter;
+                        indent_counter = usize::MAX;
+                    }
+                }
+            }
+
+            // Convert '\r\n' and '\r' to '\n'
             if byte != b'\r' {
                 original.push(byte);
 
                 if byte == b'\n' {
                     linebreaks.push(index);
+                    indent_counter = 0;
                 }
 
                 index += 1;
                 continue;
             }
-
             if bytes
                 .peek()
                 .is_some_and(|b| *(b.as_ref().unwrap()) != b'\n')
             {
                 original.push(b'\n');
                 linebreaks.push(index);
+                indent_counter = 0;
                 index += 1;
             }
         }
+
+        let indent_width = {
+            if let Some((i, max_indent_count)) = indentations
+                .iter()
+                .enumerate()
+                .max_by(|(_, c1), (_, c2)| c1.cmp(c2))
+            {
+                if *max_indent_count > 10 {
+                    i
+                } else {
+                    4
+                }
+            } else {
+                4
+            }
+        };
 
         let file_length = original.len();
         Self {
@@ -73,6 +116,7 @@ impl PieceTable {
                 length: file_length,
                 linebreaks,
             }],
+            indent_width,
         }
     }
 
