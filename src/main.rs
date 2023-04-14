@@ -26,7 +26,7 @@ pub enum DeviceInput {
 use editor::Editor;
 use winit::{
     dpi::PhysicalSize,
-    event::{ElementState, Event, ModifiersState, MouseScrollDelta, WindowEvent},
+    event::{ElementState, Event, MouseScrollDelta, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
@@ -43,7 +43,7 @@ fn main() {
     // editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/renderer.rs");
     editor.open_file("C:/VulkanSDK/1.3.239.0/Source/SPIRV-Reflect/spirv_reflect.c");
 
-    let mut modifiers: Option<ModifiersState> = None;
+    let mut modifiers = None;
     event_loop.run(move |event, _, control_flow| {
         if editor.update() {
             window.request_redraw();
@@ -71,10 +71,8 @@ fn main() {
                 event: WindowEvent::ReceivedCharacter(chr),
                 ..
             } => {
-                if !modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::CTRL)) {
-                    editor.handle_char(chr);
-                    window.request_redraw();
-                }
+                editor.handle_char(chr);
+                window.request_redraw();
             }
             Event::WindowEvent {
                 event: WindowEvent::KeyboardInput { input, .. },

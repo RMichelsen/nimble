@@ -9,7 +9,7 @@ use winit::event::{ModifiersState, VirtualKeyCode};
 use BufferCommand::*;
 use BufferMode::*;
 use CursorMotion::*;
-use VirtualKeyCode::{Back, Delete, Escape, Return, Space, Tab, J, K, R};
+use VirtualKeyCode::{Back, Delete, Escape, Return, Tab, J, K, R};
 
 use crate::{
     cursor::{
@@ -122,9 +122,8 @@ impl Buffer {
 
             (Insert, J) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 for cursor in &mut self.cursors {
-                    if let Some(server) = &self.language_server {
-                        if let Some((_, request)) = cursor.completion_context.get_last_request_mut()
-                        {
+                    if let Some(ref mut request) = cursor.completion_request {
+                        if let Some(server) = &self.language_server {
                             if let Some(completion) =
                                 server.borrow().saved_completions.get(&request.id)
                             {
@@ -144,7 +143,7 @@ impl Buffer {
             }
             (Insert, K) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 for cursor in &mut self.cursors {
-                    if let Some((_, request)) = cursor.completion_context.get_last_request_mut() {
+                    if let Some(ref mut request) = cursor.completion_request {
                         request.selection_index = request.selection_index.saturating_sub(1);
                         if request.selection_index < request.selection_view_offset {
                             request.selection_view_offset -= 1;
@@ -157,7 +156,7 @@ impl Buffer {
                 if self
                     .cursors
                     .last()
-                    .is_some_and(|cursor| cursor.completion_context.position.is_some()) =>
+                    .is_some_and(|cursor| cursor.completion_request.is_some()) =>
             {
                 self.command(Complete);
             }
@@ -165,10 +164,6 @@ impl Buffer {
                 for _ in 0..SPACES_PER_TAB {
                     self.command(InsertChar(b' '));
                 }
-            }
-
-            (Insert, Space) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
-                self.command(StartCompletion);
             }
 
             _ => (),
@@ -362,7 +357,7 @@ impl Buffer {
                     .iter()
                     .min_by(|c1, c2| c1.position.cmp(&c2.position))
                 {
-                    let mut cursor = first_cursor.clone();
+                    let mut cursor = *first_cursor;
                     cursor.cached_col = 0;
                     cursor.move_up(&self.piece_table, 1);
                     self.cursors.push(cursor);
@@ -374,18 +369,16 @@ impl Buffer {
                     .iter()
                     .max_by(|c1, c2| c1.position.cmp(&c2.position))
                 {
-                    let mut cursor = first_cursor.clone();
+                    let mut cursor = *first_cursor;
                     cursor.cached_col = 0;
                     cursor.move_down(&self.piece_table, 1);
                     self.cursors.push(cursor);
                 }
             }
             ReplaceChar(c) => {
-                self.switch_to_insert_mode();
                 self.command(DeleteCharFront);
                 self.command(InsertChar(c));
                 self.motion(Backward(1));
-                self.switch_to_normal_mode();
             }
             CutChar => {
                 self.command(DeleteCharFront);
@@ -417,7 +410,7 @@ impl Buffer {
                 });
             }
             CutLineSelection => {
-                self.motion(ToStartOfLine);
+                self.motion(ToEndOfLine);
                 self.command(CutSelection);
                 self.command(DeleteLine);
             }
@@ -427,7 +420,6 @@ impl Buffer {
             }
             InsertChar(c) => {
                 cursors_foreach_rebalance(&mut self.cursors, |cursor| {
-                    self.piece_table.insert(cursor.position, &[c]);
                     lsp_insert(
                         &mut self.language_server,
                         &self.piece_table,
@@ -438,12 +430,13 @@ impl Buffer {
                     );
                     lsp_complete(
                         cursor,
-                        Some(c),
+                        c,
                         &mut self.language_server,
                         &self.piece_table,
                         &self.path,
                         cursor.position + 1,
                     );
+                    self.piece_table.insert(cursor.position, &[c]);
                     cursor.position += 1;
                 });
             }
@@ -498,100 +491,43 @@ impl Buffer {
                     &mut self.version,
                 );
             }
-            StartCompletion => {
-                for cursor in &mut self.cursors {
-                    lsp_complete(
-                        cursor,
-                        None,
-                        &mut self.language_server,
-                        &self.piece_table,
-                        &self.path,
-                        cursor.position,
-                    );
-                }
-            }
             Complete => {
                 cursors_foreach_rebalance(&mut self.cursors, |cursor| {
-                    if cursor.completion_context.position.is_none() {
-                        return;
-                    }
-                    if let Some((position, request)) =
-                        cursor.completion_context.get_last_request_mut()
-                    {
+                    if let Some(ref mut request) = cursor.completion_request {
                         let completion = self.language_server.as_ref().and_then(|server| {
                             server.borrow().saved_completions.get(&request.id).and_then(
                                 |completion| {
-                                    completion
-                                        .items
-                                        .get(request.selection_index)
-                                        .and_then(|completion| Some(completion.clone()))
+                                    Some(completion.items[request.selection_index].clone())
                                 },
                             )
                         });
                         if let Some(completion) = completion {
-                            if let Some(text_edit) = completion.text_edit {
-                                let start = self
-                                    .piece_table
-                                    .char_index_from_line_col(
-                                        text_edit.range.start.line as usize,
-                                        text_edit.range.start.character as usize,
-                                    )
-                                    .unwrap_or(cursor.position);
-                                let end = self
-                                    .piece_table
-                                    .char_index_from_line_col(
-                                        text_edit.range.end.line as usize,
-                                        text_edit.range.end.character as usize,
-                                    )
-                                    .unwrap_or(cursor.position);
-                                lsp_delete(
-                                    &mut self.language_server,
-                                    &self.piece_table,
-                                    &self.path,
-                                    &mut self.version,
-                                    start,
-                                    end,
-                                );
-                                self.piece_table.delete(start, end);
-                                cursor.position = start;
-                                lsp_insert(
-                                    &mut self.language_server,
-                                    &self.piece_table,
-                                    &self.path,
-                                    &mut self.version,
-                                    cursor.position,
-                                    &text_edit.new_text,
-                                );
-                                self.piece_table
-                                    .insert(cursor.position, text_edit.new_text.as_bytes());
-                                cursor.position += text_edit.new_text.len();
-                            } else {
-                                lsp_delete(
-                                    &mut self.language_server,
-                                    &self.piece_table,
-                                    &self.path,
-                                    &mut self.version,
-                                    position,
-                                    cursor.position,
-                                );
-                                self.piece_table.delete(position, cursor.position);
-                                cursor.position = position;
-                                let text =
-                                    completion.insert_text.as_ref().unwrap_or(&completion.label);
-                                lsp_insert(
-                                    &mut self.language_server,
-                                    &self.piece_table,
-                                    &self.path,
-                                    &mut self.version,
-                                    cursor.position,
-                                    &text,
-                                );
-                                self.piece_table.insert(cursor.position, text.as_bytes());
-                                cursor.position += text.len();
-                            }
+                            lsp_delete(
+                                &mut self.language_server,
+                                &self.piece_table,
+                                &self.path,
+                                &mut self.version,
+                                request.position,
+                                cursor.position,
+                            );
+                            self.piece_table.delete(request.position, cursor.position);
+                            cursor.position = request.position;
+
+                            let text = completion.insert_text.unwrap_or(completion.label);
+
+                            lsp_insert(
+                                &mut self.language_server,
+                                &self.piece_table,
+                                &self.path,
+                                &mut self.version,
+                                cursor.position,
+                                &text,
+                            );
+                            self.piece_table.insert(cursor.position, text.as_bytes());
+                            cursor.position += text.len();
                         }
                     }
-                    cursor.reset_completion_requests(&mut self.language_server);
+                    cursor.completion_request = None;
                 });
             }
         }
@@ -600,11 +536,16 @@ impl Buffer {
             // Remove completion requests if cursor is behind the request position
             if self.mode == Insert
                 && cursor
-                    .completion_context
-                    .position
-                    .is_some_and(|position| position > cursor.position)
+                    .completion_request
+                    .is_some_and(|request| request.position > cursor.position)
             {
-                cursor.reset_completion_requests(&mut self.language_server);
+                if let Some(server) = &self.language_server {
+                    server
+                        .borrow_mut()
+                        .saved_completions
+                        .remove(&cursor.completion_request.unwrap().id);
+                }
+                cursor.completion_request = None;
             }
             if self.mode == Insert || self.mode == Normal {
                 cursor.reset_anchor();
@@ -615,7 +556,7 @@ impl Buffer {
 
     fn merge_cursors(&mut self) {
         let mut merged = vec![];
-        let mut current_cursor = self.cursors.first().unwrap().clone();
+        let mut current_cursor = *self.cursors.first().unwrap();
 
         // Since we are always moving all cursors at once, cursors can only merge in the "same direction",
         for cursor in &self.cursors[1..] {
@@ -627,7 +568,7 @@ impl Buffer {
                 }
             } else {
                 merged.push(current_cursor);
-                current_cursor = cursor.clone();
+                current_cursor = *cursor;
             }
         }
         merged.push(current_cursor);
@@ -651,7 +592,13 @@ impl Buffer {
         self.input.clear();
         for cursor in &mut self.cursors {
             cursor.reset_anchor();
-            cursor.reset_completion_requests(&mut self.language_server);
+            if let Some(request) = cursor.completion_request {
+                if let Some(server) = &self.language_server {
+                    server.borrow_mut().saved_completions.remove(&request.id);
+                }
+            }
+
+            cursor.completion_request = None;
         }
     }
 
@@ -699,20 +646,14 @@ fn lsp_reload(
 
 fn lsp_complete(
     cursor: &mut Cursor,
-    character: Option<u8>,
+    character: u8,
     language_server: &mut Option<Rc<RefCell<LanguageServer>>>,
     piece_table: &PieceTable,
     path: &str,
     position: usize,
 ) {
     if let Some(server) = &language_server {
-        if cursor.completion_context.position.is_some()
-            || character.is_none()
-            || server
-                .borrow()
-                .trigger_characters
-                .contains(&character.unwrap())
-        {
+        if server.borrow().trigger_characters.contains(&character) {
             let (line, col) = (
                 piece_table.line_index(position),
                 piece_table.col_index(position),
@@ -730,9 +671,9 @@ fn lsp_complete(
                 .borrow_mut()
                 .send_request("textDocument/completion", completion_params)
             {
-                cursor.completion_context.position.get_or_insert(position);
-                cursor.completion_context.requests.push(CompletionRequest {
+                cursor.completion_request = Some(CompletionRequest {
                     id,
+                    position,
                     selection_index: 0,
                     selection_view_offset: 0,
                 });
@@ -879,6 +820,5 @@ enum BufferCommand {
     DeleteCharFront,
     Undo,
     Redo,
-    StartCompletion,
     Complete,
 }

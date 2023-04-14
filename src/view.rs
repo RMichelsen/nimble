@@ -94,17 +94,19 @@ impl View {
     where
         F: Fn(usize, usize, CompletionRequest),
     {
-        for cursor in buffer.cursors.iter() {
-            if let Some((position, request)) = cursor.completion_context.get_last_request() {
-                let line = buffer.piece_table.line_index(cursor.position);
-                let col = buffer.piece_table.col_index(position);
+        if let Some(server) = &buffer.language_server {
+            for cursor in buffer.cursors.iter() {
+                if let Some(request) = cursor.completion_request {
+                    let line = buffer.piece_table.line_index(cursor.position);
+                    let col = buffer.piece_table.col_index(request.position);
 
-                if self.pos_in_render_visible_range(line, col, num_rows, num_cols) {
-                    f(
-                        self.absolute_to_view_row(line),
-                        self.absolute_to_view_col(col),
-                        *request,
-                    );
+                    if self.pos_in_render_visible_range(line, col, num_rows, num_cols) {
+                        f(
+                            self.absolute_to_view_row(line),
+                            self.absolute_to_view_col(col),
+                            request,
+                        );
+                    }
                 }
             }
         }
