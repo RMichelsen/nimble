@@ -1,6 +1,5 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, str::pattern::Pattern};
 
-use bstr::ByteSlice;
 use winit::window::Window;
 
 use crate::{
@@ -87,24 +86,33 @@ impl Renderer {
             start: 0,
             length: text.len(),
         });
-        if let Some(keywords) = &buffer.language.keywords {
-            text_utils::find_keywords_iter(&text, keywords, |start, len| {
+
+        text_utils::find_keywords_iter(&text, buffer.language.keywords, |start, len| {
+            effects.push(TextEffect {
+                kind: ForegroundColor(KEYWORD_COLOR),
+                start,
+                length: len,
+            })
+        });
+
+        text_utils::find_comments_iter(
+            &text,
+            buffer.language.line_comment_token,
+            buffer.language.multi_line_comment_token_pair,
+            buffer.piece_table.iter_chars_at_rev(
+                buffer
+                    .piece_table
+                    .char_index_from_line_col(view.line_offset, 0)
+                    .unwrap(),
+            ),
+            |start, len| {
                 effects.push(TextEffect {
-                    kind: ForegroundColor(KEYWORD_COLOR),
+                    kind: ForegroundColor(COMMENT_COLOR),
                     start,
                     length: len,
                 })
-            });
-        }
-        if let Some(line_comment_tokens) = buffer.language.line_comment_token {
-            if let Some(idx) = &text.find(line_comment_tokens) {
-                effects.push(TextEffect {
-                    kind: ForegroundColor(COMMENT_COLOR),
-                    start: *idx,
-                    length: text.len() - idx,
-                })
-            }
-        }
+            },
+        );
 
         self.context.draw_text_fit_view(view, &text, &effects);
 

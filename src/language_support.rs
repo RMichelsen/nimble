@@ -8,6 +8,7 @@ pub const RUST_KEYWORDS: [&str; 38] = [
     "while", "async", "await", "dyn",
 ];
 pub const RUST_LINE_COMMENT_TOKEN: &str = "//";
+pub const RUST_MULTI_LINE_COMMENT_TOKEN_PAIR: [&str; 2] = ["/*", "*/"];
 pub const RUST_LANGUAGE_SERVER: &str = "rust-analyzer";
 pub const RUST_FILE_EXTENSIONS: [&str; 1] = ["rs"];
 pub const RUST_IDENTIFIER: &str = "rust";
@@ -27,6 +28,7 @@ pub const CPP_KEYWORDS: [&str; 92] = [
     "virtual", "void", "volatile", "wchar_t", "while", "xor", "xor_eq"
 ];
 pub const CPP_LINE_COMMENT_TOKEN: &str = "//";
+pub const CPP_MULTI_LINE_TOKEN_PAIR: [&str; 2] = ["/*", "*/"];
 pub const CPP_LANGUAGE_SERVER: &str = "clangd";
 pub const CPP_FILE_EXTENSIONS: [&str; 6] = ["c", "h", "cpp", "hpp", "cc", "cxx"];
 pub const CPP_IDENTIFIER: &str = "cpp";
@@ -36,6 +38,7 @@ pub struct Language {
     pub lsp_executable: Option<&'static str>,
     pub keywords: Option<&'static [&'static str]>,
     pub line_comment_token: Option<&'static str>,
+    pub multi_line_comment_token_pair: Option<[&'static str; 2]>,
 }
 
 pub const CPP_LANGUAGE: Language = Language {
@@ -43,6 +46,7 @@ pub const CPP_LANGUAGE: Language = Language {
     lsp_executable: Some(CPP_LANGUAGE_SERVER),
     keywords: Some(&CPP_KEYWORDS),
     line_comment_token: Some(CPP_LINE_COMMENT_TOKEN),
+    multi_line_comment_token_pair: Some(CPP_MULTI_LINE_TOKEN_PAIR),
 };
 
 pub const RUST_LANGUAGE: Language = Language {
@@ -50,6 +54,7 @@ pub const RUST_LANGUAGE: Language = Language {
     lsp_executable: Some(RUST_LANGUAGE_SERVER),
     keywords: Some(&RUST_KEYWORDS),
     line_comment_token: Some(RUST_LINE_COMMENT_TOKEN),
+    multi_line_comment_token_pair: Some(RUST_MULTI_LINE_COMMENT_TOKEN_PAIR),
 };
 
 pub fn language_from_path(path: &str) -> Option<&'static Language> {
