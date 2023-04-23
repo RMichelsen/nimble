@@ -123,7 +123,7 @@ impl LanguageServer {
         if let Ok(ref mut responses) = self.responses.try_lock() {
             while let Some(message) = responses.pop_front() {
                 match message {
-                    ServerMessage::Response { id, result, .. } => {
+                    ServerMessage::Response { id, result, jsonrpc, error } => {
                         match self.requests.get(&id) {
                             Some(&"initialize") => {
                                 send_notification(

@@ -16,7 +16,6 @@ pub struct Cursor {
     pub completion_request: Option<CompletionRequest>,
 }
 
-pub const MAX_SHOWN_COMPLETION_ITEMS: usize = 15;
 #[derive(Copy, Clone, Debug)]
 pub struct CompletionRequest {
     pub id: i32,

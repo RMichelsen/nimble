@@ -12,10 +12,7 @@ use CursorMotion::*;
 use VirtualKeyCode::{Back, Delete, Escape, Return, Space, Tab, J, K, R};
 
 use crate::{
-    cursor::{
-        cursors_foreach_rebalance, cursors_overlapping, CompletionRequest, Cursor,
-        MAX_SHOWN_COMPLETION_ITEMS,
-    },
+    cursor::{cursors_foreach_rebalance, cursors_overlapping, CompletionRequest, Cursor},
     language_server::LanguageServer,
     language_server_types::{
         CompletionParams, DidChangeTextDocumentParams, DidOpenTextDocumentParams, Position, Range,
@@ -24,6 +21,7 @@ use crate::{
     },
     language_support::{language_from_path, Language},
     piece_table::{Piece, PieceTable},
+    view::View,
 };
 
 #[derive(Copy, Clone, PartialEq)]
@@ -90,7 +88,14 @@ impl Buffer {
         server.send_notification("textDocument/didOpen", Some(open_params));
     }
 
-    pub fn handle_key(&mut self, key_code: VirtualKeyCode, modifiers: Option<ModifiersState>) {
+    pub fn handle_key(
+        &mut self,
+        key_code: VirtualKeyCode,
+        modifiers: Option<ModifiersState>,
+        view: &View,
+        num_rows: usize,
+        num_cols: usize,
+    ) {
         match (self.mode, key_code) {
             (Normal, Escape) => self.cursors.truncate(1),
             (Insert, Escape) => {
@@ -105,7 +110,7 @@ impl Buffer {
             (Insert, Return) => self.command(InsertChar(b'\n')),
             (_, Return) => self.motion(Down(1)),
 
-            (Normal, Delete) => self.command(CutChar),
+            (Normal, Delete) => self.command(CutSelection),
             (Visual, Delete) => {
                 self.command(CutSelection);
                 self.switch_to_normal_mode();
@@ -114,7 +119,7 @@ impl Buffer {
                 self.command(CutLineSelection);
                 self.switch_to_normal_mode();
             }
-            (Insert, Delete) => self.command(DeleteCharFront),
+            (Insert, Delete) => self.command(CutSelection),
 
             (Normal, R) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 self.command(Redo);
@@ -127,14 +132,23 @@ impl Buffer {
                             if let Some(completion) =
                                 server.borrow().saved_completions.get(&request.id)
                             {
-                                request.selection_index = min(
-                                    request.selection_index + 1,
-                                    completion.items.len().saturating_sub(1),
-                                );
-                                if request.selection_index
-                                    >= request.selection_view_offset + MAX_SHOWN_COMPLETION_ITEMS
-                                {
-                                    request.selection_view_offset += 1;
+                                if let Some(completion_view) = view.get_completion_view(
+                                    &self.piece_table,
+                                    completion,
+                                    request.position,
+                                    num_rows,
+                                    num_cols,
+                                ) {
+                                    request.selection_index = min(
+                                        request.selection_index + 1,
+                                        completion.items.len().saturating_sub(1),
+                                    );
+
+                                    if request.selection_index
+                                        >= request.selection_view_offset + completion_view.height
+                                    {
+                                        request.selection_view_offset += 1;
+                                    }
                                 }
                             }
                         }
@@ -222,7 +236,7 @@ impl Buffer {
 
             (Normal, "x") => {
                 self.push_undo_state();
-                self.command(CutChar);
+                self.command(CutSelection);
             }
             (Visual, "x") => {
                 self.push_undo_state();
@@ -248,6 +262,14 @@ impl Buffer {
                 self.push_undo_state();
                 self.switch_to_visual_mode();
                 self.command(CutLineSelection);
+                self.switch_to_normal_mode();
+            }
+            (Normal, "D") => {
+                self.push_undo_state();
+                self.switch_to_visual_mode();
+                self.motion(ToEndOfLine);
+                self.motion(Backward(1));
+                self.command(CutSelection);
                 self.switch_to_normal_mode();
             }
             (Normal, "J") => self.command(InsertCursorBelow),
@@ -321,7 +343,6 @@ impl Buffer {
                 Down(count) => cursor.move_down(&self.piece_table, count),
                 ForwardByWord => cursor.move_forward_by_word(&self.piece_table),
                 BackwardByWord => cursor.move_backward_by_word(&self.piece_table),
-                ForwardOnceWrapping => cursor.move_forward_once_wrapping(&self.piece_table),
                 ToStartOfLine => cursor.move_to_start_of_line(&self.piece_table),
                 ToEndOfLine => cursor.move_to_end_of_line(&self.piece_table),
                 ToStartOfFile => cursor.move_to_start_of_file(),
@@ -380,14 +401,12 @@ impl Buffer {
                 }
             }
             ReplaceChar(c) => {
-                self.command(DeleteCharFront);
+                self.command(CutSelection);
                 self.command(InsertChar(c));
                 self.motion(Backward(1));
             }
-            CutChar => {
-                self.command(DeleteCharFront);
-            }
             CutSelection => {
+                let num_chars = self.piece_table.num_chars();
                 cursors_foreach_rebalance(&mut self.cursors, |cursor| {
                     if cursor.position < cursor.anchor {
                         lsp_delete(
@@ -396,7 +415,7 @@ impl Buffer {
                             &self.uri,
                             &mut self.version,
                             cursor.position,
-                            cursor.anchor + 1,
+                            min(cursor.anchor + 1, num_chars),
                         );
                         self.piece_table.delete(cursor.position, cursor.anchor + 1);
                     } else {
@@ -406,7 +425,7 @@ impl Buffer {
                             &self.uri,
                             &mut self.version,
                             cursor.anchor,
-                            cursor.position + 1,
+                            min(cursor.position + 1, num_chars),
                         );
                         self.piece_table.delete(cursor.anchor, cursor.position + 1);
                         cursor.position = cursor.anchor;
@@ -453,10 +472,6 @@ impl Buffer {
                     self.piece_table.delete(new_position, cursor.position);
                     cursor.position = new_position;
                 });
-            }
-            DeleteCharFront => {
-                self.motion(ForwardOnceWrapping);
-                self.command(DeleteCharBack);
             }
             Undo => {
                 if let Some(state) = self.undo_stack.pop() {
@@ -543,6 +558,21 @@ impl Buffer {
                                 );
                                 self.piece_table.delete(start, end);
                                 cursor.position = start;
+                            }
+                        }
+                    }
+                });
+
+                cursors_foreach_rebalance(&mut self.cursors, |cursor| {
+                    if let Some(ref mut request) = cursor.completion_request {
+                        let item =
+                            self.language_server.as_ref().and_then(|server| {
+                                server.borrow().saved_completions.get(&request.id).map(
+                                    |completion| completion.items[request.selection_index].clone(),
+                                )
+                            });
+                        if let Some(item) = item {
+                            if let Some(text_edit) = item.text_edit {
                                 lsp_insert(
                                     &mut self.language_server,
                                     &self.piece_table,
@@ -563,6 +593,11 @@ impl Buffer {
         }
 
         for cursor in &mut self.cursors {
+            // Normal mode does not allow cursors to be on newlines
+            if self.mode == Normal && cursor.at_line_end(&self.piece_table) {
+                cursor.move_backward(&self.piece_table, 1);
+            }
+
             // Remove completion requests if cursor is behind the request position
             if self.mode == Insert
                 && cursor
@@ -621,7 +656,10 @@ impl Buffer {
         self.mode = Normal;
         self.input.clear();
         for cursor in &mut self.cursors {
-            cursor.reset_anchor();
+            if cursor.at_line_end(&self.piece_table) {
+                cursor.move_backward(&self.piece_table, 1);
+            }
+
             if let Some(request) = cursor.completion_request {
                 if let Some(server) = &self.language_server {
                     server.borrow_mut().saved_completions.remove(&request.id);
@@ -629,6 +667,7 @@ impl Buffer {
             }
 
             cursor.completion_request = None;
+            cursor.reset_anchor();
         }
     }
 
@@ -813,8 +852,8 @@ fn is_prefix_of_command(str: &str, mode: BufferMode) -> bool {
     }
 }
 
-const NORMAL_MODE_COMMANDS: [&str; 17] = [
-    "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "dd", "J", "K", "v", "V", "u",
+const NORMAL_MODE_COMMANDS: [&str; 18] = [
+    "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "dd", "D", "J", "K", "v", "V", "u",
 ];
 const VISUAL_MODE_COMMANDS: [&str; 12] =
     ["j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "d"];
@@ -828,7 +867,6 @@ enum CursorMotion {
     Down(usize),
     ForwardByWord,
     BackwardByWord,
-    ForwardOnceWrapping,
     ToStartOfLine,
     ToEndOfLine,
     ToStartOfFile,
@@ -846,12 +884,10 @@ enum BufferCommand {
     InsertCursorAbove,
     InsertCursorBelow,
     ReplaceChar(u8),
-    CutChar,
     CutSelection,
     CutLineSelection,
     InsertChar(u8),
     DeleteCharBack,
-    DeleteCharFront,
     Undo,
     Redo,
     StartCompletion,

@@ -3,10 +3,20 @@ use std::cmp::{max, min};
 use crate::{
     buffer::{Buffer, BufferMode},
     cursor::CompletionRequest,
+    language_server_types::CompletionList,
+    piece_table::PieceTable,
     DeviceInput,
 };
 
 const SCROLL_LINES_PER_ROLL: isize = 3;
+const MAX_SHOWN_COMPLETION_ITEMS: usize = 10;
+
+pub struct CompletionView {
+    pub row: usize,
+    pub col: usize,
+    pub width: usize,
+    pub height: usize,
+}
 
 pub struct View {
     pub line_offset: usize,
@@ -92,39 +102,40 @@ impl View {
 
     pub fn visible_completions<F>(&self, buffer: &Buffer, num_rows: usize, num_cols: usize, f: F)
     where
-        F: Fn(usize, usize, CompletionRequest),
+        F: Fn(&CompletionList, &CompletionView, &CompletionRequest),
     {
         if let Some(server) = &buffer.language_server {
             for cursor in buffer.cursors.iter() {
                 if let Some(request) = cursor.completion_request {
-                    let line = buffer.piece_table.line_index(cursor.position);
-                    let col = buffer.piece_table.col_index(request.position);
+                    if let Some(completion) = server.borrow().saved_completions.get(&request.id) {
+                        if completion.items.is_empty() {
+                            continue;
+                        }
 
-                    if self.pos_in_render_visible_range(line, col, num_rows, num_cols) {
-                        f(
-                            self.absolute_to_view_row(line),
-                            self.absolute_to_view_col(col),
-                            request,
-                        );
+                        if let Some(completion_view) = self.get_completion_view(
+                            &buffer.piece_table,
+                            completion,
+                            request.position,
+                            num_rows,
+                            num_cols,
+                        ) {
+                            f(completion, &completion_view, &request);
+                        }
                     }
                 }
             }
         }
     }
 
-    pub fn visible_lines_iter<F>(&self, buffer: &Buffer, num_rows: usize, num_cols: usize, f: F)
-    where
-        F: Fn(usize, &[u8]),
-    {
+    pub fn visible_text(&self, buffer: &Buffer, num_rows: usize) -> Vec<u8> {
         buffer
             .piece_table
-            .lines_foreach(self.line_offset, num_rows, |i, line| f(i, line));
+            .text_between_lines(self.line_offset, self.line_offset + num_rows)
     }
 
-    // TODO: ASSUMES FIRST CURSOR IS FIRST
     pub fn adjust(&mut self, buffer: &Buffer, num_rows: usize, num_cols: usize) {
-        if let Some(first_cursor) = buffer.cursors.first() {
-            let (line, col) = first_cursor.get_line_col(&buffer.piece_table);
+        if let Some(last_cursor) = buffer.cursors.last() {
+            let (line, col) = last_cursor.get_line_col(&buffer.piece_table);
             if !self.pos_in_edit_visible_range(line, col, num_rows, num_cols) {
                 if line < self.line_offset {
                     self.line_offset = line;
@@ -139,6 +150,76 @@ impl View {
                 }
             }
         }
+    }
+
+    pub fn get_completion_view(
+        &self,
+        piece_table: &PieceTable,
+        completion: &CompletionList,
+        position: usize,
+        num_rows: usize,
+        num_cols: usize,
+    ) -> Option<CompletionView> {
+        let line = piece_table.line_index(position);
+        let col = piece_table.col_index(position);
+
+        if !self.pos_in_render_visible_range(line, col, num_rows, num_cols) {
+            return None;
+        }
+
+        let longest_string = completion
+            .items
+            .iter()
+            .max_by(|x, y| {
+                x.insert_text
+                    .as_ref()
+                    .unwrap_or(&x.label)
+                    .len()
+                    .cmp(&y.insert_text.as_ref().unwrap_or(&y.label).len())
+            })
+            .map(|x| x.insert_text.as_ref().unwrap_or(&x.label).len() + 1)
+            .unwrap_or(0);
+
+        let mut num_shown_completion_items =
+            min(MAX_SHOWN_COMPLETION_ITEMS, completion.items.len());
+
+        let row = self.absolute_to_view_row(line);
+        let col = self.absolute_to_view_col(col);
+
+        let available_rows_above = row.saturating_sub(1);
+        let available_rows_below = num_rows.saturating_sub(row + 2);
+
+        let grow_up = available_rows_below < 5 && available_rows_above > available_rows_below;
+        let row = if grow_up {
+            num_shown_completion_items = min(num_shown_completion_items, available_rows_above);
+            row.saturating_sub(num_shown_completion_items)
+        } else {
+            num_shown_completion_items = min(num_shown_completion_items, available_rows_below);
+            row + 1
+        };
+
+        let available_rows_right = num_cols.saturating_sub(col + 1);
+        let move_left = available_rows_right < longest_string;
+        let col = if move_left {
+            col.saturating_sub(longest_string)
+        } else {
+            col
+        };
+
+        Some(CompletionView {
+            row,
+            col,
+            width: longest_string,
+            height: num_shown_completion_items,
+        })
+    }
+
+    fn absolute_to_view_row(&self, line: usize) -> usize {
+        line.saturating_sub(self.line_offset)
+    }
+
+    fn absolute_to_view_col(&self, col: usize) -> usize {
+        col.saturating_sub(self.col_offset)
     }
 
     fn scroll_vertical(&mut self, buffer: &Buffer, delta: isize) {
@@ -175,13 +256,5 @@ impl View {
     ) -> bool {
         (self.line_offset..self.line_offset + num_rows).contains(&line)
             && (self.col_offset..self.col_offset + num_cols).contains(&col)
-    }
-
-    fn absolute_to_view_row(&self, line: usize) -> usize {
-        line.saturating_sub(self.line_offset)
-    }
-
-    fn absolute_to_view_col(&self, col: usize) -> usize {
-        col.saturating_sub(self.col_offset)
     }
 }

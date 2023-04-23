@@ -349,19 +349,19 @@ impl PieceTable {
 
     pub fn char_index_from_line_col(&self, line: usize, col: usize) -> Option<usize> {
         let mut line_count = 0;
-        let mut count = 0;
-        for c in self.iter_chars() {
-            count += 1;
-            line_count += (c == b'\n') as usize;
-            if line_count == line {
-                break;
+        let mut col_count = 0;
+        for (count, c) in self.iter_chars().enumerate() {
+            if line_count == line && col_count == col {
+                return Some(count);
+            }
+
+            col_count += 1;
+            if c == b'\n' {
+                line_count += 1;
+                col_count = 0;
             }
         }
-        if count + col < self.num_chars().saturating_sub(1) {
-            Some(count + col)
-        } else {
-            None
-        }
+        None
     }
 
     pub fn col_index(&self, position: usize) -> usize {
@@ -374,49 +374,18 @@ impl PieceTable {
         self.iter_chars_at(position).next()
     }
 
-    // TODO: REWRITE
-    pub fn lines_foreach<F>(&self, start: usize, count: usize, f: F)
-    where
-        F: Fn(usize, &[u8]),
-    {
-        let mut skip = start;
-        let mut line_index = 0;
-        let mut last_piece_ending = vec![];
-        for piece in &self.pieces {
-            let buffer = if piece.file == PieceFile::Original {
-                &self.original
-            } else {
-                &self.add
-            };
-            let mut first_slice = true;
-            let mut slice_start = piece.start;
-            for i in piece.start..(piece.start + piece.length) {
-                if buffer[i] == b'\n' {
-                    if skip > 0 {
-                        skip -= 1;
-                    } else if first_slice {
-                        last_piece_ending.push_str(&buffer[slice_start..i]);
-                        f(line_index, &last_piece_ending);
-                        line_index += 1;
-                        first_slice = false;
-                        last_piece_ending.clear();
-                    } else {
-                        f(line_index, &buffer[slice_start..i]);
-                        line_index += 1;
-                    }
-                    if line_index == count {
-                        return;
-                    }
-                    slice_start = i + 1;
-                }
-            }
-
-            last_piece_ending.push_str(&buffer[slice_start..(piece.start + piece.length)]);
+    pub fn text_between_lines(&self, start_line: usize, end_line: usize) -> Vec<u8> {
+        if let Some(start_of_first_line) = self.char_index_from_line_col(start_line, 0) {
+            let start_of_last_line = self
+                .char_index_from_line_col(end_line + 1, 0)
+                .unwrap_or(self.num_chars());
+            let num_chars = start_of_last_line - start_of_first_line;
+            return self
+                .iter_chars_at(start_of_first_line)
+                .take(num_chars)
+                .collect();
         }
-
-        if line_index < count {
-            f(line_index, &last_piece_ending);
-        }
+        vec![]
     }
 }
 

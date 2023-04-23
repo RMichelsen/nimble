@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
-#![feature(is_some_and)]
 #![feature(iterator_try_collect)]
 #![feature(pattern)]
 #![feature(slice_take)]
@@ -15,6 +14,11 @@ mod language_server_types;
 mod language_support;
 mod piece_table;
 mod renderer;
+
+#[cfg_attr(target_os = "windows", path = "graphics_context_windows.rs")]
+#[cfg_attr(target_os = "macos", path = "graphics_context_macos.rs")]
+mod graphics_context;
+
 mod text_utils;
 mod theme;
 mod view;
@@ -24,20 +28,24 @@ pub enum DeviceInput {
 }
 
 use editor::Editor;
+#[cfg(target_os = "macos")]
+use objc::{msg_send, runtime::YES, sel, sel_impl};
+#[cfg(target_os = "macos")]
+use winit::platform::macos::WindowExtMacOS;
 use winit::{
-    dpi::PhysicalSize,
     event::{ElementState, Event, ModifiersState, MouseScrollDelta, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
+    window::{Window, WindowBuilder},
 };
 
 fn main() {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_title("Nimble")
-        .with_inner_size(PhysicalSize::new(1920, 1080))
+        .with_maximized(true)
         .build(&event_loop)
         .unwrap();
+    request_redraw(&window);
 
     let mut editor = Editor::new(&window);
     editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/renderer.rs");
@@ -46,9 +54,8 @@ fn main() {
     let mut modifiers: Option<ModifiersState> = None;
     event_loop.run(move |event, _, control_flow| {
         if editor.update() {
-            window.request_redraw();
+            request_redraw(&window);
         }
-
         match event {
             Event::RedrawRequested(_) => {
                 editor.render();
@@ -65,7 +72,7 @@ fn main() {
                         editor.handle_input(DeviceInput::MouseWheel((pos.y as isize).signum()));
                     }
                 }
-                window.request_redraw();
+                request_redraw(&window);
             }
             Event::WindowEvent {
                 event: WindowEvent::ReceivedCharacter(chr),
@@ -73,7 +80,7 @@ fn main() {
             } => {
                 if !modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::CTRL)) {
                     editor.handle_char(chr);
-                    window.request_redraw();
+                    request_redraw(&window);
                 }
             }
             Event::WindowEvent {
@@ -83,7 +90,7 @@ fn main() {
                 if input.state == ElementState::Pressed {
                     if let Some(keycode) = input.virtual_keycode {
                         editor.handle_key(keycode, modifiers);
-                        window.request_redraw();
+                        request_redraw(&window);
                     }
                 }
             }
@@ -103,4 +110,19 @@ fn main() {
             _ => (),
         }
     });
+}
+
+#[cfg(target_os = "macos")]
+fn request_redraw(window: &Window) {
+    let _: () = unsafe {
+        msg_send![
+            window.ns_view() as *mut objc::runtime::Object,
+            setNeedsDisplay: YES
+        ]
+    };
+}
+
+#[cfg(target_os = "windows")]
+fn request_redraw(window: &Window) {
+    window.request_redraw();
 }

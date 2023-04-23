@@ -1,10 +1,10 @@
-pub fn find_keywords_iter<F>(line: &[u8], keywords: &[&str], f: F)
+pub fn find_keywords_iter<F>(line: &[u8], keywords: &[&str], mut f: F)
 where
-    F: Fn(usize, usize),
+    F: FnMut(usize, usize),
 {
     let mut word = String::new();
     for (i, c) in line.iter().enumerate() {
-        if c.is_ascii_punctuation() || c.is_ascii_whitespace() {
+        if char_type(*c) != CharType::Word {
             if keywords.contains(&word.as_str()) {
                 let len = word.len();
                 f(i - len, len);
