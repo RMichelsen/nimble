@@ -36,11 +36,14 @@ pub fn cursors_overlapping(c1: &Cursor, c2: &Cursor) -> bool {
         && min(c2.position, c2.anchor) <= max(c1.position, c1.anchor)
 }
 
-pub fn cursors_delete_rebalance(cursors: &mut [Cursor], position: usize, count: usize) {
+pub fn cursors_delete_rebalance(cursors: &mut [Cursor], start: usize, end: usize) {
+    let count = end - start;
     for cursor in cursors {
-        if cursor.position > position {
-            cursor.position -= count;
-            cursor.anchor -= count;
+        if cursor.position > start {
+            cursor.position = cursor.position.saturating_sub(count);
+        }
+        if cursor.anchor > start {
+            cursor.anchor = cursor.anchor.saturating_sub(count);
         }
     }
 }
@@ -49,38 +52,12 @@ pub fn cursors_insert_rebalance(cursors: &mut [Cursor], position: usize, count: 
     for cursor in cursors {
         if cursor.position > position {
             cursor.position += count;
+        }
+        if cursor.anchor > position {
             cursor.anchor += count;
         }
     }
 }
-
-// pub fn cursors_foreach_rebalance<F>(mut cursors: &mut [Cursor], mut f: F)
-// where
-//     F: FnMut(&mut Cursor),
-// {
-//     for i in 0..cursors.len() {
-//         let cursor_before = cursors[i];
-//         f(&mut cursors[i]);
-
-//         for j in 0..cursors.len() {
-//             if i == j {
-//                 continue;
-//             }
-
-//             if cursor_before.single_selection() {
-//                 if cursor_before.position < cursors[j].position {
-//                     let delta = cursors[i].position as isize - cursor_before.position as isize;
-//                     cursors[j].anchor = cursors[j].anchor.saturating_add_signed(delta);
-//                     cursors[j].position = cursors[j].position.saturating_add_signed(delta);
-//                 }
-//             } else if cursor_before.position < cursors[j].position {
-//                 let delta = cursor_before.position.abs_diff(cursor_before.anchor) + 1;
-//                 cursors[j].anchor -= delta;
-//                 cursors[j].position -= delta;
-//             }
-//         }
-//     }
-// }
 
 impl Cursor {
     pub fn new(position: usize) -> Self {
@@ -224,24 +201,36 @@ impl Cursor {
 
     pub fn move_to_char_inc(&mut self, piece_table: &PieceTable, search_char: u8) {
         if let Some(count) = self.chars_until_char(piece_table, search_char) {
+            if piece_table.line_at_char(self.position).is_some_and(|line| line.end < self.position + count + 1) {
+                return;
+            }
             self.move_forward(piece_table, count + 1);
         }
     }
 
     pub fn move_back_to_char_inc(&mut self, piece_table: &PieceTable, search_char: u8) {
         if let Some(count) = self.chars_until_char_rev(piece_table, search_char) {
+            if piece_table.line_at_char(self.position).is_some_and(|line| line.start > self.position.saturating_sub(count + 1)) {
+                return;
+            }
             self.move_backward(piece_table, count + 1);
         }
     }
 
     pub fn move_to_char_exc(&mut self, piece_table: &PieceTable, search_char: u8) {
         if let Some(count) = self.chars_until_char(piece_table, search_char) {
+            if piece_table.line_at_char(self.position).is_some_and(|line| line.end < self.position + count) {
+                return;
+            }
             self.move_forward(piece_table, count);
         }
     }
 
     pub fn move_back_to_char_exc(&mut self, piece_table: &PieceTable, search_char: u8) {
         if let Some(count) = self.chars_until_char_rev(piece_table, search_char) {
+            if piece_table.line_at_char(self.position).is_some_and(|line| line.start > self.position.saturating_sub(count)) {
+                return;
+            }
             self.move_backward(piece_table, count);
         }
     }
@@ -253,7 +242,7 @@ impl Cursor {
                 if let Some(count) =
                     self.chars_until_pred(piece_table, |c| !c.is_ascii_whitespace() || c == b'\n')
                 {
-                    self.move_forward(piece_table, count);
+                    self.move_forward(piece_table, count + piece_table.char_at(line.start).unwrap().is_ascii_whitespace() as usize);
                 }
             }
         }
@@ -275,6 +264,46 @@ impl Cursor {
                 self.anchor = anchor_line.end;
                 self.position = line.start;
             }
+        }
+    }
+
+    pub fn extend_selection_inside(&mut self, piece_table: &PieceTable, search_char: u8) {
+        let pair = match search_char {
+            b'<' | b'>' => (b'<', b'>'),
+            b'"' => (b'"', b'"'),
+            b'\'' => (b'\'', b'\''),
+            b'(' | b')' => (b'(', b')'),
+            b'{' | b'}' => (b'{', b'}'),
+            b'[' | b']' => (b'[', b']'),
+            _ => return
+        };
+
+        if let (Some(backward_match), Some(forward_match)) =
+        (self.chars_until_char_rev(piece_table, pair.0), self.chars_until_char(piece_table, pair.1)) {
+            let start = self.position - backward_match;
+            let end = self.position + forward_match;
+
+            if search_char == b'"' || search_char == b'\'' {
+                let line_index = piece_table.line_index(self.position);
+                if piece_table.line_index(start) != line_index ||
+                piece_table.line_index(end) != line_index {
+                    return;
+                }
+            }
+
+            if let Some(backward_wrong_match) = self.chars_until_char_rev(piece_table, pair.1) {
+                if backward_wrong_match < backward_match {
+                    return;
+                }
+            }
+            if let Some(forward_wrong_match) = self.chars_until_char(piece_table, pair.0) {
+                if forward_wrong_match < forward_match {
+                    return;
+                }
+            }
+
+            self.anchor = start;
+            self.position = end;
         }
     }
 
