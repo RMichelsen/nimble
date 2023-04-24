@@ -674,9 +674,14 @@ impl Buffer {
                                     .iter_chars_at(line.start)
                                     .take(line.length)
                                     .collect();
+                                if bytes.is_empty() {
+                                    continue;
+                                }
+
                                 if !bytes.trim().starts_with_str(line_comment_token.as_bytes()) {
                                     uncomment = false;
                                 }
+
                                 indent = min(
                                     indent,
                                     bytes
@@ -699,6 +704,10 @@ impl Buffer {
                                     .iter_chars_at(line.start)
                                     .take(line.length)
                                     .collect();
+                                if bytes.is_empty() {
+                                    continue;
+                                }
+
                                 if uncomment {
                                     let token_index = bytes.find(line_comment_token).unwrap();
                                     let start = line.start + token_index;
