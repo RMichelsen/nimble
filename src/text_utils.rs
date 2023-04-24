@@ -55,7 +55,7 @@ pub fn find_comments_iter<F>(
 {
     if let Some([t1, t2]) = multi_line_comment_token_pair {
         if let Some(leading_multi_line_comment_end) =
-            leading_multi_line_comment_end(&text, multi_line_comment_token_pair)
+            leading_multi_line_comment_end(text, multi_line_comment_token_pair)
         {
             let mut match_t1 = String::default();
             let mut match_t2 = String::default();

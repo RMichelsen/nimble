@@ -88,7 +88,7 @@ impl GraphicsContext {
                     DWRITE_FONT_WEIGHT_NORMAL,
                     DWRITE_FONT_STYLE_NORMAL,
                     DWRITE_FONT_STRETCH_NORMAL,
-                    20.0,
+                    18.0,
                     PCWSTR(U16CString::from_str("en-us").unwrap().into_raw()),
                 )
                 .unwrap()

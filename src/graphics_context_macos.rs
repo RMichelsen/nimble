@@ -75,7 +75,7 @@ impl GraphicsContext {
         );
 
         let font: *mut c_void =
-            unsafe { msg_send![class!(NSFont), monospacedSystemFontOfSize:20.0 weight:0.0 ] };
+            unsafe { msg_send![class!(NSFont), monospacedSystemFontOfSize:18.0 weight:0.0 ] };
 
         let font_size = unsafe {
             (

@@ -50,7 +50,6 @@ pub struct Buffer {
     pub cursors: Vec<Cursor>,
     pub undo_stack: Vec<BufferState>,
     pub redo_stack: Vec<BufferState>,
-    pub content_change_stack: Vec<TextDocumentChangeEvent>,
     pub mode: BufferMode,
     pub language_server: Option<Rc<RefCell<LanguageServer>>>,
     input: String,
@@ -72,7 +71,6 @@ impl Buffer {
             cursors: vec![Cursor::default()],
             undo_stack: vec![],
             redo_stack: vec![],
-            content_change_stack: vec![],
             mode: BufferMode::Normal,
             language_server,
             input: String::new(),
@@ -201,7 +199,6 @@ impl Buffer {
         }
 
         self.merge_cursors();
-        self.lsp_change();
     }
 
     pub fn handle_char(&mut self, c: char) {
@@ -485,29 +482,31 @@ impl Buffer {
                 self.motion(Backward(1));
             }
             CutSelection => {
+                let mut content_changes = vec![];
+
                 let num_chars = self.piece_table.num_chars();
                 for i in 0..self.cursors.len() {
                     if self.cursors[i].position < self.cursors[i].anchor {
                         let start = self.cursors[i].position;
                         let end = min(self.cursors[i].anchor + 1, num_chars);
-                        self.delete_chars(start, end);
+                        content_changes.push(self.delete_chars(start, end));
                         cursors_delete_rebalance(&mut self.cursors, start, end);
                     } else {
                         let start = self.cursors[i].anchor;
                         let end = min(self.cursors[i].position + 1, num_chars);
-                        self.delete_chars(start, end);
+                        content_changes.push(self.delete_chars(start, end));
                         cursors_delete_rebalance(&mut self.cursors, start, end);
                         self.cursors[i].position = start;
                     }
                 }
+
+                self.lsp_change(content_changes);
             }
             CutLineSelection => {
                 self.motion(ExtendSelection);
                 self.command(CutSelection);
             }
             InsertChar(c) => {
-                let mut content_changes = vec![];
-
                 for i in 0..self.cursors.len() {
                     let start = self.cursors[i].position;
 
@@ -525,7 +524,8 @@ impl Buffer {
                         _ => (),
                     }
 
-                    content_changes.push(self.insert_chars(start, &[c]));
+                    let changes = self.insert_chars(start, &[c]);
+                    self.lsp_change(vec![changes]);
                     lsp_complete(
                         &mut self.cursors[i],
                         Some(c),
@@ -607,6 +607,8 @@ impl Buffer {
                     cursors_insert_rebalance(&mut self.cursors, cursor_position, chars.len());
                     self.cursors[i].position += cursor_offset;
                 }
+
+                self.lsp_change(content_changes);
             }
             IndentLine => {
                 let mut content_changes = vec![];
@@ -630,6 +632,8 @@ impl Buffer {
                     }
                 }
                 self.motion(ToFirstNonBlankChar);
+
+                self.lsp_change(content_changes);
             }
             UnindentLine => {
                 let mut content_changes = vec![];
@@ -654,10 +658,13 @@ impl Buffer {
                     }
                 }
                 self.motion(ToFirstNonBlankChar);
+
+                self.lsp_change(content_changes);
             }
             // TODO: Improve performance: selecting many lines (1000+) is slow.
             ToggleComment => {
                 if let Some(line_comment_token) = self.language.line_comment_token {
+                    let mut content_changes = vec![];
                     let length = line_comment_token.len();
                     let mut indent = usize::MAX;
                     let mut uncomment = true;
@@ -719,27 +726,36 @@ impl Buffer {
                                     } else {
                                         start + length
                                     };
-                                    self.delete_chars(start, end);
+                                    content_changes.push(self.delete_chars(start, end));
                                     cursors_delete_rebalance(&mut self.cursors, start, end);
                                 } else {
                                     let start = line.start + indent;
-                                    self.insert_chars(start, line_comment_token.as_bytes());
-                                    self.insert_chars(start + length, &[b' ']);
+                                    content_changes.push(
+                                        self.insert_chars(start, line_comment_token.as_bytes()),
+                                    );
+                                    content_changes
+                                        .push(self.insert_chars(start + length, &[b' ']));
                                     cursors_insert_rebalance(&mut self.cursors, start, length + 1);
                                 }
                             }
                         }
                     }
+
+                    self.lsp_change(content_changes);
                 }
             }
             DeleteCharBack => {
+                let mut content_changes = vec![];
+
                 for i in 0..self.cursors.len() {
                     let start = self.cursors[i].position.saturating_sub(1);
                     let end = self.cursors[i].position;
-                    self.delete_chars(start, end);
+                    content_changes.push(self.delete_chars(start, end));
                     cursors_delete_rebalance(&mut self.cursors, start, end);
                     self.cursors[i].position = start;
                 }
+
+                self.lsp_change(content_changes);
             }
             Undo => {
                 if let Some(state) = self.undo_stack.pop() {
@@ -777,6 +793,8 @@ impl Buffer {
                 }
             }
             Complete => {
+                let mut content_changes = vec![];
+
                 for i in 0..self.cursors.len() {
                     let cursor_position = self.cursors[i].position;
                     if let Some(ref mut request) = self.cursors[i].completion_request {
@@ -784,13 +802,7 @@ impl Buffer {
                             self.language_server.as_ref().and_then(|server| {
                                 server.borrow().saved_completions.get(&request.id).map(
                                     |completion| {
-                                        if let Some(item) =
-                                            completion.items.get(request.selection_index)
-                                        {
-                                            Some(item.clone())
-                                        } else {
-                                            None
-                                        }
+                                        completion.items.get(request.selection_index).cloned()
                                     },
                                 )
                             });
@@ -816,11 +828,12 @@ impl Buffer {
                                     .unwrap_or(cursor_position)
                                     + (cursor_position.saturating_sub(request.position));
 
-                                self.delete_chars(start, end);
+                                content_changes.push(self.delete_chars(start, end));
                                 cursors_delete_rebalance(&mut self.cursors, start, end);
                                 self.cursors[i].position = start;
 
-                                self.insert_chars(start, text_edit.new_text.as_bytes());
+                                content_changes
+                                    .push(self.insert_chars(start, text_edit.new_text.as_bytes()));
                                 cursors_insert_rebalance(
                                     &mut self.cursors,
                                     start,
@@ -832,6 +845,8 @@ impl Buffer {
                         }
                     }
                 }
+
+                self.lsp_change(content_changes)
             }
         }
 
@@ -862,7 +877,7 @@ impl Buffer {
         }
     }
 
-    fn delete_chars(&mut self, start: usize, end: usize) {
+    fn delete_chars(&mut self, start: usize, end: usize) -> TextDocumentChangeEvent {
         let (line1, col1) = (
             self.piece_table.line_index(start),
             self.piece_table.col_index(start),
@@ -872,7 +887,7 @@ impl Buffer {
             self.piece_table.col_index(end),
         );
         self.piece_table.delete(start, end);
-        self.content_change_stack.push(TextDocumentChangeEvent {
+        TextDocumentChangeEvent {
             range: Some(Range {
                 start: Position {
                     line: line1 as u32,
@@ -884,16 +899,16 @@ impl Buffer {
                 },
             }),
             text: String::new(),
-        });
+        }
     }
 
-    fn insert_chars(&mut self, start: usize, text: &[u8]) {
+    fn insert_chars(&mut self, start: usize, text: &[u8]) -> TextDocumentChangeEvent {
         self.piece_table.insert(start, text);
         let (line, col) = (
             self.piece_table.line_index(start),
             self.piece_table.col_index(start),
         );
-        self.content_change_stack.push(TextDocumentChangeEvent {
+        TextDocumentChangeEvent {
             range: Some(Range {
                 start: Position {
                     line: line as u32,
@@ -905,7 +920,7 @@ impl Buffer {
                 },
             }),
             text: text.as_bstr().to_string(),
-        });
+        }
     }
 
     fn merge_cursors(&mut self) {
@@ -971,23 +986,6 @@ impl Buffer {
         self.input.clear();
     }
 
-    fn lsp_change(&mut self) {
-        let content_changes = self.content_change_stack.drain(..).collect();
-        if let Some(server) = &self.language_server {
-            let change_params = DidChangeTextDocumentParams {
-                text_document: VersionedTextDocumentIdentifier {
-                    uri: self.uri.to_string(),
-                    version: self.version,
-                },
-                content_changes,
-            };
-            server
-                .borrow_mut()
-                .send_notification("textDocument/didChange", change_params);
-            self.version += 1;
-        }
-    }
-
     fn lsp_reload(&mut self) {
         if let Some(server) = &self.language_server {
             let change_params = DidChangeTextDocumentParams {
@@ -1001,6 +999,22 @@ impl Buffer {
                         String::from_utf8_unchecked(self.piece_table.iter_chars().collect())
                     },
                 }],
+            };
+            server
+                .borrow_mut()
+                .send_notification("textDocument/didChange", change_params);
+            self.version += 1;
+        }
+    }
+
+    fn lsp_change(&mut self, content_changes: Vec<TextDocumentChangeEvent>) {
+        if let Some(server) = &self.language_server {
+            let change_params = DidChangeTextDocumentParams {
+                text_document: VersionedTextDocumentIdentifier {
+                    uri: self.uri.to_string(),
+                    version: self.version,
+                },
+                content_changes,
             };
             server
                 .borrow_mut()
