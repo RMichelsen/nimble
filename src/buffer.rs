@@ -25,6 +25,7 @@ use crate::{
     },
     language_support::{language_from_path, Language},
     piece_table::{Piece, PieceTable},
+    text_utils,
     view::View,
 };
 
@@ -163,6 +164,9 @@ impl Buffer {
             }
             (_, Escape) => self.switch_to_normal_mode(),
 
+            (Insert, Back) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+                self.command(DeleteWordBack);
+            }
             (Insert, Back) => self.command(DeleteCharBack),
             (_, Back) => self.motion(Backward(1)),
 
@@ -812,6 +816,42 @@ impl Buffer {
 
                 self.lsp_change(content_changes);
             }
+            DeleteWordBack => {
+                let mut content_changes = vec![];
+
+                for i in 0..self.cursors.len() {
+                    if let Some(line) = self.piece_table.line_at_char(self.cursors[i].position) {
+                        if self.cursors[i].position == line.start {
+                            let start = self.cursors[i].position.saturating_sub(1);
+                            let end = self.cursors[i].position;
+                            content_changes.push(self.delete_chars(start, end));
+                            cursors_delete_rebalance(&mut self.cursors, start, end);
+                            self.cursors[i].position = start;
+                            continue;
+                        }
+
+                        if let Some(c) = self
+                            .piece_table
+                            .char_at(self.cursors[i].position.saturating_sub(1))
+                        {
+                            let char_type = text_utils::char_type(c);
+
+                            let backward_match = self.cursors[i]
+                                .chars_until_pred_rev(&self.piece_table, |c| {
+                                    text_utils::char_type(c) != char_type
+                                })
+                                .unwrap_or(line.length);
+                            let start = max(line.start, self.cursors[i].position - backward_match);
+                            let end = self.cursors[i].position;
+                            content_changes.push(self.delete_chars(start, end));
+                            cursors_delete_rebalance(&mut self.cursors, start, end);
+                            self.cursors[i].position = start;
+                        }
+                    }
+                }
+
+                self.lsp_change(content_changes);
+            }
             Undo => {
                 if let Some(state) = self.undo_stack.pop() {
                     self.redo_stack.push(BufferState {
@@ -1198,6 +1238,7 @@ enum BufferCommand {
     UnindentLine,
     ToggleComment,
     DeleteCharBack,
+    DeleteWordBack,
     Undo,
     Redo,
     StartCompletion,

@@ -307,6 +307,18 @@ impl Cursor {
         }
     }
 
+    pub fn extend_selection_to_left_word_boundary(&mut self, piece_table: &PieceTable) {
+        if let Some(c) = piece_table.char_at(self.position) {
+            let char_type = text_utils::char_type(c);
+
+            if let Some(backward_match) =
+                self.chars_until_pred_rev(piece_table, |c| text_utils::char_type(c) != char_type)
+            {
+                self.position = self.position - backward_match;
+            }
+        }
+    }
+
     pub fn extend_selection_inside(&mut self, piece_table: &PieceTable, search_char: u8) {
         let pair = match search_char {
             b'<' | b'>' => (b'<', b'>'),
@@ -424,18 +436,18 @@ impl Cursor {
         )
     }
 
-    fn single_selection(&self) -> bool {
+    pub fn single_selection(&self) -> bool {
         self.position == self.anchor
     }
 
-    fn chars_until_pred<F>(&self, piece_table: &PieceTable, pred: F) -> Option<usize>
+    pub fn chars_until_pred<F>(&self, piece_table: &PieceTable, pred: F) -> Option<usize>
     where
         F: Fn(u8) -> bool,
     {
         piece_table.iter_chars_at(self.position + 1).position(pred)
     }
 
-    fn chars_until_pred_rev<F>(&self, piece_table: &PieceTable, pred: F) -> Option<usize>
+    pub fn chars_until_pred_rev<F>(&self, piece_table: &PieceTable, pred: F) -> Option<usize>
     where
         F: Fn(u8) -> bool,
     {
@@ -444,11 +456,11 @@ impl Cursor {
             .position(pred)
     }
 
-    fn chars_until_char(&self, piece_table: &PieceTable, search_char: u8) -> Option<usize> {
+    pub fn chars_until_char(&self, piece_table: &PieceTable, search_char: u8) -> Option<usize> {
         self.chars_until_pred(piece_table, |c| c == search_char)
     }
 
-    fn chars_until_char_rev(&self, piece_table: &PieceTable, search_char: u8) -> Option<usize> {
+    pub fn chars_until_char_rev(&self, piece_table: &PieceTable, search_char: u8) -> Option<usize> {
         self.chars_until_pred_rev(piece_table, |c| c == search_char)
     }
 }
