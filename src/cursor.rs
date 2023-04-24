@@ -1,11 +1,11 @@
 use std::{
     cmp::{max, min},
-    ops::Range,
+    ops::Range, rc::Rc, cell::RefCell,
 };
 
 use crate::{
     piece_table::PieceTable,
-    text_utils::{self, CharType},
+    text_utils::{self, CharType}, language_server::LanguageServer,
 };
 
 #[derive(Copy, Clone, Debug)]
@@ -36,33 +36,51 @@ pub fn cursors_overlapping(c1: &Cursor, c2: &Cursor) -> bool {
         && min(c2.position, c2.anchor) <= max(c1.position, c1.anchor)
 }
 
-pub fn cursors_foreach_rebalance<F>(mut cursors: &mut [Cursor], mut f: F)
-where
-    F: FnMut(&mut Cursor),
-{
-    for i in 0..cursors.len() {
-        let cursor_before = cursors[i];
-        f(&mut cursors[i]);
-
-        for j in 0..cursors.len() {
-            if i == j {
-                continue;
-            }
-
-            if cursor_before.single_selection() {
-                if cursor_before.position < cursors[j].position {
-                    let delta = cursors[i].position as isize - cursor_before.position as isize;
-                    cursors[j].anchor = cursors[j].anchor.saturating_add_signed(delta);
-                    cursors[j].position = cursors[j].position.saturating_add_signed(delta);
-                }
-            } else if cursor_before.position < cursors[j].position {
-                let delta = cursor_before.position.abs_diff(cursor_before.anchor) + 1;
-                cursors[j].anchor -= delta;
-                cursors[j].position -= delta;
-            }
+pub fn cursors_delete_rebalance(cursors: &mut [Cursor], position: usize, count: usize) {
+    for cursor in cursors {
+        if cursor.position > position {
+            cursor.position -= count;
+            cursor.anchor -= count;
         }
     }
 }
+
+pub fn cursors_insert_rebalance(cursors: &mut [Cursor], position: usize, count: usize) {
+    for cursor in cursors {
+        if cursor.position > position {
+            cursor.position += count;
+            cursor.anchor += count;
+        }
+    }
+}
+
+// pub fn cursors_foreach_rebalance<F>(mut cursors: &mut [Cursor], mut f: F)
+// where
+//     F: FnMut(&mut Cursor),
+// {
+//     for i in 0..cursors.len() {
+//         let cursor_before = cursors[i];
+//         f(&mut cursors[i]);
+
+//         for j in 0..cursors.len() {
+//             if i == j {
+//                 continue;
+//             }
+
+//             if cursor_before.single_selection() {
+//                 if cursor_before.position < cursors[j].position {
+//                     let delta = cursors[i].position as isize - cursor_before.position as isize;
+//                     cursors[j].anchor = cursors[j].anchor.saturating_add_signed(delta);
+//                     cursors[j].position = cursors[j].position.saturating_add_signed(delta);
+//                 }
+//             } else if cursor_before.position < cursors[j].position {
+//                 let delta = cursor_before.position.abs_diff(cursor_before.anchor) + 1;
+//                 cursors[j].anchor -= delta;
+//                 cursors[j].position -= delta;
+//             }
+//         }
+//     }
+// }
 
 impl Cursor {
     pub fn new(position: usize) -> Self {
@@ -258,6 +276,16 @@ impl Cursor {
                 self.position = line.start;
             }
         }
+    }
+
+    pub fn reset_completion(&mut self, language_server: &mut Option<Rc<RefCell<LanguageServer>>>,
+        ) {
+                    if let Some(request) = self.completion_request {
+                if let Some(server) = &language_server {
+                    server.borrow_mut().saved_completions.remove(&request.id);
+                }
+            }
+            self.completion_request = None;
     }
 
     pub fn reset_anchor(&mut self) {

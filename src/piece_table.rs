@@ -3,13 +3,13 @@ use std::{
     io::{BufReader, Read},
 };
 
-use bstr::ByteVec;
+use bstr::{ByteSlice, ByteVec};
 
 pub struct PieceTable {
     pub pieces: Vec<Piece>,
+    pub indent_width: usize,
     original: Vec<u8>,
     add: Vec<u8>,
-    indent_width: usize,
 }
 
 #[derive(Debug)]
@@ -345,6 +345,36 @@ impl PieceTable {
             offset += piece.length;
         }
         linebreaks
+    }
+
+    pub fn line_indent_width_at_char(&self, position: usize) -> usize {
+        if let Some(line) = self.line_at_char(position) {
+            let mut count = 0;
+            for c in self.iter_chars_at(line.start).take(line.length) {
+                if !c.is_ascii_whitespace() {
+                    break;
+                }
+                count += 1;
+            }
+            return (count / self.indent_width) * self.indent_width;
+        }
+        0
+    }
+
+    pub fn line_at_char_starts_with(&self, position: usize, chars: &[u8]) -> bool {
+        if let Some(line) = self.line_at_char(position) {
+            let bytes: Vec<u8> = self.iter_chars_at(line.start).take(line.length).collect();
+            return bytes.trim().starts_with_str(chars);
+        }
+        false
+    }
+
+    pub fn line_at_char_ends_with(&self, position: usize, chars: &[u8]) -> bool {
+        if let Some(line) = self.line_at_char(position) {
+            let bytes: Vec<u8> = self.iter_chars_at(line.start).take(line.length).collect();
+            return bytes.trim().ends_with_str(chars);
+        }
+        false
     }
 
     pub fn char_index_from_line_col(&self, line: usize, col: usize) -> Option<usize> {

@@ -33,6 +33,7 @@ use objc::{msg_send, runtime::YES, sel, sel_impl};
 #[cfg(target_os = "macos")]
 use winit::platform::macos::WindowExtMacOS;
 use winit::{
+    dpi::LogicalSize,
     event::{ElementState, Event, ModifiersState, MouseScrollDelta, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
@@ -42,20 +43,25 @@ fn main() {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_title("Nimble")
-        .with_maximized(true)
+        .with_visible(false)
+        .with_inner_size(LogicalSize::new(1920.0, 1080.0))
         .build(&event_loop)
         .unwrap();
-    request_redraw(&window);
 
     let mut editor = Editor::new(&window);
+    editor.render();
+    window.set_visible(true);
+
     // editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/renderer.rs");
     editor.open_file("C:/VulkanSDK/1.3.239.0/Source/SPIRV-Reflect/spirv_reflect.c");
+    request_redraw(&window);
 
     let mut modifiers: Option<ModifiersState> = None;
     event_loop.run(move |event, _, control_flow| {
         if editor.update() {
-            request_redraw(&window);
+            editor.render();
         }
+
         match event {
             Event::RedrawRequested(_) => {
                 editor.render();

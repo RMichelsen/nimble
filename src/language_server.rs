@@ -41,6 +41,7 @@ impl LanguageServer {
         let mut server = Command::new(language.lsp_executable?)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
+            .stderr(Stdio::null())
             .spawn()
             .ok()?;
         let mut stdin = server.stdin.take()?;
@@ -123,7 +124,7 @@ impl LanguageServer {
         if let Ok(ref mut responses) = self.responses.try_lock() {
             while let Some(message) = responses.pop_front() {
                 match message {
-                    ServerMessage::Response { id, result, jsonrpc, error } => {
+                    ServerMessage::Response { id, result, .. } => {
                         match self.requests.get(&id) {
                             Some(&"initialize") => {
                                 send_notification(

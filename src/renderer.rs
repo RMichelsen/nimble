@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc, str::pattern::Pattern};
+use std::{cell::RefCell, rc::Rc};
 
 use winit::window::Window;
 
@@ -38,19 +38,29 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new(window: &Window) -> Self {
+        let context = GraphicsContext::new(window);
         let window_size = (
             window.inner_size().width as f64 / window.scale_factor(),
             window.inner_size().height as f64 / window.scale_factor(),
         );
-        let context = GraphicsContext::new(window);
         let num_rows = (window_size.1 / context.font_size.1 as f64).ceil() as usize;
         let num_cols = (window_size.0 / context.font_size.0 as f64).ceil() as usize;
+
         Self {
             context,
             window_size,
             num_rows,
             num_cols,
         }
+    }
+
+    pub fn start_draw(&self) {
+        self.context.begin_draw();
+        self.context.clear(BACKGROUND_COLOR);
+    }
+
+    pub fn end_draw(&self) {
+        self.context.end_draw();
     }
 
     pub fn draw_buffer(
@@ -60,9 +70,6 @@ impl Renderer {
         language_server: &Option<Rc<RefCell<LanguageServer>>>,
     ) {
         use TextEffectKind::*;
-
-        self.context.begin_draw();
-        self.context.clear(BACKGROUND_COLOR);
 
         if buffer.mode != BufferMode::Insert {
             view.visible_cursors_iter(buffer, self.num_rows, self.num_cols, |row, col, num| {
@@ -146,7 +153,7 @@ impl Renderer {
                     .take(completion_view.height)
                 {
                     if i - request.selection_view_offset == selected_item {
-                        selected_item_start_position = completion_string.len()
+                        selected_item_start_position = completion_string.len();
                     }
 
                     completion_string.push_str(item.insert_text.as_ref().unwrap_or(&item.label));
@@ -162,7 +169,11 @@ impl Renderer {
                     TextEffect {
                         kind: ForegroundColor(KEYWORD_COLOR),
                         start: selected_item_start_position,
-                        length: completion.items[request.selection_index].label.len(),
+                        length: completion.items[request.selection_index]
+                            .insert_text
+                            .as_ref()
+                            .unwrap_or(&completion.items[request.selection_index].label)
+                            .len(),
                     },
                 ];
                 self.context.draw_text(
@@ -173,7 +184,5 @@ impl Renderer {
                 );
             },
         );
-
-        self.context.end_draw();
     }
 }

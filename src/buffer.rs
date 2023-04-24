@@ -12,7 +12,10 @@ use CursorMotion::*;
 use VirtualKeyCode::{Back, Delete, Escape, Return, Space, Tab, J, K, R};
 
 use crate::{
-    cursor::{cursors_foreach_rebalance, cursors_overlapping, CompletionRequest, Cursor},
+    cursor::{
+        cursors_delete_rebalance, cursors_insert_rebalance, cursors_overlapping, CompletionRequest,
+        Cursor,
+    },
     language_server::LanguageServer,
     language_server_types::{
         CompletionParams, DidChangeTextDocumentParams, DidOpenTextDocumentParams, Position, Range,
@@ -107,7 +110,7 @@ impl Buffer {
             (Insert, Back) => self.command(DeleteCharBack),
             (_, Back) => self.motion(Backward(1)),
 
-            (Insert, Return) => self.command(InsertChar(b'\n')),
+            (Insert, Return) => self.command(InsertNewLine),
             (_, Return) => self.motion(Down(1)),
 
             (Normal, Delete) => self.command(CutSelection),
@@ -304,13 +307,13 @@ impl Buffer {
                 self.switch_to_insert_mode();
                 self.motion(ToEndOfLine);
                 self.motion(Forward(1));
-                self.command(InsertChar(b'\n'));
+                self.command(InsertNewLine);
             }
             (Normal, "O") => {
                 self.push_undo_state();
                 self.switch_to_insert_mode();
                 self.motion(ToStartOfLine);
-                self.command(InsertChar(b'\n'));
+                self.command(InsertNewLine);
                 self.motion(Up(1));
             }
             (Normal, "u") => {
@@ -407,71 +410,132 @@ impl Buffer {
             }
             CutSelection => {
                 let num_chars = self.piece_table.num_chars();
-                cursors_foreach_rebalance(&mut self.cursors, |cursor| {
-                    if cursor.position < cursor.anchor {
-                        lsp_delete(
-                            &mut self.language_server,
-                            &self.piece_table,
-                            &self.uri,
-                            &mut self.version,
-                            cursor.position,
-                            min(cursor.anchor + 1, num_chars),
-                        );
-                        self.piece_table.delete(cursor.position, cursor.anchor + 1);
+                for i in 0..self.cursors.len() {
+                    if self.cursors[i].position < self.cursors[i].anchor {
+                        let start = self.cursors[i].position;
+                        let end = min(self.cursors[i].anchor + 1, num_chars);
+                        self.delete_chars(start, end);
+                        cursors_delete_rebalance(&mut self.cursors, start, end - start);
                     } else {
-                        lsp_delete(
-                            &mut self.language_server,
-                            &self.piece_table,
-                            &self.uri,
-                            &mut self.version,
-                            cursor.anchor,
-                            min(cursor.position + 1, num_chars),
-                        );
-                        self.piece_table.delete(cursor.anchor, cursor.position + 1);
-                        cursor.position = cursor.anchor;
+                        let start = self.cursors[i].anchor;
+                        let end = min(self.cursors[i].position + 1, num_chars);
+                        self.delete_chars(start, end);
+                        cursors_delete_rebalance(&mut self.cursors, start, end - start);
+                        self.cursors[i].position = start;
                     }
-                });
+                }
             }
             CutLineSelection => {
                 self.motion(ExtendSelection);
                 self.command(CutSelection);
             }
             InsertChar(c) => {
-                cursors_foreach_rebalance(&mut self.cursors, |cursor| {
-                    self.piece_table.insert(cursor.position, &[c]);
-                    lsp_insert(
-                        &mut self.language_server,
-                        &self.piece_table,
-                        &self.uri,
-                        &mut self.version,
-                        cursor.position,
-                        unsafe { std::str::from_utf8_unchecked(&[c]) },
-                    );
+                for i in 0..self.cursors.len() {
+                    let start = self.cursors[i].position;
+
+                    // Special case for moving over end brackets
+                    match c {
+                        b')' | b'}' | b']'
+                            if self
+                                .piece_table
+                                .char_at(start)
+                                .is_some_and(|char_after| char_after == c) =>
+                        {
+                            self.motion(Forward(1));
+                            continue;
+                        }
+                        _ => (),
+                    }
+
+                    self.insert_chars(start, &[c]);
                     lsp_complete(
-                        cursor,
+                        &mut self.cursors[i],
                         Some(c),
                         &mut self.language_server,
                         &self.piece_table,
                         &self.uri,
-                        cursor.position + 1,
+                        start + 1,
                     );
-                    cursor.position += 1;
-                });
+                    cursors_insert_rebalance(&mut self.cursors, start, 1);
+                    self.cursors[i].position += 1;
+                }
+
+                // Special case for inserting brackets
+                match c {
+                    b'(' => {
+                        self.command(InsertChar(b')'));
+                        self.motion(Backward(1));
+                    }
+                    b'{' => {
+                        self.command(InsertChar(b'}'));
+                        self.motion(Backward(1));
+                    }
+                    b'[' => {
+                        self.command(InsertChar(b']'));
+                        self.motion(Backward(1));
+                    }
+                    _ => (),
+                }
+            }
+            InsertNewLine => {
+                for cursor in &mut self.cursors {
+                    cursor.reset_completion(&mut self.language_server);
+                }
+
+                for i in 0..self.cursors.len() {
+                    let cursor_position = self.cursors[i].position;
+
+                    let line_indent = self.piece_table.line_indent_width_at_char(cursor_position);
+                    let mut chars = vec![b'\n'];
+                    chars.append(&mut vec![b' '; line_indent]);
+
+                    let mut cursor_offset = chars.len();
+                    if let Some(indent_chars) = self.language.indent_chars {
+                        if let Some(char_before) =
+                            self.piece_table.char_at(cursor_position.saturating_sub(1))
+                        {
+                            if indent_chars.contains(&char_before) {
+                                chars.append(&mut vec![b' '; self.piece_table.indent_width]);
+                                cursor_offset = chars.len();
+
+                                let char_after = self.piece_table.char_at(cursor_position);
+                                match (char_before, char_after) {
+                                    (b'(', Some(b')'))
+                                    | (b'{', Some(b'}'))
+                                    | (b'[', Some(b'[')) => {
+                                        chars.push(b'\n');
+                                        chars.append(&mut vec![b' '; line_indent]);
+                                    }
+                                    _ => (),
+                                }
+                            }
+                        }
+                    } else if let Some(indent_words) = self.language.indent_words {
+                        for word in indent_words {
+                            if self
+                                .piece_table
+                                .line_at_char_starts_with(cursor_position, word.as_bytes())
+                            {
+                                chars.append(&mut vec![b' '; self.piece_table.indent_width]);
+                                cursor_offset = chars.len();
+                                break;
+                            }
+                        }
+                    }
+
+                    self.insert_chars(cursor_position, &chars);
+                    cursors_insert_rebalance(&mut self.cursors, cursor_position, chars.len());
+                    self.cursors[i].position += cursor_offset;
+                }
             }
             DeleteCharBack => {
-                cursors_foreach_rebalance(&mut self.cursors, |cursor| {
-                    let new_position = cursor.position.saturating_sub(1);
-                    lsp_delete(
-                        &mut self.language_server,
-                        &self.piece_table,
-                        &self.uri,
-                        &mut self.version,
-                        new_position,
-                        cursor.position,
-                    );
-                    self.piece_table.delete(new_position, cursor.position);
-                    cursor.position = new_position;
-                });
+                for i in 0..self.cursors.len() {
+                    let start = self.cursors[i].position.saturating_sub(1);
+                    let end = self.cursors[i].position;
+                    self.delete_chars(start, end);
+                    cursors_delete_rebalance(&mut self.cursors, start, end - start);
+                    self.cursors[i].position = start;
+                }
             }
             Undo => {
                 if let Some(state) = self.undo_stack.pop() {
@@ -518,8 +582,9 @@ impl Buffer {
                 }
             }
             Complete => {
-                cursors_foreach_rebalance(&mut self.cursors, |cursor| {
-                    if let Some(ref mut request) = cursor.completion_request {
+                for i in 0..self.cursors.len() {
+                    let cursor_position = self.cursors[i].position;
+                    if let Some(ref mut request) = self.cursors[i].completion_request {
                         let item =
                             self.language_server.as_ref().and_then(|server| {
                                 server.borrow().saved_completions.get(&request.id).map(
@@ -534,7 +599,7 @@ impl Buffer {
                                         text_edit.range.start.line as usize,
                                         text_edit.range.start.character as usize,
                                     )
-                                    .unwrap_or(cursor.position);
+                                    .unwrap_or(cursor_position);
 
                                 // The end of the completion is the original text edit range
                                 // plus the difference in cursor position
@@ -545,50 +610,25 @@ impl Buffer {
                                         text_edit.range.end.line as usize,
                                         text_edit.range.end.character as usize,
                                     )
-                                    .unwrap_or(cursor.position)
-                                    + (cursor.position - request.position);
+                                    .unwrap_or(cursor_position)
+                                    + (cursor_position - request.position);
 
-                                lsp_delete(
-                                    &mut self.language_server,
-                                    &self.piece_table,
-                                    &self.uri,
-                                    &mut self.version,
+                                self.delete_chars(start, end);
+                                cursors_delete_rebalance(&mut self.cursors, start, end - start);
+                                self.cursors[i].position = start;
+
+                                self.insert_chars(start, text_edit.new_text.as_bytes());
+                                cursors_insert_rebalance(
+                                    &mut self.cursors,
                                     start,
-                                    end,
+                                    text_edit.new_text.len(),
                                 );
-                                self.piece_table.delete(start, end);
-                                cursor.position = start;
+                                self.cursors[i].position += text_edit.new_text.len();
+                                self.cursors[i].reset_completion(&mut self.language_server);
                             }
                         }
                     }
-                });
-
-                cursors_foreach_rebalance(&mut self.cursors, |cursor| {
-                    if let Some(ref mut request) = cursor.completion_request {
-                        let item =
-                            self.language_server.as_ref().and_then(|server| {
-                                server.borrow().saved_completions.get(&request.id).map(
-                                    |completion| completion.items[request.selection_index].clone(),
-                                )
-                            });
-                        if let Some(item) = item {
-                            if let Some(text_edit) = item.text_edit {
-                                lsp_insert(
-                                    &mut self.language_server,
-                                    &self.piece_table,
-                                    &self.uri,
-                                    &mut self.version,
-                                    cursor.position,
-                                    &text_edit.new_text,
-                                );
-                                self.piece_table
-                                    .insert(cursor.position, text_edit.new_text.as_bytes());
-                                cursor.position += text_edit.new_text.len();
-                            }
-                        }
-                    }
-                    cursor.completion_request = None;
-                });
+                }
             }
         }
 
@@ -617,6 +657,30 @@ impl Buffer {
             }
             cursor.unstick_col(&self.piece_table)
         }
+    }
+
+    fn delete_chars(&mut self, start: usize, end: usize) {
+        lsp_delete(
+            &mut self.language_server,
+            &self.piece_table,
+            &self.uri,
+            &mut self.version,
+            start,
+            end,
+        );
+        self.piece_table.delete(start, end);
+    }
+
+    fn insert_chars(&mut self, start: usize, text: &[u8]) {
+        lsp_insert(
+            &mut self.language_server,
+            &self.piece_table,
+            &self.uri,
+            &mut self.version,
+            start,
+            unsafe { std::str::from_utf8_unchecked(&text) },
+        );
+        self.piece_table.insert(start, text);
     }
 
     fn merge_cursors(&mut self) {
@@ -660,13 +724,7 @@ impl Buffer {
                 cursor.move_backward(&self.piece_table, 1);
             }
 
-            if let Some(request) = cursor.completion_request {
-                if let Some(server) = &self.language_server {
-                    server.borrow_mut().saved_completions.remove(&request.id);
-                }
-            }
-
-            cursor.completion_request = None;
+            cursor.reset_completion(&mut self.language_server);
             cursor.reset_anchor();
         }
     }
@@ -887,6 +945,7 @@ enum BufferCommand {
     CutSelection,
     CutLineSelection,
     InsertChar(u8),
+    InsertNewLine,
     DeleteCharBack,
     Undo,
     Redo,

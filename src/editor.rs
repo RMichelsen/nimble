@@ -65,6 +65,7 @@ impl Editor {
     }
 
     pub fn render(&mut self) {
+        self.renderer.start_draw();
         if let Some(document) = &self.active_document {
             let document = &self.documents[document];
             self.renderer.draw_buffer(
@@ -73,6 +74,7 @@ impl Editor {
                 &document.buffer.language_server,
             );
         }
+        self.renderer.end_draw();
     }
 
     pub fn shutdown(&mut self) {
