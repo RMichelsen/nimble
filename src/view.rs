@@ -1,11 +1,12 @@
 use std::cmp::{max, min};
 
+use winit::dpi::LogicalPosition;
+
 use crate::{
     buffer::{Buffer, BufferMode},
     cursor::CompletionRequest,
     language_server_types::CompletionList,
     piece_table::PieceTable,
-    DeviceInput,
 };
 
 const SCROLL_LINES_PER_ROLL: isize = 3;
@@ -31,12 +32,8 @@ impl View {
         }
     }
 
-    pub fn handle_input(&mut self, buffer: &Buffer, event: DeviceInput) {
-        match event {
-            DeviceInput::MouseWheel(sign) => {
-                self.scroll_vertical(buffer, -sign * SCROLL_LINES_PER_ROLL)
-            }
-        }
+    pub fn handle_scroll(&mut self, buffer: &Buffer, sign: isize) {
+        self.scroll_vertical(buffer, -sign * SCROLL_LINES_PER_ROLL)
     }
 
     pub fn visible_cursors_iter<F>(&self, buffer: &Buffer, num_rows: usize, num_cols: usize, f: F)
@@ -212,6 +209,16 @@ impl View {
             width: longest_string,
             height: num_shown_completion_items,
         })
+    }
+
+    pub fn get_line_col(
+        &self,
+        mouse_position: LogicalPosition<f64>,
+        font_size: (f64, f64),
+    ) -> (usize, usize) {
+        let row = (mouse_position.y / font_size.1 as f64).floor() as usize;
+        let col = (mouse_position.x / font_size.0 as f64).floor() as usize;
+        (row + self.line_offset, col + self.col_offset)
     }
 
     fn absolute_to_view_row(&self, line: usize) -> usize {

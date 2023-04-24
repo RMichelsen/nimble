@@ -54,6 +54,13 @@ impl Renderer {
         }
     }
 
+    pub fn get_font_size(&self) -> (f64, f64) {
+        (
+            self.context.font_size.0 as f64,
+            self.context.font_size.1 as f64,
+        )
+    }
+
     pub fn start_draw(&self) {
         self.context.begin_draw();
         self.context.clear(BACKGROUND_COLOR);

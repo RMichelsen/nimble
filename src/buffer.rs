@@ -92,6 +92,61 @@ impl Buffer {
         server.send_notification("textDocument/didOpen", Some(open_params));
     }
 
+    pub fn set_cursor(&mut self, line: usize, col: usize) {
+        if let Some(cursor_line) = self.piece_table.line_at_index(line) {
+            if let Some(position) = self
+                .piece_table
+                .char_index_from_line_col(line, min(col, cursor_line.length))
+            {
+                self.cursors.truncate(1);
+                self.cursors[0].position = position;
+                self.cursors[0].anchor = position;
+            }
+        }
+    }
+
+    pub fn set_drag(&mut self, line: usize, col: usize) {
+        if let Some(cursor_line) = self.piece_table.line_at_index(line) {
+            if let Some(position) = self
+                .piece_table
+                .char_index_from_line_col(line, min(col, cursor_line.length))
+            {
+                if self.cursors[0].position != position {
+                    self.switch_to_visual_mode();
+                    self.cursors[0].position = position;
+                }
+            }
+        }
+    }
+
+    pub fn handle_mouse_double_click(&mut self, line: usize, col: usize) {
+        if let Some(cursor_line) = self.piece_table.line_at_index(line) {
+            if let Some(position) = self
+                .piece_table
+                .char_index_from_line_col(line, min(col, cursor_line.length))
+            {
+                if self.cursors[0].position == position {
+                    self.switch_to_visual_mode();
+                    self.motion(ExtendSelectionInside(b'w'));
+                } else {
+                    self.cursors[0].position = position;
+                    self.cursors[0].anchor = position;
+                }
+            }
+        }
+    }
+
+    pub fn insert_cursor(&mut self, line: usize, col: usize) {
+        if let Some(cursor_line) = self.piece_table.line_at_index(line) {
+            if let Some(position) = self
+                .piece_table
+                .char_index_from_line_col(line, min(col, cursor_line.length))
+            {
+                self.cursors.push(Cursor::new(position));
+            }
+        }
+    }
+
     pub fn handle_key(
         &mut self,
         key_code: VirtualKeyCode,
@@ -1083,13 +1138,20 @@ fn is_prefix_of_command(str: &str, mode: BufferMode) -> bool {
                 || (str.starts_with("cT") && str.len() <= 3)
                 || (str.starts_with("dT") && str.len() <= 3)
         }
-        BufferMode::Visual | BufferMode::VisualLine => {
+        BufferMode::Visual => {
             VISUAL_MODE_COMMANDS.iter().any(|cmd| str.is_prefix_of(cmd))
                 || (str.starts_with('f') && str.len() <= 2)
                 || (str.starts_with('F') && str.len() <= 2)
                 || (str.starts_with('t') && str.len() <= 2)
                 || (str.starts_with('T') && str.len() <= 2)
                 || (str.starts_with('i') && str.len() <= 2)
+        }
+        BufferMode::VisualLine => {
+            VISUAL_MODE_COMMANDS.iter().any(|cmd| str.is_prefix_of(cmd))
+                || (str.starts_with('f') && str.len() <= 2)
+                || (str.starts_with('F') && str.len() <= 2)
+                || (str.starts_with('t') && str.len() <= 2)
+                || (str.starts_with('T') && str.len() <= 2)
         }
         _ => false,
     }

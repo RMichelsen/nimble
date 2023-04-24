@@ -1,13 +1,14 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use winit::{
+    dpi::LogicalPosition,
     event::{ModifiersState, VirtualKeyCode},
     window::Window,
 };
 
 use crate::{
     buffer::Buffer, language_server::LanguageServer, language_server_types::VoidParams,
-    language_support::language_from_path, renderer::Renderer, view::View, DeviceInput,
+    language_support::language_from_path, renderer::Renderer, view::View,
 };
 
 struct Document {
@@ -88,9 +89,57 @@ impl Editor {
         }
     }
 
-    pub fn handle_input(&mut self, event: DeviceInput) {
+    pub fn handle_mouse_pressed(
+        &mut self,
+        mouse_position: LogicalPosition<f64>,
+        modifiers: Option<ModifiersState>,
+    ) {
+        let font_size = self.renderer.get_font_size();
         if let Some(document) = self.active_document() {
-            document.view.handle_input(&document.buffer, event);
+            let (line, col) = document.view.get_line_col(mouse_position, font_size);
+            if modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::SHIFT)) {
+                document.buffer.insert_cursor(line, col);
+            } else {
+                document.buffer.set_cursor(line, col);
+            }
+        }
+    }
+
+    pub fn handle_mouse_drag(
+        &mut self,
+        mouse_position: LogicalPosition<f64>,
+        modifiers: Option<ModifiersState>,
+    ) {
+        if modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::SHIFT)) {
+            return;
+        }
+
+        let font_size = self.renderer.get_font_size();
+        if let Some(document) = self.active_document() {
+            let (line, col) = document.view.get_line_col(mouse_position, font_size);
+            document.buffer.set_drag(line, col);
+        }
+    }
+
+    pub fn handle_mouse_double_click(
+        &mut self,
+        mouse_position: LogicalPosition<f64>,
+        modifiers: Option<ModifiersState>,
+    ) {
+        let font_size = self.renderer.get_font_size();
+        if let Some(document) = self.active_document() {
+            let (line, col) = document.view.get_line_col(mouse_position, font_size);
+            if modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::SHIFT)) {
+                document.buffer.insert_cursor(line, col);
+            } else {
+                document.buffer.handle_mouse_double_click(line, col);
+            }
+        }
+    }
+
+    pub fn handle_scroll(&mut self, sign: isize) {
+        if let Some(document) = self.active_document() {
+            document.view.handle_scroll(&document.buffer, sign);
         }
     }
 

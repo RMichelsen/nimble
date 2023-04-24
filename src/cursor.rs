@@ -1,11 +1,14 @@
 use std::{
+    cell::RefCell,
     cmp::{max, min},
-    ops::Range, rc::Rc, cell::RefCell,
+    ops::Range,
+    rc::Rc,
 };
 
 use crate::{
+    language_server::LanguageServer,
     piece_table::PieceTable,
-    text_utils::{self, CharType}, language_server::LanguageServer,
+    text_utils::{self, CharType},
 };
 
 #[derive(Copy, Clone, Debug)]
@@ -201,7 +204,10 @@ impl Cursor {
 
     pub fn move_to_char_inc(&mut self, piece_table: &PieceTable, search_char: u8) {
         if let Some(count) = self.chars_until_char(piece_table, search_char) {
-            if piece_table.line_at_char(self.position).is_some_and(|line| line.end < self.position + count + 1) {
+            if piece_table
+                .line_at_char(self.position)
+                .is_some_and(|line| line.end < self.position + count + 1)
+            {
                 return;
             }
             self.move_forward(piece_table, count + 1);
@@ -210,7 +216,10 @@ impl Cursor {
 
     pub fn move_back_to_char_inc(&mut self, piece_table: &PieceTable, search_char: u8) {
         if let Some(count) = self.chars_until_char_rev(piece_table, search_char) {
-            if piece_table.line_at_char(self.position).is_some_and(|line| line.start > self.position.saturating_sub(count + 1)) {
+            if piece_table
+                .line_at_char(self.position)
+                .is_some_and(|line| line.start > self.position.saturating_sub(count + 1))
+            {
                 return;
             }
             self.move_backward(piece_table, count + 1);
@@ -219,7 +228,10 @@ impl Cursor {
 
     pub fn move_to_char_exc(&mut self, piece_table: &PieceTable, search_char: u8) {
         if let Some(count) = self.chars_until_char(piece_table, search_char) {
-            if piece_table.line_at_char(self.position).is_some_and(|line| line.end < self.position + count) {
+            if piece_table
+                .line_at_char(self.position)
+                .is_some_and(|line| line.end < self.position + count)
+            {
                 return;
             }
             self.move_forward(piece_table, count);
@@ -228,7 +240,10 @@ impl Cursor {
 
     pub fn move_back_to_char_exc(&mut self, piece_table: &PieceTable, search_char: u8) {
         if let Some(count) = self.chars_until_char_rev(piece_table, search_char) {
-            if piece_table.line_at_char(self.position).is_some_and(|line| line.start > self.position.saturating_sub(count)) {
+            if piece_table
+                .line_at_char(self.position)
+                .is_some_and(|line| line.start > self.position.saturating_sub(count))
+            {
                 return;
             }
             self.move_backward(piece_table, count);
@@ -242,7 +257,14 @@ impl Cursor {
                 if let Some(count) =
                     self.chars_until_pred(piece_table, |c| !c.is_ascii_whitespace() || c == b'\n')
                 {
-                    self.move_forward(piece_table, count + piece_table.char_at(line.start).unwrap().is_ascii_whitespace() as usize);
+                    self.move_forward(
+                        piece_table,
+                        count
+                            + piece_table
+                                .char_at(line.start)
+                                .unwrap()
+                                .is_ascii_whitespace() as usize,
+                    );
                 }
             }
         }
@@ -254,15 +276,33 @@ impl Cursor {
                 self.anchor = line.start;
                 self.position = line.end;
             }
-        } else if let Some(line) = piece_table.line_at_char(self.position) 
-            && let Some(anchor_line) = piece_table.line_at_char(self.anchor) {
-            if self.moving_forward() {
-                self.anchor = anchor_line.start;
-                self.position = line.end;
+        } else if let Some(line) = piece_table.line_at_char(self.position) {
+            if let Some(anchor_line) = piece_table.line_at_char(self.anchor) {
+                if self.moving_forward() {
+                    self.anchor = anchor_line.start;
+                    self.position = line.end;
+                } else {
+                    self.anchor = anchor_line.end;
+                    self.position = line.start;
+                }
             }
-            else {
-                self.anchor = anchor_line.end;
-                self.position = line.start;
+        }
+    }
+
+    pub fn extend_selection_to_word(&mut self, piece_table: &PieceTable) {
+        if let Some(line) = piece_table.line_at_char(self.position) {
+            if let Some(c) = piece_table.char_at(self.position) {
+                let char_type = text_utils::char_type(c);
+
+                if let (Some(backward_match), Some(forward_match)) = (
+                    (self.chars_until_pred_rev(piece_table, |c| {
+                        text_utils::char_type(c) != char_type
+                    })),
+                    (self.chars_until_pred(piece_table, |c| text_utils::char_type(c) != char_type)),
+                ) {
+                    self.anchor = max(line.start, self.position - backward_match);
+                    self.position = min(line.end, self.position + forward_match);
+                }
             }
         }
     }
@@ -275,18 +315,22 @@ impl Cursor {
             b'(' | b')' => (b'(', b')'),
             b'{' | b'}' => (b'{', b'}'),
             b'[' | b']' => (b'[', b']'),
-            _ => return
+            b'w' => return self.extend_selection_to_word(piece_table),
+            _ => return,
         };
 
-        if let (Some(backward_match), Some(forward_match)) =
-        (self.chars_until_char_rev(piece_table, pair.0), self.chars_until_char(piece_table, pair.1)) {
+        if let (Some(backward_match), Some(forward_match)) = (
+            self.chars_until_char_rev(piece_table, pair.0),
+            self.chars_until_char(piece_table, pair.1),
+        ) {
             let start = self.position - backward_match;
             let end = self.position + forward_match;
 
             if search_char == b'"' || search_char == b'\'' {
                 let line_index = piece_table.line_index(self.position);
-                if piece_table.line_index(start) != line_index ||
-                piece_table.line_index(end) != line_index {
+                if piece_table.line_index(start) != line_index
+                    || piece_table.line_index(end) != line_index
+                {
                     return;
                 }
             }
@@ -307,14 +351,13 @@ impl Cursor {
         }
     }
 
-    pub fn reset_completion(&mut self, language_server: &mut Option<Rc<RefCell<LanguageServer>>>,
-        ) {
-                    if let Some(request) = self.completion_request {
-                if let Some(server) = &language_server {
-                    server.borrow_mut().saved_completions.remove(&request.id);
-                }
+    pub fn reset_completion(&mut self, language_server: &mut Option<Rc<RefCell<LanguageServer>>>) {
+        if let Some(request) = self.completion_request {
+            if let Some(server) = &language_server {
+                server.borrow_mut().saved_completions.remove(&request.id);
             }
-            self.completion_request = None;
+        }
+        self.completion_request = None;
     }
 
     pub fn reset_anchor(&mut self) {

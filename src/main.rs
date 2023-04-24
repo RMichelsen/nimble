@@ -23,9 +23,7 @@ mod text_utils;
 mod theme;
 mod view;
 
-pub enum DeviceInput {
-    MouseWheel(isize),
-}
+use std::time::{Duration, Instant};
 
 use editor::Editor;
 #[cfg(target_os = "macos")]
@@ -33,8 +31,8 @@ use objc::{msg_send, runtime::YES, sel, sel_impl};
 #[cfg(target_os = "macos")]
 use winit::platform::macos::WindowExtMacOS;
 use winit::{
-    dpi::LogicalSize,
-    event::{ElementState, Event, ModifiersState, MouseScrollDelta, WindowEvent},
+    dpi::{LogicalSize, PhysicalPosition},
+    event::{ElementState, Event, ModifiersState, MouseButton, MouseScrollDelta, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
@@ -57,6 +55,10 @@ fn main() {
     request_redraw(&window);
 
     let mut modifiers: Option<ModifiersState> = None;
+    let mut mouse_position: Option<PhysicalPosition<f64>> = None;
+    let mut left_mouse_button_state: Option<ElementState> = None;
+    let mut left_mouse_button_timer = Instant::now();
+    let mut double_click_timer = Instant::now();
     event_loop.run(move |event, _, control_flow| {
         if editor.update() {
             editor.render();
@@ -72,10 +74,10 @@ fn main() {
             } => {
                 match delta {
                     MouseScrollDelta::LineDelta(_, lines) => {
-                        editor.handle_input(DeviceInput::MouseWheel((lines as isize).signum()));
+                        editor.handle_scroll((lines as isize).signum());
                     }
                     MouseScrollDelta::PixelDelta(pos) => {
-                        editor.handle_input(DeviceInput::MouseWheel((pos.y as isize).signum()));
+                        editor.handle_scroll((pos.y as isize).signum());
                     }
                 }
                 request_redraw(&window);
@@ -101,10 +103,53 @@ fn main() {
                 }
             }
             Event::WindowEvent {
+                event: WindowEvent::MouseInput { state, button, .. },
+                ..
+            } => {
+                if button == MouseButton::Left {
+                    left_mouse_button_state = Some(state);
+                    if state == ElementState::Pressed {
+                        if let Some(position) = mouse_position {
+                            if left_mouse_button_timer.elapsed() < Duration::from_millis(500) {
+                                editor.handle_mouse_double_click(
+                                    position.to_logical(window.scale_factor()),
+                                    modifiers,
+                                );
+                                double_click_timer = Instant::now();
+                            } else {
+                                editor.handle_mouse_pressed(
+                                    position.to_logical(window.scale_factor()),
+                                    modifiers,
+                                );
+                            }
+                        }
+                        left_mouse_button_timer = Instant::now();
+                        request_redraw(&window);
+                    }
+                }
+            }
+            Event::WindowEvent {
                 event: WindowEvent::ModifiersChanged(modifiers_state),
                 ..
             } => {
                 modifiers = Some(modifiers_state);
+            }
+            Event::WindowEvent {
+                event: WindowEvent::CursorMoved { position, .. },
+                ..
+            } => {
+                mouse_position = Some(position);
+                if let Some(state) = left_mouse_button_state {
+                    if state == ElementState::Pressed
+                        && double_click_timer.elapsed() > Duration::from_millis(200)
+                    {
+                        editor.handle_mouse_drag(
+                            position.to_logical(window.scale_factor()),
+                            modifiers,
+                        );
+                        request_redraw(&window);
+                    }
+                }
             }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
