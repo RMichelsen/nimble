@@ -67,6 +67,13 @@ impl PieceTable {
                 }
             }
 
+            // Convert '\t' to four spaces
+            if byte == b'\t' {
+                original.append(&mut vec![b' '; 4]);
+                index += 4;
+                continue;
+            }
+
             // Convert '\r\n' and '\r' to '\n'
             if byte != b'\r' {
                 original.push(byte);
@@ -79,6 +86,7 @@ impl PieceTable {
                 index += 1;
                 continue;
             }
+
             if bytes
                 .peek()
                 .is_some_and(|b| *(b.as_ref().unwrap()) != b'\n')

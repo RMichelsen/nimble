@@ -67,12 +67,14 @@ where
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TextDocumentClientCapabilities {}
+pub struct GeneralClientCapabilities {
+    pub position_encodings: Vec<String>,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientCapabilities {
-    pub text_document: TextDocumentClientCapabilities,
+    pub general: GeneralClientCapabilities,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -157,7 +157,7 @@ impl Buffer {
         view: &View,
         num_rows: usize,
         num_cols: usize,
-    ) {
+    ) -> bool {
         match (self.mode, key_code) {
             (_, VirtualKeyCode::Down) => self.motion(Down(1)),
             (_, VirtualKeyCode::Up) => self.motion(Up(1)),
@@ -270,13 +270,14 @@ impl Buffer {
                 self.command(StartCompletion);
             }
 
-            _ => (),
+            _ => return false,
         }
 
         self.merge_cursors();
+        true
     }
 
-    pub fn handle_char(&mut self, c: char) {
+    pub fn handle_char(&mut self, c: char) -> bool {
         if self.mode == Insert {
             if c as u8 >= 0x20 && c as u8 <= 0x7E {
                 self.command(InsertChar(c as u8));
@@ -285,7 +286,7 @@ impl Buffer {
                 cursor.reset_anchor();
             }
             self.merge_cursors();
-            return;
+            return true;
         }
 
         self.input.push(c);
@@ -471,7 +472,7 @@ impl Buffer {
             (VisualLine, "V") => self.switch_to_normal_mode(),
             (_, "V") => self.switch_to_visual_line_mode(),
 
-            _ => return,
+            _ => return false,
         }
 
         if self.mode == Normal {
@@ -480,8 +481,8 @@ impl Buffer {
             }
         }
         self.input.clear();
-
         self.merge_cursors();
+        true
     }
 
     fn motion(&mut self, motion: CursorMotion) {

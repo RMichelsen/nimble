@@ -13,7 +13,7 @@ use serde_json::Value;
 use crate::{
     language_server_types::{
         ClientCapabilities, CompletionList, InitializeParams, InitializeResult, InitializedParams,
-        Notification, Request, ServerMessage, TextDocumentClientCapabilities,
+        Notification, Request, ServerMessage, GeneralClientCapabilities, 
     },
     language_support::Language,
 };
@@ -57,7 +57,7 @@ impl LanguageServer {
                 process_id: 0,
                 root_uri: None,
                 capabilities: ClientCapabilities {
-                    text_document: TextDocumentClientCapabilities {},
+                   general: GeneralClientCapabilities { position_encodings: vec!["utf-8".to_string()] } 
                 },
             },
         )

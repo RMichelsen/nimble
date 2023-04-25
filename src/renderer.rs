@@ -11,16 +11,19 @@ use crate::{
     view::View,
 };
 
+#[derive(Debug)]
 pub enum TextEffectKind {
     ForegroundColor(Color),
 }
 
+#[derive(Debug)]
 pub struct TextEffect {
     pub kind: TextEffectKind,
     pub start: usize,
     pub length: usize,
 }
 
+#[derive(Debug)]
 pub struct Color {
     pub r: f32,
     pub g: f32,
@@ -100,6 +103,7 @@ impl Renderer {
         });
 
         let keyword_highlights = keyword_highlights(&text, buffer.language.keywords);
+
         let mut comment_highlights = comment_highlights(
             &text,
             buffer.language.line_comment_token,

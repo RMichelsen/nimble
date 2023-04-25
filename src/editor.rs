@@ -149,18 +149,21 @@ impl Editor {
     pub fn handle_key(&mut self, key_code: VirtualKeyCode, modifiers: Option<ModifiersState>) {
         let (num_rows, num_cols) = (self.renderer.num_rows, self.renderer.num_cols);
         if let Some(document) = self.active_document() {
-            document
+            if document
                 .buffer
-                .handle_key(key_code, modifiers, &document.view, num_rows, num_cols);
-            document.view.adjust(&document.buffer, num_rows, num_cols);
+                .handle_key(key_code, modifiers, &document.view, num_rows, num_cols)
+            {
+                document.view.adjust(&document.buffer, num_rows, num_cols);
+            }
         }
     }
 
     pub fn handle_char(&mut self, c: char) {
         let (num_rows, num_cols) = (self.renderer.num_rows, self.renderer.num_cols);
         if let Some(document) = self.active_document() {
-            document.buffer.handle_char(c);
-            document.view.adjust(&document.buffer, num_rows, num_cols);
+            if document.buffer.handle_char(c) {
+                document.view.adjust(&document.buffer, num_rows, num_cols);
+            }
         }
     }
 
