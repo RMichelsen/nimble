@@ -442,14 +442,14 @@ impl Cursor {
 
     pub fn chars_until_pred<F>(&self, piece_table: &PieceTable, pred: F) -> Option<usize>
     where
-        F: Fn(u8) -> bool,
+        F: FnMut(u8) -> bool,
     {
         piece_table.iter_chars_at(self.position + 1).position(pred)
     }
 
     pub fn chars_until_pred_rev<F>(&self, piece_table: &PieceTable, pred: F) -> Option<usize>
     where
-        F: Fn(u8) -> bool,
+        F: FnMut(u8) -> bool,
     {
         piece_table
             .iter_chars_at_rev(self.position.saturating_sub(1))

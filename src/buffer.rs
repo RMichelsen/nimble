@@ -120,7 +120,7 @@ impl Buffer {
         }
     }
 
-    pub fn handle_mouse_double_click(&mut self, line: usize, col: usize) {
+    pub fn handle_mouse_double_click(&mut self, line: usize, col: usize) -> bool {
         if let Some(cursor_line) = self.piece_table.line_at_index(line) {
             if let Some(position) = self
                 .piece_table
@@ -129,12 +129,14 @@ impl Buffer {
                 if self.cursors[0].position == position {
                     self.switch_to_visual_mode();
                     self.motion(ExtendSelectionInside(b'w'));
+                    return true;
                 } else {
                     self.cursors[0].position = position;
                     self.cursors[0].anchor = position;
                 }
             }
         }
+        false
     }
 
     pub fn insert_cursor(&mut self, line: usize, col: usize) {
@@ -181,6 +183,9 @@ impl Buffer {
             (VisualLine, Delete) => {
                 self.command(CutLineSelection);
                 self.switch_to_normal_mode();
+            }
+            (Insert, Delete) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+                self.command(DeleteWordFront);
             }
             (Insert, Delete) => self.command(CutSelection),
 
@@ -852,6 +857,41 @@ impl Buffer {
 
                 self.lsp_change(content_changes);
             }
+            DeleteWordFront => {
+                let mut content_changes = vec![];
+
+                for i in 0..self.cursors.len() {
+                    if let Some(line) = self.piece_table.line_at_char(self.cursors[i].position) {
+                        if self.cursors[i].position == line.end {
+                            let start = self.cursors[i].position;
+                            let end =
+                                min(self.cursors[i].position + 1, self.piece_table.num_chars());
+                            content_changes.push(self.delete_chars(start, end));
+                            cursors_delete_rebalance(&mut self.cursors, start, end);
+                            self.cursors[i].position = start;
+                            continue;
+                        }
+
+                        if let Some(c) = self.piece_table.char_at(self.cursors[i].position) {
+                            let char_type = text_utils::char_type(c);
+
+                            let forward_match = self.cursors[i]
+                                .chars_until_pred(&self.piece_table, |c| {
+                                    text_utils::char_type(c) != char_type
+                                })
+                                .map(|x| x + 1)
+                                .unwrap_or(line.length);
+                            let start = self.cursors[i].position;
+                            let end = min(line.end, self.cursors[i].position + forward_match);
+                            content_changes.push(self.delete_chars(start, end));
+                            cursors_delete_rebalance(&mut self.cursors, start, end);
+                            self.cursors[i].position = start;
+                        }
+                    }
+                }
+
+                self.lsp_change(content_changes);
+            }
             Undo => {
                 if let Some(state) = self.undo_stack.pop() {
                     self.redo_stack.push(BufferState {
@@ -1239,6 +1279,7 @@ enum BufferCommand {
     ToggleComment,
     DeleteCharBack,
     DeleteWordBack,
+    DeleteWordFront,
     Undo,
     Redo,
     StartCompletion,

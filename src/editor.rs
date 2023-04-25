@@ -125,16 +125,19 @@ impl Editor {
         &mut self,
         mouse_position: LogicalPosition<f64>,
         modifiers: Option<ModifiersState>,
-    ) {
+    ) -> bool {
         let font_size = self.renderer.get_font_size();
         if let Some(document) = self.active_document() {
             let (line, col) = document.view.get_line_col(mouse_position, font_size);
             if modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::SHIFT)) {
                 document.buffer.insert_cursor(line, col);
             } else {
-                document.buffer.handle_mouse_double_click(line, col);
+                if document.buffer.handle_mouse_double_click(line, col) {
+                    return true;
+                }
             }
         }
+        false
     }
 
     pub fn handle_scroll(&mut self, sign: isize) {

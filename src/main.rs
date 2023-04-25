@@ -111,11 +111,12 @@ fn main() {
                     if state == ElementState::Pressed {
                         if let Some(position) = mouse_position {
                             if left_mouse_button_timer.elapsed() < Duration::from_millis(500) {
-                                editor.handle_mouse_double_click(
+                                if editor.handle_mouse_double_click(
                                     position.to_logical(window.scale_factor()),
                                     modifiers,
-                                );
-                                double_click_timer = Instant::now();
+                                ) {
+                                    double_click_timer = Instant::now();
+                                }
                             } else {
                                 editor.handle_mouse_pressed(
                                     position.to_logical(window.scale_factor()),
