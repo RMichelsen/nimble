@@ -132,7 +132,6 @@ impl Renderer {
         effects.extend(string_highlights);
 
         self.context.draw_text_fit_view(view, &text, &effects);
-
         view.visible_completions(
             buffer,
             self.num_rows,

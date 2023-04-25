@@ -5,7 +5,6 @@ use std::{
     str::pattern::Pattern,
 };
 
-// "Test"
 use bstr::ByteSlice;
 use winit::event::{ModifiersState, VirtualKeyCode};
 use BufferCommand::*;

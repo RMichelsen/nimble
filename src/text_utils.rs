@@ -162,9 +162,10 @@ pub fn string_highlights(text: &[u8]) -> Vec<TextEffect> {
             offset += start + 1;
             slice.take(..start + 1).unwrap();
             if let Some(end) = slice.find_byte(*token) {
-                if slice
-                    .find_byte(b'\n')
-                    .is_some_and(|line_end| line_end < end)
+                if token == &b'\''
+                    && slice
+                        .find_byte(b'\n')
+                        .is_some_and(|line_end| line_end < end)
                 {
                     continue;
                 }
@@ -176,6 +177,13 @@ pub fn string_highlights(text: &[u8]) -> Vec<TextEffect> {
                     start: text_start,
                     length: end + 2,
                 });
+            } else if token == &b'"' {
+                effects.push(TextEffect {
+                    kind: TextEffectKind::ForegroundColor(KEYWORD_COLOR),
+                    start: text_start,
+                    length: text.len() - text_start,
+                });
+                break;
             }
         }
     }
