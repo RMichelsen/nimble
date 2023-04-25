@@ -2,19 +2,26 @@ use std::str::pattern::Pattern;
 
 use bstr::ByteSlice;
 
-use crate::piece_table::PieceTableCharReverseIterator;
+use crate::{
+    piece_table::PieceTableCharReverseIterator,
+    renderer::{TextEffect, TextEffectKind},
+    theme::{COMMENT_COLOR, KEYWORD_COLOR},
+};
 
-pub fn find_keywords_iter<F>(text: &[u8], keywords: Option<&[&str]>, mut f: F)
-where
-    F: FnMut(usize, usize),
-{
+pub fn keyword_highlights(text: &[u8], keywords: Option<&[&str]>) -> Vec<TextEffect> {
+    let mut effects = vec![];
+
     if let Some(keywords) = keywords {
         let mut word = String::new();
         for (i, c) in text.iter().enumerate() {
             if char_type(*c) != CharType::Word {
                 if keywords.contains(&word.as_str()) {
-                    let len = word.len();
-                    f(i - len, len);
+                    let length = word.len();
+                    effects.push(TextEffect {
+                        kind: TextEffectKind::ForegroundColor(KEYWORD_COLOR),
+                        start: i - length,
+                        length,
+                    });
                 }
                 word.clear();
             } else {
@@ -23,10 +30,16 @@ where
         }
 
         if keywords.contains(&word.as_str()) {
-            let len = word.len();
-            f(text.len() - len, len);
+            let length = word.len();
+            effects.push(TextEffect {
+                kind: TextEffectKind::ForegroundColor(KEYWORD_COLOR),
+                start: text.len() - length,
+                length,
+            });
         }
     }
+
+    effects
 }
 
 pub fn leading_multi_line_comment_end(
@@ -44,15 +57,14 @@ pub fn leading_multi_line_comment_end(
     })
 }
 
-pub fn find_comments_iter<F>(
+pub fn comment_highlights(
     text: &[u8],
     line_comment_token: Option<&str>,
     multi_line_comment_token_pair: Option<[&str; 2]>,
     start_iterator_rev: PieceTableCharReverseIterator,
-    mut f: F,
-) where
-    F: FnMut(usize, usize),
-{
+) -> Vec<TextEffect> {
+    let mut effects = vec![];
+
     if let Some([t1, t2]) = multi_line_comment_token_pair {
         if let Some(leading_multi_line_comment_end) =
             leading_multi_line_comment_end(text, multi_line_comment_token_pair)
@@ -63,7 +75,11 @@ pub fn find_comments_iter<F>(
                 match_t1.insert(0, c as char);
                 match_t2.insert(0, c as char);
                 if match_t1 == t1 {
-                    f(0, leading_multi_line_comment_end + t2.len());
+                    effects.push(TextEffect {
+                        kind: TextEffectKind::ForegroundColor(COMMENT_COLOR),
+                        start: 0,
+                        length: leading_multi_line_comment_end + t2.len(),
+                    });
                     break;
                 }
 
@@ -90,9 +106,17 @@ pub fn find_comments_iter<F>(
             if let Some(end) = slice.find(t2) {
                 offset += end + t2.len();
                 slice.take(..end + t2.len()).unwrap();
-                f(text_start, end + t2.len() + 2);
+                effects.push(TextEffect {
+                    kind: TextEffectKind::ForegroundColor(COMMENT_COLOR),
+                    start: text_start,
+                    length: end + t2.len() + 2,
+                });
             } else {
-                f(text_start, text.len() - text_start);
+                effects.push(TextEffect {
+                    kind: TextEffectKind::ForegroundColor(COMMENT_COLOR),
+                    start: text_start,
+                    length: text.len() - text_start,
+                });
                 break;
             }
         }
@@ -108,13 +132,55 @@ pub fn find_comments_iter<F>(
             if let Some(end) = slice.find_byte(b'\n') {
                 offset += end + 1;
                 slice.take(..=end).unwrap();
-                f(text_start, end + 2);
+                effects.push(TextEffect {
+                    kind: TextEffectKind::ForegroundColor(COMMENT_COLOR),
+                    start: text_start,
+                    length: end + 2,
+                });
             } else {
-                f(text_start, text.len() - text_start);
+                effects.push(TextEffect {
+                    kind: TextEffectKind::ForegroundColor(COMMENT_COLOR),
+                    start: text_start,
+                    length: text.len() - text_start,
+                });
                 break;
             }
         }
     }
+
+    effects
+}
+
+pub fn string_highlights(text: &[u8]) -> Vec<TextEffect> {
+    let mut effects = vec![];
+
+    for token in &[b'\'', b'"'] {
+        let mut slice = text;
+        let mut offset = 0;
+        while let Some(start) = slice.find_byte(*token) {
+            let text_start = offset + start;
+            offset += start + 1;
+            slice.take(..start + 1).unwrap();
+            if let Some(end) = slice.find_byte(*token) {
+                if slice
+                    .find_byte(b'\n')
+                    .is_some_and(|line_end| line_end < end)
+                {
+                    continue;
+                }
+
+                offset += end + 1;
+                slice.take(..=end).unwrap();
+                effects.push(TextEffect {
+                    kind: TextEffectKind::ForegroundColor(KEYWORD_COLOR),
+                    start: text_start,
+                    length: end + 2,
+                });
+            }
+        }
+    }
+
+    effects
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

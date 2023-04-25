@@ -5,12 +5,13 @@ use std::{
     str::pattern::Pattern,
 };
 
+// "Test"
 use bstr::ByteSlice;
 use winit::event::{ModifiersState, VirtualKeyCode};
 use BufferCommand::*;
 use BufferMode::*;
 use CursorMotion::*;
-use VirtualKeyCode::{Back, Delete, Escape, Return, Slash, Space, Tab, J, K, R};
+use VirtualKeyCode::{Back, Delete, Escape, Left, Return, Right, Slash, Space, Tab, J, K, R};
 
 use crate::{
     cursor::{
@@ -159,6 +160,17 @@ impl Buffer {
         num_cols: usize,
     ) {
         match (self.mode, key_code) {
+            (_, VirtualKeyCode::Down) => self.motion(Down(1)),
+            (_, VirtualKeyCode::Up) => self.motion(Up(1)),
+            (_, Right) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+                self.motion(ForwardByWord)
+            }
+            (_, Left) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+                self.motion(BackwardByWord)
+            }
+            (_, Right) => self.motion(Forward(1)),
+            (_, Left) => self.motion(Backward(1)),
+
             (Normal, Escape) => self.cursors.truncate(1),
             (Insert, Escape) => {
                 self.motion(Backward(1));

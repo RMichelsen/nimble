@@ -6,10 +6,8 @@ use crate::{
     buffer::{Buffer, BufferMode},
     graphics_context::GraphicsContext,
     language_server::LanguageServer,
-    text_utils,
-    theme::{
-        BACKGROUND_COLOR, COMMENT_COLOR, CURSOR_COLOR, HIGHLIGHT_COLOR, KEYWORD_COLOR, TEXT_COLOR,
-    },
+    text_utils::{comment_highlights, keyword_highlights, string_highlights},
+    theme::{BACKGROUND_COLOR, CURSOR_COLOR, HIGHLIGHT_COLOR, KEYWORD_COLOR, TEXT_COLOR},
     view::View,
 };
 
@@ -101,15 +99,8 @@ impl Renderer {
             length: text.len(),
         });
 
-        text_utils::find_keywords_iter(&text, buffer.language.keywords, |start, len| {
-            effects.push(TextEffect {
-                kind: ForegroundColor(KEYWORD_COLOR),
-                start,
-                length: len,
-            })
-        });
-
-        text_utils::find_comments_iter(
+        let keyword_highlights = keyword_highlights(&text, buffer.language.keywords);
+        let mut comment_highlights = comment_highlights(
             &text,
             buffer.language.line_comment_token,
             buffer.language.multi_line_comment_token_pair,
@@ -119,14 +110,26 @@ impl Renderer {
                     .char_index_from_line_col(view.line_offset, 0)
                     .unwrap(),
             ),
-            |start, len| {
-                effects.push(TextEffect {
-                    kind: ForegroundColor(COMMENT_COLOR),
-                    start,
-                    length: len,
-                })
-            },
         );
+        let mut string_highlights = string_highlights(&text);
+
+        // Remove string highlights that are inside comments
+        string_highlights.drain_filter(|string| {
+            comment_highlights.iter().any(|comment| {
+                comment.start < string.start && comment.start + comment.length > string.start
+            })
+        });
+
+        // Remove comment highlights that are inside strings
+        comment_highlights.drain_filter(|comment| {
+            string_highlights.iter().any(|string| {
+                string.start < comment.start && string.start + string.length > comment.start
+            })
+        });
+
+        effects.extend(keyword_highlights);
+        effects.extend(comment_highlights);
+        effects.extend(string_highlights);
 
         self.context.draw_text_fit_view(view, &text, &effects);
 
