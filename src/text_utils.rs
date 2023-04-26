@@ -130,8 +130,6 @@ pub fn comment_highlights(
             offset += start + line_comment_token.len();
             slice.take(..start + line_comment_token.len()).unwrap();
             if let Some(end) = slice.find_byte(b'\n') {
-                offset += end + 1;
-                slice.take(..=end).unwrap();
                 effects.push(TextEffect {
                     kind: TextEffectKind::ForegroundColor(COMMENT_COLOR),
                     start: text_start,
@@ -151,13 +149,25 @@ pub fn comment_highlights(
     effects
 }
 
-pub fn string_highlights(text: &[u8]) -> Vec<TextEffect> {
+pub fn string_highlights(text: &[u8], comment_highlights: &[TextEffect]) -> Vec<TextEffect> {
     let mut effects = vec![];
 
     for token in &[b'\'', b'"'] {
         let mut slice = text;
         let mut offset = 0;
-        while let Some(start) = slice.find_byte(*token) {
+
+        // Only highlight a new string when it is not contained within an existing comment
+        while let Some(start) = slice
+            .iter()
+            .enumerate()
+            .find(|(i, c)| {
+                *c == token
+                    && !comment_highlights.iter().any(|comment| {
+                        (comment.start..comment.start + comment.length).contains(&(offset + i))
+                    })
+            })
+            .map(|(i, c)| i)
+        {
             let text_start = offset + start;
             offset += start + 1;
             slice.take(..start + 1).unwrap();

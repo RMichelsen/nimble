@@ -97,9 +97,10 @@ impl Buffer {
         if let Some(cursor_line) = self.piece_table.line_at_index(line) {
             if let Some(position) = self
                 .piece_table
-                .char_index_from_line_col(line, min(col, cursor_line.length))
+                .char_index_from_line_col(line, min(col, cursor_line.length.saturating_sub(1)))
             {
                 self.cursors.truncate(1);
+                self.switch_to_normal_mode();
                 self.cursors[0].position = position;
                 self.cursors[0].anchor = position;
             }
@@ -131,8 +132,7 @@ impl Buffer {
                     self.motion(ExtendSelectionInside(b'w'));
                     return true;
                 } else {
-                    self.cursors[0].position = position;
-                    self.cursors[0].anchor = position;
+                    self.set_cursor(line, col);
                 }
             }
         }

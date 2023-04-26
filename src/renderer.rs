@@ -104,7 +104,7 @@ impl Renderer {
 
         let keyword_highlights = keyword_highlights(&text, buffer.language.keywords);
 
-        let mut comment_highlights = comment_highlights(
+        let comment_highlights = comment_highlights(
             &text,
             buffer.language.line_comment_token,
             buffer.language.multi_line_comment_token_pair,
@@ -115,21 +115,7 @@ impl Renderer {
                     .unwrap(),
             ),
         );
-        let mut string_highlights = string_highlights(&text);
-
-        // Remove string highlights that are inside comments
-        string_highlights.drain_filter(|string| {
-            comment_highlights.iter().any(|comment| {
-                comment.start < string.start && comment.start + comment.length > string.start
-            })
-        });
-
-        // Remove comment highlights that are inside strings
-        comment_highlights.drain_filter(|comment| {
-            string_highlights.iter().any(|string| {
-                string.start < comment.start && string.start + string.length > comment.start
-            })
-        });
+        let string_highlights = string_highlights(&text, &comment_highlights);
 
         effects.extend(keyword_highlights);
         effects.extend(comment_highlights);
