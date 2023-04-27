@@ -5,7 +5,7 @@ use winit::dpi::LogicalPosition;
 use crate::{
     buffer::{Buffer, BufferMode},
     cursor::CompletionRequest,
-    language_server_types::CompletionList,
+    language_server_types::{CompletionList, Diagnostic},
     piece_table::PieceTable,
 };
 
@@ -128,6 +128,43 @@ impl View {
         buffer
             .piece_table
             .text_between_lines(self.line_offset, self.line_offset + num_rows)
+    }
+
+    pub fn visible_diagnostics_iter<F>(
+        &self,
+        buffer: &Buffer,
+        diagnostics: &[Diagnostic],
+        num_rows: usize,
+        num_cols: usize,
+        mut f: F,
+    ) where
+        F: FnMut(usize, (usize, usize), (usize, usize)),
+    {
+        if let Some(offset) = buffer
+            .piece_table
+            .char_index_from_line_col(self.line_offset, self.col_offset)
+        {
+            for diagnostic in diagnostics {
+                if diagnostic.severity.is_some_and(|s| s > 2) {
+                    continue;
+                }
+
+                let (start_row, start_col) = (
+                    diagnostic.range.start.line as usize,
+                    diagnostic.range.start.character as usize,
+                );
+                let (end_row, end_col) = (
+                    diagnostic.range.end.line as usize,
+                    diagnostic.range.end.character as usize,
+                );
+
+                if self.pos_in_render_visible_range(start_row, start_col, num_rows, num_cols)
+                    || self.pos_in_render_visible_range(end_row, end_col, num_rows, num_cols)
+                {
+                    f(offset, (start_row, start_col), (end_row, end_col));
+                }
+            }
+        }
     }
 
     pub fn adjust(&mut self, buffer: &Buffer, num_rows: usize, num_cols: usize) {

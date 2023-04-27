@@ -7,7 +7,10 @@ use crate::{
     graphics_context::GraphicsContext,
     language_server::LanguageServer,
     text_utils::{comment_highlights, keyword_highlights, string_highlights},
-    theme::{BACKGROUND_COLOR, CURSOR_COLOR, HIGHLIGHT_COLOR, KEYWORD_COLOR, TEXT_COLOR},
+    theme::{
+        BACKGROUND_COLOR, CURSOR_COLOR, DIAGNOSTIC_COLOR, HIGHLIGHT_COLOR, KEYWORD_COLOR,
+        TEXT_COLOR,
+    },
     view::View,
 };
 
@@ -116,6 +119,38 @@ impl Renderer {
             ),
         );
         let string_highlights = string_highlights(&text, &comment_highlights);
+
+        if let Some(server) = language_server {
+            if let Some(diagnostics) = server
+                .borrow()
+                .saved_diagnostics
+                .get(&buffer.uri.to_ascii_lowercase())
+            {
+                view.visible_diagnostics_iter(
+                    buffer,
+                    diagnostics,
+                    self.num_rows,
+                    self.num_cols,
+                    |offset, (start_row, start_col), (end_row, end_col)| {
+                        if let Some(start) = buffer
+                            .piece_table
+                            .char_index_from_line_col(start_row, start_col)
+                        {
+                            if let Some(end) = buffer
+                                .piece_table
+                                .char_index_from_line_col(end_row, end_col)
+                            {
+                                effects.push(TextEffect {
+                                    kind: ForegroundColor(DIAGNOSTIC_COLOR),
+                                    start: start.saturating_sub(offset),
+                                    length: end - start,
+                                })
+                            }
+                        }
+                    },
+                );
+            }
+        }
 
         effects.extend(keyword_highlights);
         effects.extend(comment_highlights);

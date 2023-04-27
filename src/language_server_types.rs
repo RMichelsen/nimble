@@ -107,6 +107,21 @@ pub struct DidOpenTextDocumentParams {
     pub text_document: TextDocumentItem,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Diagnostic {
+    pub range: Range,
+    pub message: String,
+    pub severity: Option<i32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishDiagnosticParams {
+    pub uri: String,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Position {

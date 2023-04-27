@@ -13,7 +13,7 @@ use serde_json::Value;
 use crate::{
     language_server_types::{
         ClientCapabilities, CompletionList, InitializeParams, InitializeResult, InitializedParams,
-        Notification, Request, ServerMessage, GeneralClientCapabilities, 
+        Notification, Request, ServerMessage, GeneralClientCapabilities, Diagnostic, PublishDiagnosticParams, 
     },
     language_support::Language,
 };
@@ -21,6 +21,11 @@ use crate::{
 pub struct ServerResponse {
     pub method: &'static str,
     pub id: i32,
+    pub value: Option<Value>,
+}
+
+pub struct ServerNotification {
+    pub method: String,
     pub value: Option<Value>,
 }
 
@@ -33,6 +38,7 @@ pub struct LanguageServer {
     initialized: bool,
     terminated: bool,
     pub saved_completions: HashMap<i32, CompletionList>,
+    pub saved_diagnostics: HashMap<String, Vec<Diagnostic>>,
     pub trigger_characters: Vec<u8>,
 }
 
@@ -74,8 +80,17 @@ impl LanguageServer {
             initialized: false,
             terminated: false,
             saved_completions: HashMap::new(),
+            saved_diagnostics: HashMap::new(),
             trigger_characters: Vec::new(),
         })
+    }
+
+    pub fn save_diagnostics(&mut self, value: serde_json::Value) {
+        let params = serde_json::from_value::<PublishDiagnosticParams>(value).unwrap();
+        self.saved_diagnostics.insert(
+            params.uri.to_ascii_lowercase(),
+            params.diagnostics
+        );
     }
 
     pub fn save_completions(&mut self, request_id: i32, value: serde_json::Value) {
@@ -112,7 +127,7 @@ impl LanguageServer {
         }
     }
 
-    pub fn handle_server_responses(&mut self) -> Result<Vec<ServerResponse>, std::io::Error> {
+    pub fn handle_server_responses(&mut self) -> Result<(Vec<ServerResponse>, Vec<ServerNotification>), std::io::Error> {
         if self.terminated {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::ConnectionAborted,
@@ -121,6 +136,7 @@ impl LanguageServer {
         }
 
         let mut server_responses = vec![];
+        let mut server_notifications = vec![];
         if let Ok(ref mut responses) = self.responses.try_lock() {
             while let Some(message) = responses.pop_front() {
                 match message {
@@ -158,11 +174,16 @@ impl LanguageServer {
                         }
                         self.requests.remove(&id);
                     }
-                    ServerMessage::Notification { method, params, .. } => {}
+                    ServerMessage::Notification { method, params, .. } => {
+                        server_notifications.push(ServerNotification {
+                            method,
+                            value: params
+                        })
+                    }
                 }
             }
         }
-        Ok(server_responses)
+        Ok((server_responses, server_notifications))
     }
 }
 

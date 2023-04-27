@@ -1,4 +1,5 @@
 use std::{
+    cmp::min,
     fs::File,
     io::{BufReader, Read},
 };
@@ -386,18 +387,8 @@ impl PieceTable {
     }
 
     pub fn char_index_from_line_col(&self, line: usize, col: usize) -> Option<usize> {
-        let mut line_count = 0;
-        let mut col_count = 0;
-        for (count, c) in self.iter_chars().enumerate() {
-            if line_count == line && col_count == col {
-                return Some(count);
-            }
-
-            col_count += 1;
-            if c == b'\n' {
-                line_count += 1;
-                col_count = 0;
-            }
+        if let Some(line) = self.line_at_index(line) {
+            return Some(line.start + min(col, line.length));
         }
         None
     }

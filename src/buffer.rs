@@ -125,7 +125,7 @@ impl Buffer {
         if let Some(cursor_line) = self.piece_table.line_at_index(line) {
             if let Some(position) = self
                 .piece_table
-                .char_index_from_line_col(line, min(col, cursor_line.length))
+                .char_index_from_line_col(line, min(col, cursor_line.length.saturating_sub(1)))
             {
                 if self.cursors[0].position == position {
                     self.switch_to_visual_mode();

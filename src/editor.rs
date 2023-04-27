@@ -37,7 +37,7 @@ impl Editor {
         for (identifier, server) in &mut self.language_servers {
             let mut server = server.borrow_mut();
             match server.handle_server_responses() {
-                Ok(responses) => {
+                Ok((responses, notifications)) => {
                     for response in responses {
                         match response.method {
                             "initialize" => {
@@ -50,6 +50,17 @@ impl Editor {
                             "textDocument/completion" => {
                                 if let Some(value) = response.value {
                                     server.save_completions(response.id, value);
+                                }
+                                return true;
+                            }
+                            _ => (),
+                        }
+                    }
+                    for notification in notifications {
+                        match notification.method.as_str() {
+                            "textDocument/publishDiagnostics" => {
+                                if let Some(value) = notification.value {
+                                    server.save_diagnostics(value);
                                 }
                                 return true;
                             }
