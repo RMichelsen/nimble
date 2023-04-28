@@ -19,7 +19,8 @@ use windows::{
             DirectWrite::{
                 DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
                 DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_NORMAL,
-                DWRITE_HIT_TEST_METRICS, DWRITE_TEXT_RANGE, DWRITE_WORD_WRAPPING_NO_WRAP,
+                DWRITE_HIT_TEST_METRICS, DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE,
+                DWRITE_WORD_WRAPPING_NO_WRAP,
             },
             Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
         },
@@ -234,6 +235,28 @@ impl GraphicsContext {
                 &brush,
             );
         }
+    }
+
+    pub fn get_text_bounding_box(&self, text: &[u8]) -> (f64, f64) {
+        let text_layout = unsafe {
+            self.dwrite_factory
+                .CreateTextLayout(
+                    U16CString::from_str(std::str::from_utf8(text).unwrap())
+                        .unwrap()
+                        .as_slice(),
+                    &self.text_format,
+                    self.window_size.0,
+                    self.window_size.1,
+                )
+                .unwrap()
+        };
+
+        let mut text_metrics = DWRITE_TEXT_METRICS::default();
+        unsafe {
+            text_layout.GetMetrics(&mut text_metrics as *mut _).unwrap();
+        }
+
+        (text_metrics.width as f64, text_metrics.height as f64)
     }
 
     pub fn draw_text_with_col_offset(

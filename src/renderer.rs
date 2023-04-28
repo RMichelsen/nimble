@@ -120,61 +120,12 @@ impl Renderer {
         );
         let string_highlights = string_highlights(&text, &comment_highlights);
 
-        if let Some(server) = language_server {
-            if let Some(diagnostics) = server
-                .borrow()
-                .saved_diagnostics
-                .get(&buffer.uri.to_ascii_lowercase())
-            {
-                view.visible_diagnostic_lines_iter(
-                    buffer,
-                    diagnostics,
-                    self.num_rows,
-                    self.num_cols,
-                    |row, col, count| {
-                        self.context
-                            .underline_cells(row, col, count, DIAGNOSTIC_COLOR);
-                    },
-                );
-
-                if let Some((line, col)) = view.hover {
-                    if let Some(diagnostic) = diagnostics.iter().find(|diagnostic| {
-                        let (start_line, start_col) = (
-                            diagnostic.range.start.line as usize,
-                            diagnostic.range.start.character as usize,
-                        );
-                        let (end_line, end_col) = (
-                            diagnostic.range.end.line as usize,
-                            diagnostic.range.end.character as usize,
-                        );
-                        (start_line == line && (start_col..=end_col).contains(&col))
-                            || (end_line == line && (start_col..=end_col).contains(&col))
-                            || (diagnostic.range.start.line as usize
-                                ..diagnostic.range.end.line as usize)
-                                .contains(&line)
-                    }) {
-                        let (row, col) = (
-                            view.absolute_to_view_row(line) + 1,
-                            view.absolute_to_view_col(col),
-                        );
-                        self.context.fill_cells(
-                            row,
-                            col,
-                            (diagnostic.message.len(), 1),
-                            HIGHLIGHT_COLOR,
-                        );
-                        self.context
-                            .draw_text(row, col, diagnostic.message.as_bytes(), &[])
-                    }
-                }
-            }
-        }
-
         effects.extend(keyword_highlights);
         effects.extend(comment_highlights);
         effects.extend(string_highlights);
 
         self.context.draw_text_fit_view(view, &text, &effects);
+
         view.visible_completions(
             buffer,
             self.num_rows,
@@ -236,5 +187,62 @@ impl Renderer {
                 );
             },
         );
+
+        if let Some(server) = language_server {
+            if let Some(diagnostics) = server
+                .borrow()
+                .saved_diagnostics
+                .get(&buffer.uri.to_ascii_lowercase())
+            {
+                view.visible_diagnostic_lines_iter(
+                    buffer,
+                    diagnostics,
+                    self.num_rows,
+                    self.num_cols,
+                    |row, col, count| {
+                        self.context
+                            .underline_cells(row, col, count, DIAGNOSTIC_COLOR);
+                    },
+                );
+
+                if let Some((line, col)) = view.hover {
+                    if let Some(diagnostic) = diagnostics.iter().find(|diagnostic| {
+                        let (start_line, start_col) = (
+                            diagnostic.range.start.line as usize,
+                            diagnostic.range.start.character as usize,
+                        );
+                        let (end_line, end_col) = (
+                            diagnostic.range.end.line as usize,
+                            diagnostic.range.end.character as usize,
+                        );
+                        (start_line == line && (start_col..=end_col).contains(&col))
+                            || (end_line == line && (start_col..=end_col).contains(&col))
+                            || (diagnostic.range.start.line as usize
+                                ..diagnostic.range.end.line as usize)
+                                .contains(&line)
+                    }) {
+                        let (row, col) = (
+                            view.absolute_to_view_row(line) + 1,
+                            view.absolute_to_view_col(col),
+                        );
+                        let (width, height) = self
+                            .context
+                            .get_text_bounding_box(diagnostic.message.as_bytes());
+                        let font_size = self.get_font_size();
+                        self.context.fill_cells(
+                            row,
+                            col,
+                            (
+                                (width / font_size.0).round() as usize,
+                                (height / font_size.1).round() as usize,
+                            ),
+                            HIGHLIGHT_COLOR,
+                        );
+                        self.context
+                            .draw_text(row, col, diagnostic.message.as_bytes(), &[])
+                    }
+                }
+            }
+        }
     }
 }

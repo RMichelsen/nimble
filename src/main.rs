@@ -50,9 +50,9 @@ fn main() {
     editor.render();
     window.set_visible(true);
 
-    editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/renderer.rs");
+    // editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/renderer.rs");
     // editor.open_file("C:/VulkanSDK/1.3.239.0/Source/SPIRV-Reflect/spirv_reflect.c");
-    // editor.open_file("C:/Users/Rasmus/Desktop/Nvy/src/renderer/renderer.cpp");
+    editor.open_file("C:/Users/Rasmus/Desktop/Nvy/src/renderer/renderer.cpp");
     request_redraw(&window);
 
     let mut modifiers: Option<ModifiersState> = None;
