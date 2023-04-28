@@ -126,29 +126,47 @@ impl Renderer {
                 .saved_diagnostics
                 .get(&buffer.uri.to_ascii_lowercase())
             {
-                view.visible_diagnostics_iter(
+                view.visible_diagnostic_lines_iter(
                     buffer,
                     diagnostics,
                     self.num_rows,
                     self.num_cols,
-                    |offset, (start_row, start_col), (end_row, end_col)| {
-                        if let Some(start) = buffer
-                            .piece_table
-                            .char_index_from_line_col(start_row, start_col)
-                        {
-                            if let Some(end) = buffer
-                                .piece_table
-                                .char_index_from_line_col(end_row, end_col)
-                            {
-                                effects.push(TextEffect {
-                                    kind: ForegroundColor(DIAGNOSTIC_COLOR),
-                                    start: start.saturating_sub(offset),
-                                    length: end - start,
-                                })
-                            }
-                        }
+                    |row, col, count| {
+                        self.context
+                            .underline_cells(row, col, count, DIAGNOSTIC_COLOR);
                     },
                 );
+
+                if let Some((line, col)) = view.hover {
+                    if let Some(diagnostic) = diagnostics.iter().find(|diagnostic| {
+                        let (start_line, start_col) = (
+                            diagnostic.range.start.line as usize,
+                            diagnostic.range.start.character as usize,
+                        );
+                        let (end_line, end_col) = (
+                            diagnostic.range.end.line as usize,
+                            diagnostic.range.end.character as usize,
+                        );
+                        (start_line == line && (start_col..=end_col).contains(&col))
+                            || (end_line == line && (start_col..=end_col).contains(&col))
+                            || (diagnostic.range.start.line as usize
+                                ..diagnostic.range.end.line as usize)
+                                .contains(&line)
+                    }) {
+                        let (row, col) = (
+                            view.absolute_to_view_row(line) + 1,
+                            view.absolute_to_view_col(col),
+                        );
+                        self.context.fill_cells(
+                            row,
+                            col,
+                            (diagnostic.message.len(), 1),
+                            HIGHLIGHT_COLOR,
+                        );
+                        self.context
+                            .draw_text(row, col, diagnostic.message.as_bytes(), &[])
+                    }
+                }
             }
         }
 

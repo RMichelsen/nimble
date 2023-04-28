@@ -162,6 +162,29 @@ impl GraphicsContext {
         ));
     }
 
+    pub fn underline_cells(&self, row: usize, col: usize, count: usize, color: Color) {
+        let context = get_current_context();
+        let (row_offset, col_offset) =
+            (row as f64 * self.font_size.1, col as f64 * self.font_size.0);
+        context.set_fill_color(&CGColor::rgb(
+            color.r as f64,
+            color.g as f64,
+            color.b as f64,
+            1.0,
+        ));
+
+        context.fill_rect(CGRect::new(
+            &CGPoint::new(
+                col_offset,
+                self.window_size.1 - (self.font_size.1 * size.1 as f64) - row_offset,
+            ),
+            &CGSize::new(
+                self.font_size.0 * count as f64,
+                self.font_size.1 * size.1 * 0.1 as f64,
+            ),
+        ));
+    }
+
     pub fn draw_text_with_col_offset(
         &self,
         row: usize,

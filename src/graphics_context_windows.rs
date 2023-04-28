@@ -206,6 +206,36 @@ impl GraphicsContext {
         }
     }
 
+    pub fn underline_cells(&self, row: usize, col: usize, count: usize, color: Color) {
+        let (row_offset, col_offset) =
+            (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
+
+        unsafe {
+            let brush = self
+                .render_target
+                .CreateSolidColorBrush(
+                    &D2D1_COLOR_F {
+                        r: color.r,
+                        g: color.g,
+                        b: color.b,
+                        a: 1.0,
+                    },
+                    Some(&DEFAULT_BRUSH_PROPERTIES),
+                )
+                .unwrap();
+
+            self.render_target.FillRectangle(
+                &D2D_RECT_F {
+                    left: col_offset - 0.5,
+                    top: row_offset + self.font_size.1 * 0.9 - 0.5,
+                    right: col_offset + self.font_size.0 * count as f32 + 0.5,
+                    bottom: row_offset + self.font_size.1 as f32 + 0.5,
+                },
+                &brush,
+            );
+        }
+    }
+
     pub fn draw_text_with_col_offset(
         &self,
         row: usize,

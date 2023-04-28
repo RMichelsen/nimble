@@ -22,6 +22,7 @@ pub struct CompletionView {
 pub struct View {
     pub line_offset: usize,
     pub col_offset: usize,
+    pub hover: Option<(usize, usize)>,
 }
 
 impl View {
@@ -29,11 +30,20 @@ impl View {
         Self {
             line_offset: 0,
             col_offset: 0,
+            hover: None,
         }
     }
 
     pub fn handle_scroll(&mut self, buffer: &Buffer, sign: isize) {
         self.scroll_vertical(buffer, -sign * SCROLL_LINES_PER_ROLL)
+    }
+
+    pub fn hover(&mut self, mouse_position: LogicalPosition<f64>, font_size: (f64, f64)) {
+        self.hover = Some(self.get_line_col(mouse_position, font_size));
+    }
+
+    pub fn exit_hover(&mut self) {
+        self.hover = None;
     }
 
     pub fn visible_cursors_iter<F>(&self, buffer: &Buffer, num_rows: usize, num_cols: usize, f: F)
@@ -130,7 +140,7 @@ impl View {
             .text_between_lines(self.line_offset, self.line_offset + num_rows)
     }
 
-    pub fn visible_diagnostics_iter<F>(
+    pub fn visible_diagnostic_lines_iter<F>(
         &self,
         buffer: &Buffer,
         diagnostics: &[Diagnostic],
@@ -138,7 +148,7 @@ impl View {
         num_cols: usize,
         mut f: F,
     ) where
-        F: FnMut(usize, (usize, usize), (usize, usize)),
+        F: FnMut(usize, usize, usize),
     {
         if let Some(offset) = buffer
             .piece_table
@@ -149,19 +159,47 @@ impl View {
                     continue;
                 }
 
-                let (start_row, start_col) = (
+                let (start_line, start_col) = (
                     diagnostic.range.start.line as usize,
                     diagnostic.range.start.character as usize,
                 );
-                let (end_row, end_col) = (
+                let (end_line, end_col) = (
                     diagnostic.range.end.line as usize,
                     diagnostic.range.end.character as usize,
                 );
 
-                if self.pos_in_render_visible_range(start_row, start_col, num_rows, num_cols)
-                    || self.pos_in_render_visible_range(end_row, end_col, num_rows, num_cols)
+                if self.pos_in_render_visible_range(start_line, start_col, num_rows, num_cols)
+                    || self.pos_in_render_visible_range(end_line, end_col, num_rows, num_cols)
                 {
-                    f(offset, (start_row, start_col), (end_row, end_col));
+                    if start_line == end_line {
+                        f(
+                            self.absolute_to_view_row(start_line),
+                            self.absolute_to_view_col(start_col),
+                            end_col - start_col + 1,
+                        );
+                    } else {
+                        f(
+                            self.absolute_to_view_row(start_line),
+                            self.absolute_to_view_col(start_col),
+                            buffer.piece_table.line_at_index(start_line).unwrap().length
+                                - start_col
+                                + 1,
+                        );
+
+                        for line in start_line + 1..end_line {
+                            f(
+                                self.absolute_to_view_row(line),
+                                self.absolute_to_view_col(0),
+                                buffer.piece_table.line_at_index(line).unwrap().length + 1,
+                            );
+                        }
+
+                        f(
+                            self.absolute_to_view_row(end_line),
+                            self.absolute_to_view_col(0),
+                            end_col + 1,
+                        );
+                    }
                 }
             }
         }
@@ -258,11 +296,11 @@ impl View {
         (row + self.line_offset, col + self.col_offset)
     }
 
-    fn absolute_to_view_row(&self, line: usize) -> usize {
+    pub fn absolute_to_view_row(&self, line: usize) -> usize {
         line.saturating_sub(self.line_offset)
     }
 
-    fn absolute_to_view_col(&self, col: usize) -> usize {
+    pub fn absolute_to_view_col(&self, col: usize) -> usize {
         col.saturating_sub(self.col_offset)
     }
 

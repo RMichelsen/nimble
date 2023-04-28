@@ -50,7 +50,7 @@ fn main() {
     editor.render();
     window.set_visible(true);
 
-    editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/buffer.rs");
+    editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/renderer.rs");
     // editor.open_file("C:/VulkanSDK/1.3.239.0/Source/SPIRV-Reflect/spirv_reflect.c");
     // editor.open_file("C:/Users/Rasmus/Desktop/Nvy/src/renderer/renderer.cpp");
     request_redraw(&window);
@@ -60,9 +60,20 @@ fn main() {
     let mut left_mouse_button_state: Option<ElementState> = None;
     let mut left_mouse_button_timer = Instant::now();
     let mut double_click_timer = Instant::now();
+    let mut hover_timer = Some(Instant::now());
     event_loop.run(move |event, _, control_flow| {
         if editor.update() {
             editor.render();
+        }
+
+        if let Some(mouse_position) = mouse_position {
+            if let Some(timer) = hover_timer {
+                if timer.elapsed() > Duration::from_millis(300) {
+                    editor.handle_mouse_hover(mouse_position.to_logical(window.scale_factor()));
+                    hover_timer = None;
+                    request_redraw(&window);
+                }
+            }
         }
 
         match event {
@@ -140,7 +151,22 @@ fn main() {
                 event: WindowEvent::CursorMoved { position, .. },
                 ..
             } => {
+                let old_position = mouse_position;
                 mouse_position = Some(position);
+
+                if let Some(old_position) = old_position {
+                    if editor.has_moved_cell(
+                        old_position.to_logical(window.scale_factor()),
+                        position.to_logical(window.scale_factor()),
+                    ) {
+                        if editor.hovering() {
+                            request_redraw(&window);
+                        }
+                        hover_timer = Some(Instant::now());
+                        editor.handle_mouse_exit_hover();
+                    }
+                }
+
                 if let Some(state) = left_mouse_button_state {
                     if state == ElementState::Pressed
                         && double_click_timer.elapsed() > Duration::from_millis(200)

@@ -157,6 +157,40 @@ impl Editor {
         }
     }
 
+    pub fn handle_mouse_hover(&mut self, mouse_position: LogicalPosition<f64>) {
+        let font_size = self.renderer.get_font_size();
+        if let Some(document) = self.active_document() {
+            document.view.hover(mouse_position, font_size);
+        }
+    }
+
+    pub fn handle_mouse_exit_hover(&mut self) {
+        let font_size = self.renderer.get_font_size();
+        if let Some(document) = self.active_document() {
+            document.view.exit_hover();
+        }
+    }
+
+    pub fn hovering(&mut self) -> bool {
+        if let Some(document) = self.active_document() {
+            return document.view.hover.is_some();
+        }
+        false
+    }
+
+    pub fn has_moved_cell(
+        &mut self,
+        cached_mouse_position: LogicalPosition<f64>,
+        mouse_position: LogicalPosition<f64>,
+    ) -> bool {
+        let font_size = self.renderer.get_font_size();
+        if let Some(document) = self.active_document() {
+            let (line, col) = document.view.get_line_col(mouse_position, font_size);
+            return (line, col) != document.view.get_line_col(cached_mouse_position, font_size);
+        }
+        false
+    }
+
     pub fn handle_key(&mut self, key_code: VirtualKeyCode, modifiers: Option<ModifiersState>) {
         let (num_rows, num_cols) = (self.renderer.num_rows, self.renderer.num_cols);
         if let Some(document) = self.active_document() {
