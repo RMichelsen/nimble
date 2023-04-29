@@ -5,6 +5,7 @@
 #![feature(slice_take)]
 #![feature(drain_filter)]
 #![feature(let_chains)]
+#![feature(byte_slice_trim_ascii)]
 
 mod buffer;
 mod cursor;
@@ -18,6 +19,10 @@ mod renderer;
 #[cfg_attr(target_os = "windows", path = "graphics_context_windows.rs")]
 #[cfg_attr(target_os = "macos", path = "graphics_context_macos.rs")]
 mod graphics_context;
+
+#[cfg_attr(target_os = "windows", path = "platform_resources_windows.rs")]
+#[cfg_attr(target_os = "macos", path = "platform_resources_macos.rs")]
+mod platform_resources;
 
 mod text_utils;
 mod theme;
@@ -51,7 +56,7 @@ fn main() {
     window.set_visible(true);
 
     // editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/language_server_types.rs");
-    editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/renderer.rs");
+    editor.open_file(&window, "C:/Users/Rasmus/Desktop/nimble/src/renderer.rs");
     // editor.open_file("C:/VulkanSDK/1.3.239.0/Source/SPIRV-Reflect/spirv_reflect.c");
     // editor.open_file("C:/Users/Rasmus/Desktop/Nvy/src/renderer/renderer.cpp");
     request_redraw(&window);

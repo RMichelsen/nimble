@@ -6,7 +6,10 @@ use std::{
 };
 
 use bstr::ByteSlice;
-use winit::event::{ModifiersState, VirtualKeyCode};
+use winit::{
+    event::{ModifiersState, VirtualKeyCode},
+    window::Window,
+};
 use BufferCommand::*;
 use BufferMode::*;
 use CursorMotion::*;
@@ -25,6 +28,7 @@ use crate::{
     },
     language_support::{language_from_path, Language},
     piece_table::{Piece, PieceTable},
+    platform_resources::PlatformResources,
     text_utils,
     view::View,
 };
@@ -55,11 +59,16 @@ pub struct Buffer {
     pub language_server: Option<Rc<RefCell<LanguageServer>>>,
     input: String,
     version: i32,
+    platform_resources: PlatformResources,
 }
 
 impl Buffer {
     // TODO: Error handling
-    pub fn new(path: &str, language_server: Option<Rc<RefCell<LanguageServer>>>) -> Self {
+    pub fn new(
+        window: &Window,
+        path: &str,
+        language_server: Option<Rc<RefCell<LanguageServer>>>,
+    ) -> Self {
         let uri = "file:///".to_string() + path;
         let language = language_from_path(path).unwrap();
         let piece_table = PieceTable::from_file(path);
@@ -76,6 +85,7 @@ impl Buffer {
             language_server,
             input: String::new(),
             version: 1,
+            platform_resources: PlatformResources::new(window),
         }
     }
 
@@ -186,12 +196,17 @@ impl Buffer {
             (Insert, Return) => self.command(InsertNewLine),
             (_, Return) => self.motion(Down(1)),
 
-            (Normal, Delete) => self.command(CutSelection),
+            (Normal, Delete) => {
+                self.command(CopySelection);
+                self.command(CutSelection);
+            }
             (Visual, Delete) => {
+                self.command(CopySelection);
                 self.command(CutSelection);
                 self.switch_to_normal_mode();
             }
             (VisualLine, Delete) => {
+                self.command(CopySelection);
                 self.command(CutLineSelection);
                 self.switch_to_normal_mode();
             }
@@ -321,6 +336,68 @@ impl Buffer {
                 self.motion(BackwardToCharExclusive(s.chars().nth(1).unwrap() as u8));
             }
 
+            (Visual, "y") => {
+                self.command(CopySelection);
+                for cursor in &mut self.cursors {
+                    cursor.position = min(cursor.anchor, cursor.position);
+                }
+                self.switch_to_normal_mode();
+            }
+            (VisualLine, "y") => {
+                self.motion(ExtendSelection);
+                self.command(CopySelection);
+                for cursor in &mut self.cursors {
+                    cursor.position = min(cursor.anchor, cursor.position);
+                }
+                self.switch_to_normal_mode();
+            }
+
+            (Visual, "p") => {
+                self.push_undo_state();
+                self.command(CutSelection);
+                self.motion(Backward(1));
+                self.command(PasteSelection);
+                self.switch_to_normal_mode();
+            }
+            (Visual, "P") => {
+                self.push_undo_state();
+                self.command(CutSelection);
+                self.motion(Backward(1));
+                self.command(PasteCursorSelection);
+                self.switch_to_normal_mode();
+            }
+
+            (VisualLine, "p") => {
+                self.push_undo_state();
+                self.motion(ExtendSelection);
+                self.command(CutSelection);
+                self.motion(Backward(1));
+                self.command(PasteSelection);
+                self.switch_to_normal_mode();
+            }
+            (VisualLine, "P") => {
+                self.push_undo_state();
+                self.motion(ExtendSelection);
+                self.command(CutSelection);
+                self.motion(Backward(1));
+                self.command(PasteCursorSelection);
+                self.switch_to_normal_mode();
+            }
+
+            (Normal, "yy") => {
+                self.switch_to_visual_mode();
+                self.command(CopyLine);
+                self.switch_to_normal_mode();
+            }
+            (Normal, "p") => {
+                self.push_undo_state();
+                self.command(PasteSelection);
+            }
+            (Normal, "P") => {
+                self.push_undo_state();
+                self.command(PasteCursorSelection);
+            }
+
             (Normal | Visual | VisualLine, ">") => {
                 self.push_undo_state();
                 self.command(IndentLine);
@@ -336,6 +413,7 @@ impl Buffer {
                 self.push_undo_state();
                 self.switch_to_visual_mode();
                 self.motion(ExtendSelectionInside(c));
+                self.command(CopySelection);
                 self.command(CutSelection);
                 self.switch_to_insert_mode();
             }
@@ -344,6 +422,7 @@ impl Buffer {
                 self.push_undo_state();
                 self.switch_to_visual_mode();
                 self.motion(ExtendSelectionInside(c));
+                self.command(CopySelection);
                 self.command(CutSelection);
                 self.switch_to_normal_mode();
             }
@@ -353,6 +432,7 @@ impl Buffer {
                 self.push_undo_state();
                 self.switch_to_visual_mode();
                 self.motion(ForwardToCharExclusive(c));
+                self.command(CopySelection);
                 self.command(CutSelection);
                 self.switch_to_insert_mode();
             }
@@ -361,6 +441,7 @@ impl Buffer {
                 self.push_undo_state();
                 self.switch_to_visual_mode();
                 self.motion(ForwardToCharExclusive(c));
+                self.command(CopySelection);
                 self.command(CutSelection);
                 self.switch_to_normal_mode();
             }
@@ -369,6 +450,7 @@ impl Buffer {
                 self.push_undo_state();
                 self.switch_to_visual_mode();
                 self.motion(BackwardToCharExclusive(c));
+                self.command(CopySelection);
                 self.command(CutSelection);
                 self.switch_to_insert_mode();
             }
@@ -377,6 +459,7 @@ impl Buffer {
                 self.push_undo_state();
                 self.switch_to_visual_mode();
                 self.motion(BackwardToCharExclusive(c));
+                self.command(CopySelection);
                 self.command(CutSelection);
                 self.switch_to_normal_mode();
             }
@@ -387,24 +470,29 @@ impl Buffer {
 
             (Normal, "x") => {
                 self.push_undo_state();
+                self.command(CopySelection);
                 self.command(CutSelection);
             }
             (Visual, "x") => {
                 self.push_undo_state();
+                self.command(CopySelection);
                 self.command(CutSelection);
             }
             (VisualLine, "x") => {
                 self.push_undo_state();
+                self.command(CopySelection);
                 self.command(CutLineSelection);
             }
 
             (Visual, "d") => {
                 self.push_undo_state();
+                self.command(CopySelection);
                 self.command(CutSelection);
                 self.switch_to_normal_mode();
             }
             (VisualLine, "d") => {
                 self.push_undo_state();
+                self.command(CopySelection);
                 self.command(CutLineSelection);
                 self.switch_to_normal_mode();
             }
@@ -412,6 +500,7 @@ impl Buffer {
             (Normal, "dd") => {
                 self.push_undo_state();
                 self.switch_to_visual_mode();
+                self.command(CopySelection);
                 self.command(CutLineSelection);
                 self.switch_to_normal_mode();
             }
@@ -420,6 +509,7 @@ impl Buffer {
                 self.switch_to_visual_mode();
                 self.motion(ToEndOfLine);
                 self.motion(Backward(1));
+                self.command(CopySelection);
                 self.command(CutSelection);
                 self.switch_to_normal_mode();
             }
@@ -1071,6 +1161,66 @@ impl Buffer {
 
                 self.lsp_change(content_changes)
             }
+            CopySelection => {
+                let mut selection: Vec<u8> = vec![];
+                for cursor in &mut self.cursors {
+                    cursor.save_selection_to_clipboard(&self.piece_table);
+                    selection.extend(cursor.get_selection(&self.piece_table));
+                    selection.push(b'\n');
+                }
+                self.platform_resources.set_clipboard(&selection);
+            }
+            CopyLine => {
+                // Save positions
+                let mut cursor_positions = vec![];
+                for cursor in &self.cursors {
+                    cursor_positions.push((cursor.anchor, cursor.position));
+                }
+
+                self.motion(ExtendSelection);
+                self.command(CopySelection);
+
+                // Restore positions
+                for (i, cursor) in self.cursors.iter_mut().enumerate() {
+                    let (anchor, position) = cursor_positions[i];
+                    cursor.anchor = anchor;
+                    cursor.position = position;
+                }
+            }
+            PasteSelection => {
+                for i in 0..self.cursors.len() {
+                    let text = self.platform_resources.get_clipboard();
+                    let num_chars = self.piece_table.num_chars();
+                    let (start, count) = if text.last().is_some_and(|c| *c == b'\n') {
+                        (
+                            self.piece_table
+                                .line_at_char(self.cursors[i].position)
+                                .and_then(|line| Some(min(line.end + 1, num_chars)))
+                                .unwrap_or(num_chars),
+                            text.len() - text.as_bstr().trim_ascii_start().len(),
+                        )
+                    } else {
+                        (min(self.cursors[i].position + 1, num_chars), text.len())
+                    };
+
+                    let changes = self.insert_chars(start, &text);
+                    self.lsp_change(vec![changes]);
+                    cursors_insert_rebalance(&mut self.cursors, start, text.len());
+                    self.cursors[i].position = start + count;
+                }
+            }
+            PasteCursorSelection => {
+                for i in 0..self.cursors.len() {
+                    let start = min(self.cursors[i].position + 1, self.piece_table.num_chars());
+                    let text = self.cursors[i].clipboard;
+                    let size = self.cursors[i].clipboard_size;
+
+                    let changes = self.insert_chars(start, &text[0..size]);
+                    self.lsp_change(vec![changes]);
+                    cursors_insert_rebalance(&mut self.cursors, start, size);
+                    self.cursors[i].position += size;
+                }
+            }
         }
 
         for cursor in &mut self.cursors {
@@ -1192,6 +1342,7 @@ impl Buffer {
             cursor.reset_completion(&mut self.language_server);
             cursor.reset_signature_help(&mut self.language_server);
             cursor.reset_anchor();
+            cursor.unstick_col(&self.piece_table);
         }
     }
 
@@ -1388,12 +1539,12 @@ fn is_prefix_of_command(str: &str, mode: BufferMode) -> bool {
     }
 }
 
-const NORMAL_MODE_COMMANDS: [&str; 20] = [
+const NORMAL_MODE_COMMANDS: [&str; 23] = [
     "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "dd", "D", "J", "K", "v", "V", "u",
-    ">", "<",
+    ">", "<", "p", "P", "yy",
 ];
-const VISUAL_MODE_COMMANDS: [&str; 14] = [
-    "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "d", ">", "<",
+const VISUAL_MODE_COMMANDS: [&str; 17] = [
+    "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "d", ">", "<", "y", "p", "P",
 ];
 
 enum CursorMotion {
@@ -1435,4 +1586,8 @@ enum BufferCommand {
     Redo,
     StartCompletion,
     Complete,
+    CopySelection,
+    CopyLine,
+    PasteSelection,
+    PasteCursorSelection,
 }

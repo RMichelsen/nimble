@@ -11,6 +11,7 @@ use crate::{
     text_utils::{self, CharType},
 };
 
+const MAX_CURSOR_CLIPBOARD_SIZE: usize = 256;
 #[derive(Copy, Clone, Debug)]
 pub struct Cursor {
     pub position: usize,
@@ -18,6 +19,8 @@ pub struct Cursor {
     pub cached_col: usize,
     pub completion_request: Option<CompletionRequest>,
     pub signature_help_request: Option<SignatureHelpRequest>,
+    pub clipboard: [u8; MAX_CURSOR_CLIPBOARD_SIZE],
+    pub clipboard_size: usize,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -79,6 +82,8 @@ impl Cursor {
             cached_col: 0,
             completion_request: None,
             signature_help_request: None,
+            clipboard: [b'\0'; MAX_CURSOR_CLIPBOARD_SIZE],
+            clipboard_size: 0,
         }
     }
 
@@ -93,6 +98,8 @@ impl Cursor {
             cached_col: 0,
             completion_request: None,
             signature_help_request: None,
+            clipboard: [b'\0'; MAX_CURSOR_CLIPBOARD_SIZE],
+            clipboard_size: 0,
         }
     }
 
@@ -385,6 +392,24 @@ impl Cursor {
             self.anchor = start;
             self.position = end;
         }
+    }
+
+    pub fn save_selection_to_clipboard(&mut self, piece_table: &PieceTable) {
+        let start = min(self.position, self.anchor);
+        let end = max(self.position, self.anchor);
+        let size = min(end - start + 1, MAX_CURSOR_CLIPBOARD_SIZE);
+
+        for (i, c) in piece_table.iter_chars_at(start).enumerate().take(size) {
+            self.clipboard[i] = c;
+        }
+        self.clipboard_size = size;
+    }
+
+    pub fn get_selection(&mut self, piece_table: &PieceTable) -> Vec<u8> {
+        let start = min(self.position, self.anchor);
+        let end = max(self.position, self.anchor);
+        let size = end - start + 1;
+        piece_table.iter_chars_at(start).take(size).collect()
     }
 
     pub fn reset_completion(&mut self, language_server: &mut Option<Rc<RefCell<LanguageServer>>>) {

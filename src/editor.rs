@@ -228,7 +228,7 @@ impl Editor {
         }
     }
 
-    pub fn open_file(&mut self, path: &str) {
+    pub fn open_file(&mut self, window: &Window, path: &str) {
         let language_server = {
             if let Some(language) = language_from_path(path) {
                 if !self.language_servers.contains_key(language.identifier) {
@@ -251,7 +251,7 @@ impl Editor {
             self.documents.insert(
                 path.to_string(),
                 Document {
-                    buffer: Buffer::new(path, language_server),
+                    buffer: Buffer::new(window, path, language_server),
                     view: View::new(),
                 },
             );
