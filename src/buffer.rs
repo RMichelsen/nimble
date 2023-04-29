@@ -629,14 +629,18 @@ impl Buffer {
                     let changes = self.insert_chars(start, &[c]);
                     self.lsp_change(vec![changes]);
 
-                    lsp_signature_help(
-                        &mut self.cursors[i],
-                        Some(c),
-                        &mut self.language_server,
-                        &self.piece_table,
-                        &self.uri,
-                        start + 1,
-                    );
+                    // Only show signature help for single cursor
+                    if self.cursors.len() == 1 {
+                        lsp_signature_help(
+                            &mut self.cursors[i],
+                            Some(c),
+                            &mut self.language_server,
+                            &self.piece_table,
+                            &self.uri,
+                            start + 1,
+                        );
+                    }
+
                     lsp_complete(
                         &mut self.cursors[i],
                         Some(c),
@@ -858,7 +862,31 @@ impl Buffer {
                 let mut content_changes = vec![];
 
                 for i in 0..self.cursors.len() {
-                    let start = self.cursors[i].position.saturating_sub(1);
+                    let count = self
+                        .piece_table
+                        .line_at_char(self.cursors[i].position)
+                        .and_then(|line| {
+                            let num = self.cursors[i].position - line.start;
+                            if num > 0
+                                && self
+                                    .piece_table
+                                    .iter_chars_at(line.start)
+                                    .take(num)
+                                    .all(|c| c == b' ')
+                            {
+                                let rem = num % self.piece_table.indent_width;
+                                if rem == 0 {
+                                    Some(self.piece_table.indent_width)
+                                } else {
+                                    Some(rem)
+                                }
+                            } else {
+                                None
+                            }
+                        })
+                        .unwrap_or(1);
+
+                    let start = self.cursors[i].position.saturating_sub(count);
                     let end = self.cursors[i].position;
                     content_changes.push(self.delete_chars(start, end));
                     cursors_delete_rebalance(&mut self.cursors, start, end);
@@ -962,22 +990,28 @@ impl Buffer {
                 self.lsp_reload();
             }
             StartCompletion => {
-                for cursor in &mut self.cursors {
-                    lsp_signature_help(
-                        cursor,
-                        None,
-                        &mut self.language_server,
-                        &self.piece_table,
-                        &self.uri,
-                        cursor.position,
-                    );
+                for i in 0..self.cursors.len() {
+                    let cursor_position = self.cursors[i].position;
+
+                    // Only show signature help for single cursor
+                    if self.cursors.len() == 1 {
+                        lsp_signature_help(
+                            &mut self.cursors[i],
+                            None,
+                            &mut self.language_server,
+                            &self.piece_table,
+                            &self.uri,
+                            cursor_position,
+                        );
+                    }
+
                     lsp_complete(
-                        cursor,
+                        &mut self.cursors[i],
                         None,
                         &mut self.language_server,
                         &self.piece_table,
                         &self.uri,
-                        cursor.position,
+                        cursor_position,
                     );
                 }
             }

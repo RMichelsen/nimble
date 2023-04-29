@@ -108,8 +108,7 @@ impl Cursor {
         let index = piece_table.line_index(self.position);
         if let Some(line) = piece_table.line_at_index(index + 1) {
             let col = piece_table.col_index(self.position);
-            self.position =
-                line.start + min(max(col, self.cached_col), line.length.saturating_sub(1));
+            self.position = line.start + min(max(col, self.cached_col), line.length);
         }
     }
 
@@ -121,8 +120,7 @@ impl Cursor {
 
         if let Some(line) = piece_table.line_at_index(index - 1) {
             let col = piece_table.col_index(self.position);
-            self.position =
-                line.start + min(max(col, self.cached_col), line.length.saturating_sub(1));
+            self.position = line.start + min(max(col, self.cached_col), line.length);
         }
     }
 
@@ -342,9 +340,35 @@ impl Cursor {
             _ => return,
         };
 
+        let mut backward_count = 0;
+        let mut forward_count = 0;
         if let (Some(backward_match), Some(forward_match)) = (
-            self.chars_until_char_rev(piece_table, pair.0),
-            self.chars_until_char(piece_table, pair.1),
+            self.chars_until_pred_rev(piece_table, |c| {
+                if c == pair.1 {
+                    backward_count += 1
+                }
+                if c == pair.0 {
+                    if backward_count > 0 {
+                        backward_count -= 1;
+                    } else {
+                        return true;
+                    }
+                }
+                false
+            }),
+            self.chars_until_pred(piece_table, |c| {
+                if c == pair.0 {
+                    forward_count += 1
+                }
+                if c == pair.1 {
+                    if forward_count > 0 {
+                        forward_count -= 1;
+                    } else {
+                        return true;
+                    }
+                }
+                false
+            }),
         ) {
             let start = self.position - backward_match;
             let end = self.position + forward_match;
@@ -354,17 +378,6 @@ impl Cursor {
                 if piece_table.line_index(start) != line_index
                     || piece_table.line_index(end) != line_index
                 {
-                    return;
-                }
-            }
-
-            if let Some(backward_wrong_match) = self.chars_until_char_rev(piece_table, pair.1) {
-                if backward_wrong_match < backward_match {
-                    return;
-                }
-            }
-            if let Some(forward_wrong_match) = self.chars_until_char(piece_table, pair.0) {
-                if forward_wrong_match < forward_match {
                     return;
                 }
             }

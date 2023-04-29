@@ -20,7 +20,7 @@ use windows::{
                 DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
                 DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_NORMAL,
                 DWRITE_HIT_TEST_METRICS, DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE,
-                DWRITE_WORD_WRAPPING_NO_WRAP,
+                DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP,
             },
             Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
         },
@@ -259,6 +259,28 @@ impl GraphicsContext {
         (text_metrics.width as f64, text_metrics.height as f64)
     }
 
+    pub fn get_wrapping_text_bounding_box(&self, text: &[u8]) -> (f64, f64) {
+        let text_layout = unsafe {
+            self.dwrite_factory
+                .CreateTextLayout(
+                    U16CString::from_str(std::str::from_utf8(text).unwrap())
+                        .unwrap()
+                        .as_slice(),
+                    &self.text_format,
+                    self.window_size.0,
+                    self.window_size.1,
+                )
+                .unwrap()
+        };
+
+        let mut text_metrics = DWRITE_TEXT_METRICS::default();
+        unsafe {
+            text_layout.GetMetrics(&mut text_metrics as *mut _).unwrap();
+        }
+
+        (text_metrics.width as f64, text_metrics.height as f64)
+    }
+
     pub fn draw_text_with_col_offset(
         &self,
         row: usize,
@@ -341,6 +363,20 @@ impl GraphicsContext {
 
     pub fn draw_text_fit_view(&self, view: &View, text: &[u8], effects: &[TextEffect]) {
         self.draw_text_with_col_offset(0, 0, text, effects, view.col_offset)
+    }
+
+    pub fn set_word_wrapping(&self, wrap: bool) {
+        unsafe {
+            if wrap {
+                self.text_format
+                    .SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP)
+                    .unwrap();
+            } else {
+                self.text_format
+                    .SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP)
+                    .unwrap();
+            }
+        }
     }
 }
 

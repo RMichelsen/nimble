@@ -228,13 +228,18 @@ impl Renderer {
                         {
                             match &active_parameter.label {
                                 ParameterLabelType::String(label) => {
-                                    if let Some(start) = active_signature.label.find(label.as_str())
+                                    for (start, _) in
+                                        active_signature.label.match_indices(label.as_str())
                                     {
-                                        effects.push(TextEffect {
-                                            kind: ForegroundColor(KEYWORD_COLOR),
-                                            start,
-                                            length: label.len(),
-                                        });
+                                        if !active_signature.label.as_bytes()[start + label.len()]
+                                            .is_ascii_alphanumeric()
+                                        {
+                                            effects.push(TextEffect {
+                                                kind: ForegroundColor(KEYWORD_COLOR),
+                                                start,
+                                                length: label.len(),
+                                            });
+                                        }
                                     }
                                 }
                                 ParameterLabelType::Offsets(start, end) => {
@@ -248,19 +253,31 @@ impl Renderer {
                         }
                     }
 
+                    self.context.set_word_wrapping(true);
+
+                    let font_size = self.get_font_size();
+                    let (width, height) = self
+                        .context
+                        .get_wrapping_text_bounding_box(active_signature.label.as_bytes());
+                    let (width, height) = (
+                        (width / font_size.0).round() as usize,
+                        (height / font_size.1).round() as usize,
+                    );
+
                     self.context.fill_cells(
-                        signature_help_view.row,
+                        signature_help_view.row - height.saturating_sub(1),
                         signature_help_view.col,
-                        (active_signature.label.len(), 1),
+                        (width, height),
                         HIGHLIGHT_COLOR,
                     );
 
                     self.context.draw_text(
-                        signature_help_view.row,
+                        signature_help_view.row - height.saturating_sub(1),
                         signature_help_view.col,
                         active_signature.label.as_bytes(),
                         &effects,
                     );
+                    self.context.set_word_wrapping(false);
                 }
             },
         );
