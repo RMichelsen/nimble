@@ -1162,11 +1162,16 @@ impl Buffer {
                 self.lsp_change(content_changes)
             }
             CopySelection => {
+                let num_cursors = self.cursors.len();
                 let mut selection: Vec<u8> = vec![];
                 for cursor in &mut self.cursors {
                     cursor.save_selection_to_clipboard(&self.piece_table);
                     selection.extend(cursor.get_selection(&self.piece_table));
-                    selection.push(b'\n');
+
+                    // Insert new lines between the concatenated clipboard content in multi-cursor mode
+                    if num_cursors > 1 {
+                        selection.push(b'\n');
+                    }
                 }
                 self.platform_resources.set_clipboard(&selection);
             }
