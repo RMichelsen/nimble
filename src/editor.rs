@@ -34,6 +34,8 @@ impl Editor {
     }
 
     pub fn update(&mut self) -> bool {
+        let mut require_redraw = false;
+
         for (identifier, server) in &mut self.language_servers {
             let mut server = server.borrow_mut();
             match server.handle_server_responses() {
@@ -51,7 +53,20 @@ impl Editor {
                                 if let Some(value) = response.value {
                                     server.save_completions(response.id, value);
                                 }
-                                return true;
+                                require_redraw = true;
+                            }
+                            "textDocument/signatureHelp" => {
+                                if let Some(value) = response.value {
+                                    server.save_signature_help(response.id, value);
+                                }
+                                if let Some(document) = &self.active_document {
+                                    self.documents
+                                        .get_mut(document)
+                                        .unwrap()
+                                        .buffer
+                                        .update_signature_helps(&mut server);
+                                }
+                                require_redraw = true;
                             }
                             _ => (),
                         }
@@ -62,7 +77,7 @@ impl Editor {
                                 if let Some(value) = notification.value {
                                     server.save_diagnostics(value);
                                 }
-                                return true;
+                                require_redraw = true;
                             }
                             _ => (),
                         }
@@ -73,7 +88,8 @@ impl Editor {
                 }
             }
         }
-        false
+
+        require_redraw
     }
 
     pub fn render(&mut self) {

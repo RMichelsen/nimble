@@ -12,8 +12,9 @@ use serde_json::Value;
 
 use crate::{
     language_server_types::{
-        ClientCapabilities, CompletionList, InitializeParams, InitializeResult, InitializedParams,
-        Notification, Request, ServerMessage, GeneralClientCapabilities, Diagnostic, PublishDiagnosticParams, 
+        ClientCapabilities, CompletionList, Diagnostic, GeneralClientCapabilities,
+        InitializeParams, InitializeResult, InitializedParams, Notification,
+        PublishDiagnosticParams, Request, ServerMessage, SignatureHelp,
     },
     language_support::Language,
 };
@@ -38,8 +39,10 @@ pub struct LanguageServer {
     initialized: bool,
     terminated: bool,
     pub saved_completions: HashMap<i32, CompletionList>,
+    pub saved_signature_helps: HashMap<i32, SignatureHelp>,
     pub saved_diagnostics: HashMap<String, Vec<Diagnostic>>,
     pub trigger_characters: Vec<u8>,
+    pub signature_help_trigger_characters: Vec<u8>,
 }
 
 impl LanguageServer {
@@ -47,7 +50,7 @@ impl LanguageServer {
         let mut server = Command::new(language.lsp_executable?)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .ok()?;
         let mut stdin = server.stdin.take()?;
@@ -63,7 +66,9 @@ impl LanguageServer {
                 process_id: 0,
                 root_uri: None,
                 capabilities: ClientCapabilities {
-                   general: GeneralClientCapabilities { position_encodings: vec!["utf-8".to_string()] } 
+                    general: GeneralClientCapabilities {
+                        position_encodings: vec!["utf-8".to_string()],
+                    },
                 },
             },
         )
@@ -80,17 +85,17 @@ impl LanguageServer {
             initialized: false,
             terminated: false,
             saved_completions: HashMap::new(),
+            saved_signature_helps: HashMap::new(),
             saved_diagnostics: HashMap::new(),
             trigger_characters: Vec::new(),
+            signature_help_trigger_characters: Vec::new(),
         })
     }
 
     pub fn save_diagnostics(&mut self, value: serde_json::Value) {
         let params = serde_json::from_value::<PublishDiagnosticParams>(value).unwrap();
-        self.saved_diagnostics.insert(
-            params.uri.to_ascii_lowercase(),
-            params.diagnostics
-        );
+        self.saved_diagnostics
+            .insert(params.uri.to_ascii_lowercase(), params.diagnostics);
     }
 
     pub fn save_completions(&mut self, request_id: i32, value: serde_json::Value) {
@@ -98,6 +103,12 @@ impl LanguageServer {
             request_id,
             serde_json::from_value::<CompletionList>(value).unwrap(),
         );
+    }
+
+    pub fn save_signature_help(&mut self, request_id: i32, value: serde_json::Value) {
+        let signature_help = serde_json::from_value::<SignatureHelp>(value).unwrap();
+        self.saved_signature_helps
+            .insert(request_id, signature_help);
     }
 
     pub fn send_request<T: serde::Serialize>(
@@ -127,7 +138,9 @@ impl LanguageServer {
         }
     }
 
-    pub fn handle_server_responses(&mut self) -> Result<(Vec<ServerResponse>, Vec<ServerNotification>), std::io::Error> {
+    pub fn handle_server_responses(
+        &mut self,
+    ) -> Result<(Vec<ServerResponse>, Vec<ServerNotification>), std::io::Error> {
         if self.terminated {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::ConnectionAborted,
@@ -149,12 +162,34 @@ impl LanguageServer {
                                     InitializedParams {},
                                 )?;
 
-                                if let Some(result) = result.clone() 
-                                    && let Ok(result) = serde_json::from_value::<InitializeResult>(result) 
-                                    && let Some(completion_provider) = result.capabilities.completion_provider 
-                                    && let Some(trigger_characters) = completion_provider.trigger_characters {
-                                    for c in trigger_characters {
-                                        self.trigger_characters.push(c.as_bytes()[0]);
+                                if let Some(result) = result.clone() {
+                                    if let Ok(result) =
+                                        serde_json::from_value::<InitializeResult>(result)
+                                    {
+                                        if let Some(completion_provider) =
+                                            result.capabilities.completion_provider
+                                        {
+                                            if let Some(trigger_characters) =
+                                                completion_provider.trigger_characters
+                                            {
+                                                for c in trigger_characters {
+                                                    self.trigger_characters.push(c.as_bytes()[0]);
+                                                }
+                                            }
+                                        }
+
+                                        if let Some(signature_help_provider) =
+                                            result.capabilities.signature_help_provider
+                                        {
+                                            if let Some(trigger_characters) =
+                                                signature_help_provider.trigger_characters
+                                            {
+                                                for c in trigger_characters {
+                                                    self.signature_help_trigger_characters
+                                                        .push(c.as_bytes()[0]);
+                                                }
+                                            }
+                                        }
                                     }
                                 }
 
@@ -174,12 +209,11 @@ impl LanguageServer {
                         }
                         self.requests.remove(&id);
                     }
-                    ServerMessage::Notification { method, params, .. } => {
-                        server_notifications.push(ServerNotification {
+                    ServerMessage::Notification { method, params, .. } => server_notifications
+                        .push(ServerNotification {
                             method,
-                            value: params
-                        })
-                    }
+                            value: params,
+                        }),
                 }
             }
         }

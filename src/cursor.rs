@@ -17,6 +17,7 @@ pub struct Cursor {
     pub anchor: usize,
     pub cached_col: usize,
     pub completion_request: Option<CompletionRequest>,
+    pub signature_help_request: Option<SignatureHelpRequest>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -25,6 +26,14 @@ pub struct CompletionRequest {
     pub position: usize,
     pub selection_index: usize,
     pub selection_view_offset: usize,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct SignatureHelpRequest {
+    pub id: i32,
+    pub next_id: Option<i32>,
+    pub position: usize,
+    pub next_position: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -69,6 +78,7 @@ impl Cursor {
             anchor: position,
             cached_col: 0,
             completion_request: None,
+            signature_help_request: None,
         }
     }
 
@@ -82,6 +92,7 @@ impl Cursor {
             anchor: 0,
             cached_col: 0,
             completion_request: None,
+            signature_help_request: None,
         }
     }
 
@@ -364,12 +375,27 @@ impl Cursor {
     }
 
     pub fn reset_completion(&mut self, language_server: &mut Option<Rc<RefCell<LanguageServer>>>) {
-        if let Some(request) = self.completion_request {
-            if let Some(server) = &language_server {
+        if let Some(server) = &language_server {
+            if let Some(request) = self.completion_request {
                 server.borrow_mut().saved_completions.remove(&request.id);
             }
         }
         self.completion_request = None;
+    }
+
+    pub fn reset_signature_help(
+        &mut self,
+        language_server: &mut Option<Rc<RefCell<LanguageServer>>>,
+    ) {
+        if let Some(server) = &language_server {
+            if let Some(request) = self.signature_help_request {
+                server
+                    .borrow_mut()
+                    .saved_signature_helps
+                    .remove(&request.id);
+            }
+        }
+        self.signature_help_request = None;
     }
 
     pub fn reset_anchor(&mut self) {

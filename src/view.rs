@@ -5,7 +5,7 @@ use winit::dpi::LogicalPosition;
 use crate::{
     buffer::{Buffer, BufferMode},
     cursor::CompletionRequest,
-    language_server_types::{CompletionList, Diagnostic},
+    language_server_types::{CompletionList, Diagnostic, SignatureHelp},
     piece_table::PieceTable,
 };
 
@@ -17,6 +17,11 @@ pub struct CompletionView {
     pub col: usize,
     pub width: usize,
     pub height: usize,
+}
+
+pub struct SignatureHelpView {
+    pub row: usize,
+    pub col: usize,
 }
 
 pub struct View {
@@ -134,6 +139,36 @@ impl View {
         }
     }
 
+    pub fn visible_signature_helps<F>(
+        &self,
+        buffer: &Buffer,
+        num_rows: usize,
+        num_cols: usize,
+        f: F,
+    ) where
+        F: Fn(&SignatureHelp, &SignatureHelpView),
+    {
+        if let Some(server) = &buffer.language_server {
+            for cursor in buffer.cursors.iter() {
+                if let Some(request) = cursor.signature_help_request {
+                    if let Some(signature_help) =
+                        server.borrow().saved_signature_helps.get(&request.id)
+                    {
+                        if let Some(signature_help_view) = self.get_signature_help_view(
+                            &buffer.piece_table,
+                            signature_help,
+                            request.position,
+                            num_rows,
+                            num_cols,
+                        ) {
+                            f(signature_help, &signature_help_view);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub fn visible_text(&self, buffer: &Buffer, num_rows: usize) -> Vec<u8> {
         buffer
             .piece_table
@@ -168,38 +203,45 @@ impl View {
                     diagnostic.range.end.character as usize,
                 );
 
-                if self.pos_in_render_visible_range(start_line, start_col, num_rows, num_cols)
-                    || self.pos_in_render_visible_range(end_line, end_col, num_rows, num_cols)
+                if (buffer.mode == BufferMode::Insert
+                    && buffer.cursors.iter().any(|cursor| {
+                        (start_line..=end_line)
+                            .contains(&buffer.piece_table.line_index(cursor.position))
+                    }))
+                    || (!self
+                        .pos_in_render_visible_range(start_line, start_col, num_rows, num_cols)
+                        && !self.pos_in_render_visible_range(end_line, end_col, num_rows, num_cols))
                 {
-                    if start_line == end_line {
-                        f(
-                            self.absolute_to_view_row(start_line),
-                            self.absolute_to_view_col(start_col),
-                            end_col - start_col + 1,
-                        );
-                    } else {
-                        f(
-                            self.absolute_to_view_row(start_line),
-                            self.absolute_to_view_col(start_col),
-                            buffer.piece_table.line_at_index(start_line).unwrap().length
-                                - start_col
-                                + 1,
-                        );
+                    continue;
+                }
 
-                        for line in start_line + 1..end_line {
-                            f(
-                                self.absolute_to_view_row(line),
-                                self.absolute_to_view_col(0),
-                                buffer.piece_table.line_at_index(line).unwrap().length + 1,
-                            );
-                        }
+                if start_line == end_line {
+                    f(
+                        self.absolute_to_view_row(start_line),
+                        self.absolute_to_view_col(start_col),
+                        end_col - start_col + 1,
+                    );
+                } else {
+                    f(
+                        self.absolute_to_view_row(start_line),
+                        self.absolute_to_view_col(start_col),
+                        buffer.piece_table.line_at_index(start_line).unwrap().length - start_col
+                            + 1,
+                    );
 
+                    for line in start_line + 1..end_line {
                         f(
-                            self.absolute_to_view_row(end_line),
+                            self.absolute_to_view_row(line),
                             self.absolute_to_view_col(0),
-                            end_col + 1,
+                            buffer.piece_table.line_at_index(line).unwrap().length + 1,
                         );
                     }
+
+                    f(
+                        self.absolute_to_view_row(end_line),
+                        self.absolute_to_view_col(0),
+                        end_col + 1,
+                    );
                 }
             }
         }
@@ -222,6 +264,53 @@ impl View {
                 }
             }
         }
+    }
+
+    pub fn get_signature_help_view(
+        &self,
+        piece_table: &PieceTable,
+        signature_help: &SignatureHelp,
+        position: usize,
+        num_rows: usize,
+        num_cols: usize,
+    ) -> Option<SignatureHelpView> {
+        let line = piece_table.line_index(position);
+        let col = piece_table.col_index(position);
+
+        if signature_help.signatures.is_empty()
+            || !self.pos_in_render_visible_range(line, col, num_rows, num_cols)
+        {
+            return None;
+        }
+
+        let row = self.absolute_to_view_row(line);
+        let col = self.absolute_to_view_col(col);
+
+        let available_rows_above = row.saturating_sub(1);
+        let available_rows_below = num_rows.saturating_sub(row + 2);
+
+        // Opposite of completion view (so both can be displayed at the same time)
+        let grow_up = available_rows_below < 5 && available_rows_above > available_rows_below;
+        let row = if grow_up {
+            row + 1
+        } else {
+            row.saturating_sub(1)
+        };
+
+        let content_length = signature_help.signatures
+            [signature_help.active_signature.unwrap_or(0) as usize]
+            .label
+            .len();
+
+        let available_rows_right = num_cols.saturating_sub(col + 1);
+        let move_left = available_rows_right < content_length;
+        let col = if move_left {
+            col.saturating_sub(content_length)
+        } else {
+            col
+        };
+
+        Some(SignatureHelpView { row, col })
     }
 
     pub fn get_completion_view(

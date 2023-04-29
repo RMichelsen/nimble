@@ -6,6 +6,7 @@ use crate::{
     buffer::{Buffer, BufferMode},
     graphics_context::GraphicsContext,
     language_server::LanguageServer,
+    language_server_types::ParameterLabelType,
     text_utils::{comment_highlights, keyword_highlights, string_highlights},
     theme::{
         BACKGROUND_COLOR, CURSOR_COLOR, DIAGNOSTIC_COLOR, HIGHLIGHT_COLOR, KEYWORD_COLOR,
@@ -126,6 +127,25 @@ impl Renderer {
 
         self.context.draw_text_fit_view(view, &text, &effects);
 
+        if let Some(server) = language_server {
+            if let Some(diagnostics) = server
+                .borrow()
+                .saved_diagnostics
+                .get(&buffer.uri.to_ascii_lowercase())
+            {
+                view.visible_diagnostic_lines_iter(
+                    buffer,
+                    diagnostics,
+                    self.num_rows,
+                    self.num_cols,
+                    |row, col, count| {
+                        self.context
+                            .underline_cells(row, col, count, DIAGNOSTIC_COLOR);
+                    },
+                );
+            }
+        }
+
         view.visible_completions(
             buffer,
             self.num_rows,
@@ -188,23 +208,69 @@ impl Renderer {
             },
         );
 
+        view.visible_signature_helps(
+            buffer,
+            self.num_rows,
+            self.num_cols,
+            |signature_help, signature_help_view| {
+                if let Some(active_signature) = signature_help
+                    .signatures
+                    .get(signature_help.active_signature.unwrap_or(0) as usize)
+                {
+                    let active_parameter = active_signature
+                        .active_parameter
+                        .or(signature_help.active_parameter);
+
+                    let mut effects = vec![];
+                    if let Some(parameters) = &active_signature.parameters {
+                        if let Some(active_parameter) =
+                            active_parameter.and_then(|i| parameters.get(i as usize))
+                        {
+                            match &active_parameter.label {
+                                ParameterLabelType::String(label) => {
+                                    if let Some(start) = active_signature.label.find(label.as_str())
+                                    {
+                                        effects.push(TextEffect {
+                                            kind: ForegroundColor(KEYWORD_COLOR),
+                                            start,
+                                            length: label.len(),
+                                        });
+                                    }
+                                }
+                                ParameterLabelType::Offsets(start, end) => {
+                                    effects.push(TextEffect {
+                                        kind: ForegroundColor(KEYWORD_COLOR),
+                                        start: *start as usize,
+                                        length: *end as usize - *start as usize + 1,
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    self.context.fill_cells(
+                        signature_help_view.row,
+                        signature_help_view.col,
+                        (active_signature.label.len(), 1),
+                        HIGHLIGHT_COLOR,
+                    );
+
+                    self.context.draw_text(
+                        signature_help_view.row,
+                        signature_help_view.col,
+                        active_signature.label.as_bytes(),
+                        &effects,
+                    );
+                }
+            },
+        );
+
         if let Some(server) = language_server {
             if let Some(diagnostics) = server
                 .borrow()
                 .saved_diagnostics
                 .get(&buffer.uri.to_ascii_lowercase())
             {
-                view.visible_diagnostic_lines_iter(
-                    buffer,
-                    diagnostics,
-                    self.num_rows,
-                    self.num_cols,
-                    |row, col, count| {
-                        self.context
-                            .underline_cells(row, col, count, DIAGNOSTIC_COLOR);
-                    },
-                );
-
                 if let Some((line, col)) = view.hover {
                     if let Some(diagnostic) = diagnostics.iter().find(|diagnostic| {
                         let (start_line, start_col) = (

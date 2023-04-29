@@ -37,7 +37,7 @@ pub const COMMENT_COLOR: Color = Color {
 };
 
 pub const DIAGNOSTIC_COLOR: Color = Color {
-    r: 0.40,
-    g: 0.20,
-    b: 0.03,
+    r: 0.80,
+    g: 0.36,
+    b: 0.36,
 };

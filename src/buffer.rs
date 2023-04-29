@@ -15,13 +15,13 @@ use VirtualKeyCode::{Back, Delete, Escape, Left, Return, Right, Slash, Space, Ta
 use crate::{
     cursor::{
         cursors_delete_rebalance, cursors_insert_rebalance, cursors_overlapping, CompletionRequest,
-        Cursor,
+        Cursor, SignatureHelpRequest,
     },
     language_server::LanguageServer,
     language_server_types::{
         CompletionParams, DidChangeTextDocumentParams, DidOpenTextDocumentParams, Position, Range,
-        TextDocumentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
-        VersionedTextDocumentIdentifier,
+        SignatureHelpContext, SignatureHelpParams, TextDocumentChangeEvent, TextDocumentIdentifier,
+        TextDocumentItem, VersionedTextDocumentIdentifier,
     },
     language_support::{language_from_path, Language},
     piece_table::{Piece, PieceTable},
@@ -485,6 +485,32 @@ impl Buffer {
         true
     }
 
+    pub fn update_signature_helps(&mut self, server: &mut RefMut<LanguageServer>) {
+        for cursor in &mut self.cursors {
+            if let Some(ref mut request) = cursor.signature_help_request {
+                if request
+                    .next_id
+                    .is_some_and(|id| server.saved_signature_helps.contains_key(&id))
+                {
+                    // If the old signature help was empty, update the position of the signature help
+                    if server
+                        .saved_signature_helps
+                        .get(&request.id)
+                        .is_some_and(|old_signature_help| old_signature_help.signatures.is_empty())
+                    {
+                        request.position = request.next_position.unwrap();
+                    }
+
+                    server.saved_signature_helps.remove(&request.id);
+
+                    request.id = request.next_id.unwrap();
+                    request.next_id = None;
+                    request.next_position = None;
+                }
+            }
+        }
+    }
+
     fn motion(&mut self, motion: CursorMotion) {
         for cursor in &mut self.cursors {
             match motion {
@@ -588,7 +614,7 @@ impl Buffer {
 
                     // Special case for moving over end brackets
                     match c {
-                        b')' | b'}' | b']'
+                        b')' | b'}' | b']' | b'>'
                             if self
                                 .piece_table
                                 .char_at(start)
@@ -602,6 +628,15 @@ impl Buffer {
 
                     let changes = self.insert_chars(start, &[c]);
                     self.lsp_change(vec![changes]);
+
+                    lsp_signature_help(
+                        &mut self.cursors[i],
+                        Some(c),
+                        &mut self.language_server,
+                        &self.piece_table,
+                        &self.uri,
+                        start + 1,
+                    );
                     lsp_complete(
                         &mut self.cursors[i],
                         Some(c),
@@ -615,18 +650,16 @@ impl Buffer {
                 }
 
                 // Special case for inserting brackets
+                // Here we don't call InsertChar(c) because we don't want lsp_completion for the closing bracket
                 match c {
-                    b'(' => {
-                        self.command(InsertChar(b')'));
-                        self.motion(Backward(1));
-                    }
-                    b'{' => {
-                        self.command(InsertChar(b'}'));
-                        self.motion(Backward(1));
-                    }
-                    b'[' => {
-                        self.command(InsertChar(b']'));
-                        self.motion(Backward(1));
+                    b'(' | b'{' | b']' | b'<' => {
+                        for i in 0..self.cursors.len() {
+                            let start = self.cursors[i].position;
+                            let changes =
+                                self.insert_chars(start, &[text_utils::matching_bracket(c)]);
+                            self.lsp_change(vec![changes]);
+                            cursors_insert_rebalance(&mut self.cursors, start, 1);
+                        }
                     }
                     _ => (),
                 }
@@ -636,6 +669,7 @@ impl Buffer {
 
                 for cursor in &mut self.cursors {
                     cursor.reset_completion(&mut self.language_server);
+                    cursor.reset_signature_help(&mut self.language_server);
                 }
 
                 for i in 0..self.cursors.len() {
@@ -929,6 +963,14 @@ impl Buffer {
             }
             StartCompletion => {
                 for cursor in &mut self.cursors {
+                    lsp_signature_help(
+                        cursor,
+                        None,
+                        &mut self.language_server,
+                        &self.piece_table,
+                        &self.uri,
+                        cursor.position,
+                    );
                     lsp_complete(
                         cursor,
                         None,
@@ -1009,14 +1051,16 @@ impl Buffer {
                     .completion_request
                     .is_some_and(|request| request.position > cursor.position)
             {
-                if let Some(server) = &self.language_server {
-                    server
-                        .borrow_mut()
-                        .saved_completions
-                        .remove(&cursor.completion_request.unwrap().id);
-                }
-                cursor.completion_request = None;
+                cursor.reset_completion(&mut self.language_server);
             }
+            if self.mode == Insert
+                && cursor
+                    .signature_help_request
+                    .is_some_and(|request| request.position > cursor.position)
+            {
+                cursor.reset_signature_help(&mut self.language_server);
+            }
+
             if self.mode == Insert || self.mode == Normal {
                 cursor.reset_anchor();
             }
@@ -1112,6 +1156,7 @@ impl Buffer {
             }
 
             cursor.reset_completion(&mut self.language_server);
+            cursor.reset_signature_help(&mut self.language_server);
             cursor.reset_anchor();
         }
     }
@@ -1209,6 +1254,66 @@ fn lsp_complete(
                     selection_index: 0,
                     selection_view_offset: 0,
                 });
+            }
+        }
+    }
+}
+
+fn lsp_signature_help(
+    cursor: &mut Cursor,
+    character: Option<u8>,
+    language_server: &mut Option<Rc<RefCell<LanguageServer>>>,
+    piece_table: &PieceTable,
+    uri: &str,
+    position: usize,
+) {
+    if let Some(server) = &language_server {
+        if character.is_none()
+            || server
+                .borrow()
+                .signature_help_trigger_characters
+                .contains(&character.unwrap())
+        {
+            let (line, col) = (
+                piece_table.line_index(position),
+                piece_table.col_index(position),
+            );
+            let signature_help_params = SignatureHelpParams {
+                text_document: TextDocumentIdentifier {
+                    uri: uri.to_string(),
+                },
+                position: Position {
+                    line: line as u32,
+                    character: col as u32,
+                },
+                context: SignatureHelpContext {
+                    trigger_kind: if character.is_none() { 1 } else { 2 },
+                    trigger_character: character.and_then(|c| Some(c.to_string())),
+                    is_retrigger: cursor.signature_help_request.is_some(),
+                    active_signature_help: cursor.signature_help_request.and_then(|request| {
+                        server
+                            .borrow()
+                            .saved_signature_helps
+                            .get(&request.id)
+                            .cloned()
+                    }),
+                },
+            };
+            if let Some(id) = server
+                .borrow_mut()
+                .send_request("textDocument/signatureHelp", signature_help_params)
+            {
+                if let Some(ref mut request) = cursor.signature_help_request {
+                    request.next_id = Some(id);
+                    request.next_position = Some(position);
+                } else {
+                    cursor.signature_help_request = Some(SignatureHelpRequest {
+                        id,
+                        next_id: None,
+                        position,
+                        next_position: None,
+                    });
+                }
             }
         }
     }

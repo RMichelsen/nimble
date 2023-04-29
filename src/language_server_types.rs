@@ -164,6 +164,53 @@ pub struct DidChangeTextDocumentParams {
     pub content_changes: Vec<TextDocumentChangeEvent>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ParameterLabelType {
+    String(String),
+    Offsets(u32, u32),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParameterInformation {
+    pub label: ParameterLabelType,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignatureInformation {
+    pub label: String,
+    pub parameters: Option<Vec<ParameterInformation>>,
+    pub active_parameter: Option<u32>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignatureHelp {
+    pub signatures: Vec<SignatureInformation>,
+    pub active_signature: Option<u32>,
+    pub active_parameter: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignatureHelpContext {
+    // Invoked = 1, TriggerCharacer = 2, ContentChange = 3
+    pub trigger_kind: i32,
+    pub trigger_character: Option<String>,
+    pub is_retrigger: bool,
+    pub active_signature_help: Option<SignatureHelp>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SignatureHelpParams {
+    pub text_document: TextDocumentIdentifier,
+    pub position: Position,
+    pub context: SignatureHelpContext,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompletionParams {
@@ -208,9 +255,16 @@ pub struct CompletionOptions {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SignatureHelpOptions {
+    pub trigger_characters: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ServerCapabilities {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub completion_provider: Option<CompletionOptions>,
+    pub signature_help_provider: Option<SignatureHelpOptions>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

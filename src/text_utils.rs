@@ -215,3 +215,21 @@ pub fn char_type(c: u8) -> CharType {
         _ => CharType::Punctuation,
     }
 }
+
+pub fn is_closing_bracket(c: u8) -> bool {
+    c == b')' || c == b'}' || c == b']' || c == b'>'
+}
+
+pub fn matching_bracket(c: u8) -> u8 {
+    match c {
+        b'(' => b')',
+        b'{' => b'}',
+        b'[' => b']',
+        b'<' => b'>',
+        b')' => b'(',
+        b'}' => b'{',
+        b']' => b'[',
+        b'>' => b'<',
+        _ => panic!(),
+    }
+}
