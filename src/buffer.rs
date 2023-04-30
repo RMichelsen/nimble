@@ -690,12 +690,10 @@ impl Buffer {
                         let start = self.cursors[i].position;
                         let end = min(self.cursors[i].anchor + 1, num_chars);
                         content_changes.push(self.delete_chars(start, end));
-                        cursors_delete_rebalance(&mut self.cursors, start, end);
                     } else {
                         let start = self.cursors[i].anchor;
                         let end = min(self.cursors[i].position + 1, num_chars);
                         content_changes.push(self.delete_chars(start, end));
-                        cursors_delete_rebalance(&mut self.cursors, start, end);
                         self.cursors[i].position = start;
                     }
                 }
