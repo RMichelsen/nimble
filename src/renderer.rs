@@ -165,13 +165,13 @@ impl Renderer {
 
                 self.context.fill_cells(
                     completion_view.row,
-                    completion_view.col - 1,
+                    completion_view.col.saturating_sub(1),
                     (completion_view.width + 1, completion_view.height),
                     SELECTION_COLOR,
                 );
                 self.context.fill_cells(
                     completion_view.row + selected_item,
-                    completion_view.col - 1,
+                    completion_view.col.saturating_sub(1),
                     (completion_view.width + 1, 1),
                     CURSOR_COLOR,
                 );

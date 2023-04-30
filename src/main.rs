@@ -78,6 +78,11 @@ fn main() {
     let mut double_click_timer = Instant::now();
     let mut hover_timer = Some(Instant::now());
     event_loop.run(move |event, _, control_flow| {
+        // Handle incoming responses, re-render if necessary
+        if editor.handle_lsp_responses() {
+            editor.render();
+        }
+
         match event {
             Event::RedrawRequested(_) => {
                 editor.render();
@@ -199,11 +204,6 @@ fn main() {
                     request_redraw(&window);
                 }
             }
-        }
-
-        // Handle incoming responses, re-render if necessary
-        if editor.handle_lsp_responses() {
-            request_redraw(&window);
         }
     });
 }
