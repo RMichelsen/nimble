@@ -273,6 +273,7 @@ impl Buffer {
                     .last()
                     .is_some_and(|cursor| cursor.completion_request.is_some()) =>
             {
+                self.push_undo_state();
                 self.command(Complete);
             }
             (Insert, Tab) => {
@@ -746,7 +747,7 @@ impl Buffer {
                 // Special case for inserting brackets
                 // Here we don't call InsertChar(c) because we don't want lsp_completion for the closing bracket
                 match c {
-                    b'(' | b'{' | b']' | b'<' => {
+                    b'(' | b'{' | b'[' | b'<' => {
                         for i in 0..self.cursors.len() {
                             let start = self.cursors[i].position;
                             let changes =
@@ -952,6 +953,26 @@ impl Buffer {
                 let mut content_changes = vec![];
 
                 for i in 0..self.cursors.len() {
+                    // Special case for deleting bracket pairs
+                    match (
+                        self.piece_table
+                            .char_at(self.cursors[i].position.saturating_sub(1)),
+                        self.piece_table.char_at(self.cursors[i].position),
+                    ) {
+                        (Some(b'('), Some(b')'))
+                        | (Some(b'{'), Some(b'}'))
+                        | (Some(b'['), Some(b']'))
+                        | (Some(b'<'), Some(b'>')) => {
+                            let start = self.cursors[i].position.saturating_sub(1);
+                            let end = self.cursors[i].position + 1;
+                            content_changes.push(self.delete_chars(start, end));
+                            cursors_delete_rebalance(&mut self.cursors, start, end);
+                            self.cursors[i].position = start;
+                            continue;
+                        }
+                        _ => (),
+                    }
+
                     let count = self
                         .piece_table
                         .line_at_char(self.cursors[i].position)
