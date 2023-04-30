@@ -7,6 +7,7 @@ use std::{
 
 use crate::{
     language_server::LanguageServer,
+    language_server_types::{CompletionItem, CompletionList},
     piece_table::PieceTable,
     text_utils::{self, CharType},
 };
@@ -72,6 +73,37 @@ pub fn cursors_insert_rebalance(cursors: &mut [Cursor], position: usize, count: 
             cursor.anchor += count;
         }
     }
+}
+
+pub fn get_filtered_completions(
+    piece_table: &PieceTable,
+    completion_list: &CompletionList,
+    request: &CompletionRequest,
+    cursor_position: usize,
+) -> Vec<CompletionItem> {
+    let match_string: Vec<u8> = piece_table
+        .iter_chars_at(request.position)
+        .take(cursor_position - request.position)
+        .collect();
+
+    let mut filtered_completions: Vec<CompletionItem> = completion_list
+        .items
+        .iter()
+        .filter(|item| {
+            item.insert_text
+                .as_ref()
+                .unwrap_or(&item.label)
+                .starts_with(unsafe { std::str::from_utf8_unchecked(&match_string) })
+        })
+        .cloned()
+        .collect();
+
+    // If the match string doesn't match anything, show all entries
+    if filtered_completions.is_empty() {
+        filtered_completions = completion_list.items.to_vec();
+    }
+
+    filtered_completions
 }
 
 impl Cursor {
@@ -330,7 +362,7 @@ impl Cursor {
             if let Some(backward_match) =
                 self.chars_until_pred_rev(piece_table, |c| text_utils::char_type(c) != char_type)
             {
-                self.position = self.position - backward_match;
+                self.position -= backward_match;
             }
         }
     }
@@ -419,6 +451,18 @@ impl Cursor {
             }
         }
         self.completion_request = None;
+    }
+
+    pub fn reset_completion_view(
+        &mut self,
+        language_server: &mut Option<Rc<RefCell<LanguageServer>>>,
+    ) {
+        if let Some(server) = &language_server {
+            if let Some(ref mut request) = self.completion_request {
+                request.selection_index = 0;
+                request.selection_view_offset = 0;
+            }
+        }
     }
 
     pub fn reset_signature_help(

@@ -72,14 +72,11 @@ impl Editor {
                         }
                     }
                     for notification in notifications {
-                        match notification.method.as_str() {
-                            "textDocument/publishDiagnostics" => {
-                                if let Some(value) = notification.value {
-                                    server.save_diagnostics(value);
-                                }
-                                require_redraw = true;
+                        if notification.method.as_str() == "textDocument/publishDiagnostics" {
+                            if let Some(value) = notification.value {
+                                server.save_diagnostics(value);
                             }
-                            _ => (),
+                            require_redraw = true;
                         }
                     }
                 }
@@ -158,10 +155,8 @@ impl Editor {
             let (line, col) = document.view.get_line_col(mouse_position, font_size);
             if modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::SHIFT)) {
                 document.buffer.insert_cursor(line, col);
-            } else {
-                if document.buffer.handle_mouse_double_click(line, col) {
-                    return true;
-                }
+            } else if document.buffer.handle_mouse_double_click(line, col) {
+                return true;
             }
         }
         false
@@ -228,7 +223,7 @@ impl Editor {
         }
     }
 
-    pub fn open_file(&mut self, window: &Window, path: &str) {
+    pub fn open_file(&mut self, path: &str, window: &Window) {
         let language_server = {
             if let Some(language) = language_from_path(path) {
                 if !self.language_servers.contains_key(language.identifier) {

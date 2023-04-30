@@ -17,8 +17,8 @@ use VirtualKeyCode::{Back, Delete, Escape, Left, Return, Right, Slash, Space, Ta
 
 use crate::{
     cursor::{
-        cursors_delete_rebalance, cursors_insert_rebalance, cursors_overlapping, CompletionRequest,
-        Cursor, SignatureHelpRequest,
+        cursors_delete_rebalance, cursors_insert_rebalance, cursors_overlapping,
+        get_filtered_completions, CompletionRequest, Cursor, SignatureHelpRequest,
     },
     language_server::LanguageServer,
     language_server_types::{
@@ -29,7 +29,7 @@ use crate::{
     language_support::{language_from_path, Language},
     piece_table::{Piece, PieceTable},
     platform_resources::PlatformResources,
-    text_utils,
+    text_utils::{self, CharType},
     view::View,
 };
 
@@ -223,19 +223,26 @@ impl Buffer {
                 for cursor in &mut self.cursors {
                     if let Some(ref mut request) = cursor.completion_request {
                         if let Some(server) = &self.language_server {
-                            if let Some(completion) =
+                            if let Some(completion_list) =
                                 server.borrow().saved_completions.get(&request.id)
                             {
+                                let filtered_completions = get_filtered_completions(
+                                    &self.piece_table,
+                                    completion_list,
+                                    request,
+                                    cursor.position,
+                                );
+
                                 if let Some(completion_view) = view.get_completion_view(
                                     &self.piece_table,
-                                    completion,
+                                    &filtered_completions,
                                     request.position,
                                     num_rows,
                                     num_cols,
                                 ) {
                                     request.selection_index = min(
                                         request.selection_index + 1,
-                                        completion.items.len().saturating_sub(1),
+                                        filtered_completions.len().saturating_sub(1),
                                     );
 
                                     if request.selection_index
@@ -1104,6 +1111,13 @@ impl Buffer {
                 for i in 0..self.cursors.len() {
                     let cursor_position = self.cursors[i].position;
 
+                    // Start the completion at the start of the current word
+                    let offset = self.cursors[i]
+                        .chars_until_pred_rev(&self.piece_table, |c| {
+                            text_utils::char_type(c) != CharType::Word
+                        })
+                        .unwrap_or(0);
+
                     // Only show signature help for single cursor
                     if self.cursors.len() == 1 {
                         lsp_signature_help(
@@ -1112,7 +1126,7 @@ impl Buffer {
                             &mut self.language_server,
                             &self.piece_table,
                             &self.uri,
-                            cursor_position,
+                            cursor_position.saturating_sub(offset),
                         );
                     }
 
@@ -1122,7 +1136,7 @@ impl Buffer {
                         &mut self.language_server,
                         &self.piece_table,
                         &self.uri,
-                        cursor_position,
+                        cursor_position.saturating_sub(offset),
                     );
                 }
             }
@@ -1132,14 +1146,20 @@ impl Buffer {
                 for i in 0..self.cursors.len() {
                     let cursor_position = self.cursors[i].position;
                     if let Some(ref mut request) = self.cursors[i].completion_request {
-                        let item =
-                            self.language_server.as_ref().and_then(|server| {
-                                server.borrow().saved_completions.get(&request.id).map(
-                                    |completion| {
-                                        completion.items.get(request.selection_index).cloned()
-                                    },
-                                )
-                            });
+                        let item = self.language_server.as_ref().and_then(|server| {
+                            server.borrow().saved_completions.get(&request.id).map(
+                                |completion_list| {
+                                    get_filtered_completions(
+                                        &self.piece_table,
+                                        completion_list,
+                                        request,
+                                        cursor_position,
+                                    )
+                                    .get(request.selection_index)
+                                    .cloned()
+                                },
+                            )
+                        });
                         if let Some(item) = item.flatten() {
                             if let Some(text_edit) = item.text_edit {
                                 let start = self
@@ -1221,7 +1241,7 @@ impl Buffer {
                         (
                             self.piece_table
                                 .line_at_char(self.cursors[i].position)
-                                .and_then(|line| Some(min(line.end + 1, num_chars)))
+                                .map(|line| min(line.end + 1, num_chars))
                                 .unwrap_or(num_chars),
                             text.len() - text.as_bstr().trim_ascii_start().len(),
                         )
@@ -1274,7 +1294,9 @@ impl Buffer {
             if self.mode == Insert || self.mode == Normal {
                 cursor.reset_anchor();
             }
-            cursor.unstick_col(&self.piece_table)
+
+            cursor.unstick_col(&self.piece_table);
+            cursor.reset_completion_view(&mut self.language_server);
         }
     }
 
@@ -1499,7 +1521,7 @@ fn lsp_signature_help(
                 },
                 context: SignatureHelpContext {
                     trigger_kind: if character.is_none() { 1 } else { 2 },
-                    trigger_character: character.and_then(|c| Some(c.to_string())),
+                    trigger_character: character.map(|c| c.to_string()),
                     is_retrigger: cursor.signature_help_request.is_some(),
                     active_signature_help: cursor.signature_help_request.and_then(|request| {
                         server

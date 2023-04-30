@@ -4,8 +4,8 @@ use winit::dpi::LogicalPosition;
 
 use crate::{
     buffer::{Buffer, BufferMode},
-    cursor::CompletionRequest,
-    language_server_types::{CompletionList, Diagnostic, SignatureHelp},
+    cursor::{get_filtered_completions, CompletionRequest},
+    language_server_types::{CompletionItem, Diagnostic, SignatureHelp},
     piece_table::PieceTable,
 };
 
@@ -114,24 +114,33 @@ impl View {
 
     pub fn visible_completions<F>(&self, buffer: &Buffer, num_rows: usize, num_cols: usize, f: F)
     where
-        F: Fn(&CompletionList, &CompletionView, &CompletionRequest),
+        F: Fn(&[CompletionItem], &CompletionView, &CompletionRequest),
     {
         if let Some(server) = &buffer.language_server {
             for cursor in buffer.cursors.iter() {
                 if let Some(request) = cursor.completion_request {
-                    if let Some(completion) = server.borrow().saved_completions.get(&request.id) {
-                        if completion.items.is_empty() {
+                    if let Some(completion_list) =
+                        server.borrow().saved_completions.get(&request.id)
+                    {
+                        if completion_list.items.is_empty() {
                             continue;
                         }
 
+                        let filtered_completions = get_filtered_completions(
+                            &buffer.piece_table,
+                            completion_list,
+                            &request,
+                            cursor.position,
+                        );
+
                         if let Some(completion_view) = self.get_completion_view(
                             &buffer.piece_table,
-                            completion,
+                            &filtered_completions,
                             request.position,
                             num_rows,
                             num_cols,
                         ) {
-                            f(completion, &completion_view, &request);
+                            f(&filtered_completions, &completion_view, &request);
                         }
                     }
                 }
@@ -316,7 +325,7 @@ impl View {
     pub fn get_completion_view(
         &self,
         piece_table: &PieceTable,
-        completion: &CompletionList,
+        completions: &[CompletionItem],
         position: usize,
         num_rows: usize,
         num_cols: usize,
@@ -328,8 +337,7 @@ impl View {
             return None;
         }
 
-        let longest_string = completion
-            .items
+        let longest_string = completions
             .iter()
             .max_by(|x, y| {
                 x.insert_text
@@ -341,8 +349,7 @@ impl View {
             .map(|x| x.insert_text.as_ref().unwrap_or(&x.label).len() + 1)
             .unwrap_or(0);
 
-        let mut num_shown_completion_items =
-            min(MAX_SHOWN_COMPLETION_ITEMS, completion.items.len());
+        let mut num_shown_completion_items = min(MAX_SHOWN_COMPLETION_ITEMS, completions.len());
 
         let row = self.absolute_to_view_row(line);
         let col = self.absolute_to_view_col(col);
@@ -380,8 +387,8 @@ impl View {
         mouse_position: LogicalPosition<f64>,
         font_size: (f64, f64),
     ) -> (usize, usize) {
-        let row = (mouse_position.y / font_size.1 as f64).floor() as usize;
-        let col = (mouse_position.x / font_size.0 as f64).floor() as usize;
+        let row = (mouse_position.y / font_size.1).floor() as usize;
+        let col = (mouse_position.x / font_size.0).floor() as usize;
         (row + self.line_offset, col + self.col_offset)
     }
 

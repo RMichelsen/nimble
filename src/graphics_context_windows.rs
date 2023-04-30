@@ -230,7 +230,7 @@ impl GraphicsContext {
                     left: col_offset - 0.5,
                     top: row_offset + self.font_size.1 * 0.98 - 0.5,
                     right: col_offset + self.font_size.0 * count as f32 + 0.5,
-                    bottom: row_offset + self.font_size.1 as f32 + 0.5,
+                    bottom: row_offset + self.font_size.1 + 0.5,
                 },
                 &brush,
             );

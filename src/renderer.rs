@@ -150,7 +150,7 @@ impl Renderer {
             buffer,
             self.num_rows,
             self.num_cols,
-            |completion, completion_view, request| {
+            |completions, completion_view, request| {
                 let selected_item = request.selection_index - request.selection_view_offset;
 
                 self.context.fill_cells(
@@ -168,8 +168,7 @@ impl Renderer {
 
                 let mut selected_item_start_position = 0;
                 let mut completion_string = String::default();
-                for (i, item) in completion
-                    .items
+                for (i, item) in completions
                     .iter()
                     .enumerate()
                     .skip(request.selection_view_offset)
@@ -192,10 +191,10 @@ impl Renderer {
                     TextEffect {
                         kind: ForegroundColor(KEYWORD_COLOR),
                         start: selected_item_start_position,
-                        length: completion.items[request.selection_index]
+                        length: completions[request.selection_index]
                             .insert_text
                             .as_ref()
-                            .unwrap_or(&completion.items[request.selection_index].label)
+                            .unwrap_or(&completions[request.selection_index].label)
                             .len(),
                     },
                 ];
