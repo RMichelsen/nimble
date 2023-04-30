@@ -78,20 +78,6 @@ fn main() {
     let mut double_click_timer = Instant::now();
     let mut hover_timer = Some(Instant::now());
     event_loop.run(move |event, _, control_flow| {
-        if editor.update() {
-            editor.render();
-        }
-
-        if let Some(mouse_position) = mouse_position {
-            if let Some(timer) = hover_timer {
-                if timer.elapsed() > Duration::from_millis(300) {
-                    editor.handle_mouse_hover(mouse_position.to_logical(window.scale_factor()));
-                    hover_timer = None;
-                    request_redraw(&window);
-                }
-            }
-        }
-
         match event {
             Event::RedrawRequested(_) => {
                 editor.render();
@@ -203,6 +189,21 @@ fn main() {
                 *control_flow = ControlFlow::Exit;
             }
             _ => (),
+        }
+
+        if let Some(mouse_position) = mouse_position {
+            if let Some(timer) = hover_timer {
+                if timer.elapsed() > Duration::from_millis(300) {
+                    editor.handle_mouse_hover(mouse_position.to_logical(window.scale_factor()));
+                    hover_timer = None;
+                    request_redraw(&window);
+                }
+            }
+        }
+
+        // Handle incoming responses, re-render if necessary
+        if editor.handle_lsp_responses() {
+            request_redraw(&window);
         }
     });
 }

@@ -1066,6 +1066,7 @@ impl Buffer {
                 self.lsp_change(content_changes);
             }
             Undo => {
+                self.clear_diagnostics();
                 if let Some(state) = self.undo_stack.pop() {
                     self.redo_stack.push(BufferState {
                         pieces: self.piece_table.pieces.clone(),
@@ -1078,6 +1079,7 @@ impl Buffer {
                 self.lsp_reload();
             }
             Redo => {
+                self.clear_diagnostics();
                 if let Some(state) = self.redo_stack.pop() {
                     self.undo_stack.push(BufferState {
                         pieces: self.piece_table.pieces.clone(),
@@ -1535,6 +1537,15 @@ impl Buffer {
                     diagnostics[i].range.end.character = self.piece_table.col_index(end) as u32;
                 }
             }
+        }
+    }
+
+    fn clear_diagnostics(&mut self) {
+        if let Some(server) = &self.language_server {
+            server
+                .borrow_mut()
+                .saved_diagnostics
+                .remove(&self.uri.to_ascii_lowercase());
         }
     }
 }

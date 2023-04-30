@@ -212,14 +212,8 @@ impl View {
                     diagnostic.range.end.character as usize,
                 );
 
-                if (buffer.mode == BufferMode::Insert
-                    && buffer.cursors.iter().any(|cursor| {
-                        (start_line..=end_line)
-                            .contains(&buffer.piece_table.line_index(cursor.position))
-                    }))
-                    || (!self
-                        .pos_in_render_visible_range(start_line, start_col, num_rows, num_cols)
-                        && !self.pos_in_render_visible_range(end_line, end_col, num_rows, num_cols))
+                if !self.pos_in_render_visible_range(start_line, start_col, num_rows, num_cols)
+                    && !self.pos_in_render_visible_range(end_line, end_col, num_rows, num_cols)
                 {
                     continue;
                 }

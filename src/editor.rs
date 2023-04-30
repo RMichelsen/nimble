@@ -33,12 +33,12 @@ impl Editor {
         }
     }
 
-    pub fn update(&mut self) -> bool {
+    pub fn handle_lsp_responses(&mut self) -> bool {
         let mut require_redraw = false;
 
         for (identifier, server) in &mut self.language_servers {
             let mut server = server.borrow_mut();
-            match server.handle_server_responses() {
+            match server.handle_responses() {
                 Ok((responses, notifications)) => {
                     for response in responses {
                         match response.method {

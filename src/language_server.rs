@@ -138,7 +138,7 @@ impl LanguageServer {
         }
     }
 
-    pub fn handle_server_responses(
+    pub fn handle_responses(
         &mut self,
     ) -> Result<(Vec<ServerResponse>, Vec<ServerNotification>), std::io::Error> {
         if self.terminated {
