@@ -1,43 +1,10 @@
 use crate::renderer::Color;
 
-pub const BACKGROUND_COLOR: Color = Color {
-    r: 0.02,
-    g: 0.14,
-    b: 0.16,
-};
-
-pub const TEXT_COLOR: Color = Color {
-    r: 0.86,
-    g: 0.77,
-    b: 0.64,
-};
-
-pub const KEYWORD_COLOR: Color = Color {
-    r: 1.0,
-    g: 1.0,
-    b: 1.0,
-};
-
-pub const HIGHLIGHT_COLOR: Color = Color {
-    r: 0.21,
-    g: 0.31,
-    b: 0.33,
-};
-
-pub const CURSOR_COLOR: Color = Color {
-    r: 0.4,
-    g: 0.58,
-    b: 0.61,
-};
-
-pub const COMMENT_COLOR: Color = Color {
-    r: 0.55,
-    g: 0.87,
-    b: 0.58,
-};
-
-pub const DIAGNOSTIC_COLOR: Color = Color {
-    r: 0.80,
-    g: 0.36,
-    b: 0.36,
-};
+pub const BACKGROUND_COLOR: Color = Color::from_rgb(5, 36, 40);
+pub const TEXT_COLOR: Color = Color::from_rgb(219, 196, 163);
+pub const KEYWORD_COLOR: Color = Color::from_rgb(140, 214, 222);
+pub const SELECTION_COLOR: Color = Color::from_rgb(53, 79, 84);
+pub const CURSOR_COLOR: Color = Color::from_rgb(102, 148, 156);
+pub const COMMENT_COLOR: Color = Color::from_rgb(140, 222, 148);
+pub const DIAGNOSTIC_COLOR: Color = Color::from_rgb(254, 128, 25);
+pub const HIGHLIGHT_COLOR: Color = Color::from_rgb(255, 255, 255);

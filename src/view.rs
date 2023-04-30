@@ -292,19 +292,8 @@ impl View {
             return None;
         }
 
-        let row = self.absolute_to_view_row(line);
+        let row = self.absolute_to_view_row(line) + 1;
         let col = self.absolute_to_view_col(col);
-
-        let available_rows_above = row.saturating_sub(1);
-        let available_rows_below = num_rows.saturating_sub(row + 2);
-
-        // Opposite of completion view (so both can be displayed at the same time)
-        let grow_up = available_rows_below < 5 && available_rows_above > available_rows_below;
-        let row = if grow_up {
-            row + 1
-        } else {
-            row.saturating_sub(1)
-        };
 
         let content_length = signature_help.signatures
             [signature_help.active_signature.unwrap_or(0) as usize]

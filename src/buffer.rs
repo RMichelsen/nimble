@@ -747,7 +747,6 @@ impl Buffer {
                         &self.uri,
                         start + 1,
                     );
-                    cursors_insert_rebalance(&mut self.cursors, start, 1);
                     self.cursors[i].position += 1;
                 }
 
@@ -760,7 +759,6 @@ impl Buffer {
                             let changes =
                                 self.insert_chars(start, &[text_utils::matching_bracket(c)]);
                             self.lsp_change(vec![changes]);
-                            cursors_insert_rebalance(&mut self.cursors, start, 1);
                         }
                     }
                     _ => (),
@@ -816,7 +814,6 @@ impl Buffer {
                     }
 
                     content_changes.push(self.insert_chars(cursor_position, &chars));
-                    cursors_insert_rebalance(&mut self.cursors, cursor_position, chars.len());
                     self.cursors[i].position += cursor_offset;
                 }
 
@@ -835,11 +832,6 @@ impl Buffer {
                                 line.start,
                                 &vec![b' '; self.piece_table.indent_width],
                             ));
-                            cursors_insert_rebalance(
-                                &mut self.cursors,
-                                line.start,
-                                self.piece_table.indent_width,
-                            );
                         }
                     }
                 }
@@ -864,7 +856,6 @@ impl Buffer {
                             {
                                 let end = line.start + self.piece_table.indent_width;
                                 content_changes.push(self.delete_chars(line.start, end));
-                                cursors_delete_rebalance(&mut self.cursors, line.start, end);
                             }
                         }
                     }
@@ -939,7 +930,6 @@ impl Buffer {
                                         start + length
                                     };
                                     content_changes.push(self.delete_chars(start, end));
-                                    cursors_delete_rebalance(&mut self.cursors, start, end);
                                 } else {
                                     let start = line.start + indent;
                                     content_changes.push(
@@ -947,7 +937,6 @@ impl Buffer {
                                     );
                                     content_changes
                                         .push(self.insert_chars(start + length, &[b' ']));
-                                    cursors_insert_rebalance(&mut self.cursors, start, length + 1);
                                 }
                             }
                         }
@@ -973,7 +962,6 @@ impl Buffer {
                             let start = self.cursors[i].position.saturating_sub(1);
                             let end = self.cursors[i].position + 1;
                             content_changes.push(self.delete_chars(start, end));
-                            cursors_delete_rebalance(&mut self.cursors, start, end);
                             self.cursors[i].position = start;
                             continue;
                         }
@@ -1007,7 +995,6 @@ impl Buffer {
                     let start = self.cursors[i].position.saturating_sub(count);
                     let end = self.cursors[i].position;
                     content_changes.push(self.delete_chars(start, end));
-                    cursors_delete_rebalance(&mut self.cursors, start, end);
                     self.cursors[i].position = start;
                 }
 
@@ -1022,7 +1009,6 @@ impl Buffer {
                             let start = self.cursors[i].position.saturating_sub(1);
                             let end = self.cursors[i].position;
                             content_changes.push(self.delete_chars(start, end));
-                            cursors_delete_rebalance(&mut self.cursors, start, end);
                             self.cursors[i].position = start;
                             continue;
                         }
@@ -1041,7 +1027,6 @@ impl Buffer {
                             let start = max(line.start, self.cursors[i].position - backward_match);
                             let end = self.cursors[i].position;
                             content_changes.push(self.delete_chars(start, end));
-                            cursors_delete_rebalance(&mut self.cursors, start, end);
                             self.cursors[i].position = start;
                         }
                     }
@@ -1059,7 +1044,6 @@ impl Buffer {
                             let end =
                                 min(self.cursors[i].position + 1, self.piece_table.num_chars());
                             content_changes.push(self.delete_chars(start, end));
-                            cursors_delete_rebalance(&mut self.cursors, start, end);
                             self.cursors[i].position = start;
                             continue;
                         }
@@ -1076,7 +1060,6 @@ impl Buffer {
                             let start = self.cursors[i].position;
                             let end = min(line.end, self.cursors[i].position + forward_match);
                             content_changes.push(self.delete_chars(start, end));
-                            cursors_delete_rebalance(&mut self.cursors, start, end);
                             self.cursors[i].position = start;
                         }
                     }
@@ -1183,16 +1166,10 @@ impl Buffer {
                                     + (cursor_position.saturating_sub(request.position));
 
                                 content_changes.push(self.delete_chars(start, end));
-                                cursors_delete_rebalance(&mut self.cursors, start, end);
                                 self.cursors[i].position = start;
 
                                 content_changes
                                     .push(self.insert_chars(start, text_edit.new_text.as_bytes()));
-                                cursors_insert_rebalance(
-                                    &mut self.cursors,
-                                    start,
-                                    text_edit.new_text.len(),
-                                );
                                 self.cursors[i].position += text_edit.new_text.len();
                                 self.cursors[i].reset_completion(&mut self.language_server);
                             }
@@ -1251,7 +1228,6 @@ impl Buffer {
 
                     let changes = self.insert_chars(start, &text);
                     self.lsp_change(vec![changes]);
-                    cursors_insert_rebalance(&mut self.cursors, start, text.len());
                     self.cursors[i].position = start + count;
                 }
             }
@@ -1263,7 +1239,6 @@ impl Buffer {
 
                     let changes = self.insert_chars(start, &text[0..size]);
                     self.lsp_change(vec![changes]);
-                    cursors_insert_rebalance(&mut self.cursors, start, size);
                     self.cursors[i].position += size;
                 }
             }
@@ -1301,6 +1276,7 @@ impl Buffer {
     }
 
     fn delete_chars(&mut self, start: usize, end: usize) -> TextDocumentChangeEvent {
+        let old_diagnostic_positions = self.diagnostic_positions();
         let (line1, col1) = (
             self.piece_table.line_index(start),
             self.piece_table.col_index(start),
@@ -1310,6 +1286,7 @@ impl Buffer {
             self.piece_table.col_index(end),
         );
         self.piece_table.delete(start, end);
+        self.delete_rebalance(start, end, &old_diagnostic_positions);
         TextDocumentChangeEvent {
             range: Some(Range {
                 start: Position {
@@ -1326,11 +1303,13 @@ impl Buffer {
     }
 
     fn insert_chars(&mut self, start: usize, text: &[u8]) -> TextDocumentChangeEvent {
+        let old_diagnostic_positions = self.diagnostic_positions();
         self.piece_table.insert(start, text);
         let (line, col) = (
             self.piece_table.line_index(start),
             self.piece_table.col_index(start),
         );
+        self.insert_rebalance(start, text.len(), &old_diagnostic_positions);
         TextDocumentChangeEvent {
             range: Some(Range {
                 start: Position {
@@ -1445,6 +1424,119 @@ impl Buffer {
                 .borrow_mut()
                 .send_notification("textDocument/didChange", change_params);
             self.version += 1;
+        }
+    }
+
+    fn insert_rebalance(
+        &mut self,
+        position: usize,
+        count: usize,
+        old_diagnostic_positions: &Option<Vec<(usize, usize)>>,
+    ) {
+        cursors_insert_rebalance(&mut self.cursors, position, count);
+        if let Some(positions) = old_diagnostic_positions {
+            self.diagnostics_insert_rebalance(position, count, positions);
+        }
+    }
+
+    fn delete_rebalance(
+        &mut self,
+        position: usize,
+        end: usize,
+        old_diagnostic_positions: &Option<Vec<(usize, usize)>>,
+    ) {
+        cursors_delete_rebalance(&mut self.cursors, position, end);
+        if let Some(positions) = old_diagnostic_positions {
+            self.diagnostics_delete_rebalance(position, end, positions);
+        }
+    }
+
+    fn diagnostic_positions(&self) -> Option<Vec<(usize, usize)>> {
+        if let Some(server) = &self.language_server {
+            if let Some(diagnostics) = server
+                .borrow()
+                .saved_diagnostics
+                .get(&self.uri.to_ascii_lowercase())
+            {
+                let mut positions = vec![];
+                for diagnostic in diagnostics {
+                    if let (Some(start), Some(end)) = (
+                        self.piece_table.char_index_from_line_col(
+                            diagnostic.range.start.line as usize,
+                            diagnostic.range.start.character as usize,
+                        ),
+                        self.piece_table.char_index_from_line_col(
+                            diagnostic.range.end.line as usize,
+                            diagnostic.range.end.character as usize,
+                        ),
+                    ) {
+                        positions.push((start, end));
+                    }
+                }
+                if !positions.is_empty() {
+                    return Some(positions);
+                }
+            }
+        }
+        None
+    }
+
+    fn diagnostics_insert_rebalance(
+        &mut self,
+        position: usize,
+        count: usize,
+        old_positions: &[(usize, usize)],
+    ) {
+        if let Some(server) = &self.language_server {
+            if let Some(diagnostics) = server
+                .borrow_mut()
+                .saved_diagnostics
+                .get_mut(&self.uri.to_ascii_lowercase())
+            {
+                for i in 0..diagnostics.len() {
+                    let (mut start, mut end) = old_positions[i];
+                    if start > position {
+                        start += count;
+                    }
+                    if end > position {
+                        end += count;
+                    }
+                    diagnostics[i].range.start.line = self.piece_table.line_index(start) as u32;
+                    diagnostics[i].range.start.character = self.piece_table.col_index(start) as u32;
+                    diagnostics[i].range.end.line = self.piece_table.line_index(end) as u32;
+                    diagnostics[i].range.end.character = self.piece_table.col_index(end) as u32;
+                }
+            }
+        }
+    }
+
+    fn diagnostics_delete_rebalance(
+        &mut self,
+        position: usize,
+        end: usize,
+        old_positions: &[(usize, usize)],
+    ) {
+        let count = end - position;
+        if let Some(server) = &self.language_server {
+            if let Some(diagnostics) = server
+                .borrow_mut()
+                .saved_diagnostics
+                .get_mut(&self.uri.to_ascii_lowercase())
+            {
+                for i in 0..diagnostics.len() {
+                    let (mut start, mut end) = old_positions[i];
+                    if start > position {
+                        start = start.saturating_sub(count);
+                    }
+                    if end > position {
+                        end = end.saturating_sub(count);
+                    }
+                    diagnostics[i].range.start.line = self.piece_table.line_index(start) as u32;
+                    diagnostics[i].range.start.character = self.piece_table.col_index(start) as u32;
+                    diagnostics[i].range.end.line = self.piece_table.line_index(end) as u32;
+                    diagnostics[i].range.end.character = self.piece_table.col_index(end) as u32;
+                }
+            }
         }
     }
 }

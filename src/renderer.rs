@@ -9,7 +9,7 @@ use crate::{
     language_server_types::ParameterLabelType,
     text_utils::{comment_highlights, keyword_highlights, string_highlights},
     theme::{
-        BACKGROUND_COLOR, CURSOR_COLOR, DIAGNOSTIC_COLOR, HIGHLIGHT_COLOR, KEYWORD_COLOR,
+        BACKGROUND_COLOR, CURSOR_COLOR, DIAGNOSTIC_COLOR, HIGHLIGHT_COLOR, SELECTION_COLOR,
         TEXT_COLOR,
     },
     view::View,
@@ -32,6 +32,16 @@ pub struct Color {
     pub r: f32,
     pub g: f32,
     pub b: f32,
+}
+
+impl Color {
+    pub const fn from_rgb(r: u8, g: u8, b: u8) -> Self {
+        Self {
+            r: r as f32 / 255.0,
+            g: g as f32 / 255.0,
+            b: b as f32 / 255.0,
+        }
+    }
 }
 
 pub struct Renderer {
@@ -85,7 +95,7 @@ impl Renderer {
 
         if buffer.mode != BufferMode::Insert {
             view.visible_cursors_iter(buffer, self.num_rows, self.num_cols, |row, col, num| {
-                self.context.fill_cells(row, col, (num, 1), HIGHLIGHT_COLOR);
+                self.context.fill_cells(row, col, (num, 1), SELECTION_COLOR);
             });
         }
 
@@ -157,7 +167,7 @@ impl Renderer {
                     completion_view.row,
                     completion_view.col - 1,
                     (completion_view.width + 1, completion_view.height),
-                    HIGHLIGHT_COLOR,
+                    SELECTION_COLOR,
                 );
                 self.context.fill_cells(
                     completion_view.row + selected_item,
@@ -189,7 +199,7 @@ impl Renderer {
                         length: completion_string.len(),
                     },
                     TextEffect {
-                        kind: ForegroundColor(KEYWORD_COLOR),
+                        kind: ForegroundColor(HIGHLIGHT_COLOR),
                         start: selected_item_start_position,
                         length: completions[request.selection_index]
                             .insert_text
@@ -198,6 +208,7 @@ impl Renderer {
                             .len(),
                     },
                 ];
+
                 self.context.draw_text(
                     completion_view.row,
                     completion_view.col,
@@ -234,7 +245,7 @@ impl Renderer {
                                             .is_ascii_alphanumeric()
                                         {
                                             effects.push(TextEffect {
-                                                kind: ForegroundColor(KEYWORD_COLOR),
+                                                kind: ForegroundColor(HIGHLIGHT_COLOR),
                                                 start,
                                                 length: label.len(),
                                             });
@@ -243,7 +254,7 @@ impl Renderer {
                                 }
                                 ParameterLabelType::Offsets(start, end) => {
                                     effects.push(TextEffect {
-                                        kind: ForegroundColor(KEYWORD_COLOR),
+                                        kind: ForegroundColor(HIGHLIGHT_COLOR),
                                         start: *start as usize,
                                         length: *end as usize - *start as usize + 1,
                                     });
@@ -252,31 +263,15 @@ impl Renderer {
                         }
                     }
 
-                    self.context.set_word_wrapping(true);
-
-                    let font_size = self.get_font_size();
-                    let (width, height) = self
-                        .context
-                        .get_wrapping_text_bounding_box(active_signature.label.as_bytes());
-                    let (width, height) = (
-                        (width / font_size.0).round() as usize,
-                        (height / font_size.1).round() as usize,
-                    );
-
-                    self.context.fill_cells(
-                        signature_help_view.row - height.saturating_sub(1),
+                    self.context.draw_popup(
+                        signature_help_view.row,
                         signature_help_view.col,
-                        (width, height),
-                        HIGHLIGHT_COLOR,
-                    );
-
-                    self.context.draw_text(
-                        signature_help_view.row - height.saturating_sub(1),
-                        signature_help_view.col,
+                        true,
                         active_signature.label.as_bytes(),
-                        &effects,
+                        SELECTION_COLOR,
+                        BACKGROUND_COLOR,
+                        Some(&effects),
                     );
-                    self.context.set_word_wrapping(false);
                 }
             },
         );
@@ -297,31 +292,34 @@ impl Renderer {
                             diagnostic.range.end.line as usize,
                             diagnostic.range.end.character as usize,
                         );
-                        (start_line == line && (start_col..=end_col).contains(&col))
-                            || (end_line == line && (start_col..=end_col).contains(&col))
-                            || (diagnostic.range.start.line as usize
-                                ..diagnostic.range.end.line as usize)
-                                .contains(&line)
+
+                        let diagnostic_on_cursor_line = buffer.mode == BufferMode::Insert
+                            && buffer.cursors.iter().any(|cursor| {
+                                (start_line..=end_line)
+                                    .contains(&buffer.piece_table.line_index(cursor.position))
+                            });
+
+                        !diagnostic_on_cursor_line
+                            && ((start_line == line && (start_col..=end_col).contains(&col))
+                                || (end_line == line && (start_col..=end_col).contains(&col))
+                                || (diagnostic.range.start.line as usize
+                                    ..diagnostic.range.end.line as usize)
+                                    .contains(&line))
                     }) {
                         let (row, col) = (
                             view.absolute_to_view_row(line) + 1,
                             view.absolute_to_view_col(col),
                         );
-                        let (width, height) = self
-                            .context
-                            .get_text_bounding_box(diagnostic.message.as_bytes());
-                        let font_size = self.get_font_size();
-                        self.context.fill_cells(
+
+                        self.context.draw_popup(
                             row,
                             col,
-                            (
-                                (width / font_size.0).round() as usize,
-                                (height / font_size.1).round() as usize,
-                            ),
-                            HIGHLIGHT_COLOR,
+                            false,
+                            diagnostic.message.as_bytes(),
+                            SELECTION_COLOR,
+                            BACKGROUND_COLOR,
+                            None,
                         );
-                        self.context
-                            .draw_text(row, col, diagnostic.message.as_bytes(), &[])
                     }
                 }
             }
