@@ -1484,6 +1484,8 @@ impl Buffer {
                         ),
                     ) {
                         positions.push((start, end));
+                    } else {
+                        positions.push((0, 0));
                     }
                 }
                 if !positions.is_empty() {
