@@ -27,9 +27,12 @@ pub struct Cursor {
 #[derive(Copy, Clone, Debug)]
 pub struct CompletionRequest {
     pub id: i32,
+    pub next_id: Option<i32>,
     pub position: usize,
+    pub next_position: Option<usize>,
     pub selection_index: usize,
     pub selection_view_offset: usize,
+    pub manually_triggered: bool,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -81,9 +84,22 @@ pub fn get_filtered_completions(
     request: &CompletionRequest,
     cursor_position: usize,
 ) -> Vec<CompletionItem> {
+    // Filter from start of word if manually triggered or
+    let request_position = if request.manually_triggered {
+        cursor_position.saturating_sub(
+            piece_table
+                .iter_chars_at_rev(cursor_position.saturating_sub(1))
+                .position(|c| text_utils::char_type(c) != CharType::Word)
+                .unwrap_or(0),
+        )
+    // Filter from start of request if triggered by a trigger character
+    } else {
+        request.position
+    };
+
     let match_string: Vec<u8> = piece_table
-        .iter_chars_at(request.position)
-        .take(cursor_position - request.position)
+        .iter_chars_at(request_position)
+        .take(cursor_position - request_position)
         .collect();
 
     let mut filtered_completions: Vec<CompletionItem> = completion_list

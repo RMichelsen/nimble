@@ -240,6 +240,7 @@ pub struct CompletionItem {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompletionList {
+    pub is_incomplete: bool,
     pub items: Vec<CompletionItem>,
 }
 

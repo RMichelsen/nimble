@@ -53,6 +53,13 @@ impl Editor {
                                 if let Some(value) = response.value {
                                     server.save_completions(response.id, value);
                                 }
+                                if let Some(document) = &self.active_document {
+                                    self.documents
+                                        .get_mut(document)
+                                        .unwrap()
+                                        .buffer
+                                        .update_completions(&mut server);
+                                }
                                 require_redraw = true;
                             }
                             "textDocument/signatureHelp" => {

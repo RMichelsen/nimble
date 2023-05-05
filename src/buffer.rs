@@ -29,7 +29,7 @@ use crate::{
     language_support::{language_from_path, Language},
     piece_table::{Piece, PieceTable},
     platform_resources::PlatformResources,
-    text_utils::{self, CharType},
+    text_utils,
     view::View,
 };
 
@@ -587,6 +587,24 @@ impl Buffer {
         true
     }
 
+    pub fn update_completions(&mut self, server: &mut RefMut<LanguageServer>) {
+        for cursor in &mut self.cursors {
+            if let Some(ref mut request) = cursor.completion_request {
+                if request
+                    .next_id
+                    .is_some_and(|id| server.saved_completions.contains_key(&id))
+                {
+                    server.saved_completions.remove(&request.id);
+
+                    request.id = request.next_id.unwrap();
+                    request.position = request.next_position.unwrap();
+                    request.next_id = None;
+                    request.next_position = None;
+                }
+            }
+        }
+    }
+
     pub fn update_signature_helps(&mut self, server: &mut RefMut<LanguageServer>) {
         for cursor in &mut self.cursors {
             if let Some(ref mut request) = cursor.signature_help_request {
@@ -1094,12 +1112,7 @@ impl Buffer {
                 for i in 0..self.cursors.len() {
                     let cursor_position = self.cursors[i].position;
 
-                    // Start the completion at the start of the current word
-                    let offset = self.cursors[i]
-                        .chars_until_pred_rev(&self.piece_table, |c| {
-                            text_utils::char_type(c) != CharType::Word
-                        })
-                        .unwrap_or(0);
+                    let offset = 0;
 
                     // Only show signature help for single cursor
                     if self.cursors.len() == 1 {
@@ -1559,34 +1572,53 @@ fn lsp_complete(
     position: usize,
 ) {
     if let Some(server) = &language_server {
-        if character.is_none()
+        let (line, col) = (
+            piece_table.line_index(position),
+            piece_table.col_index(position),
+        );
+        let completion_params = CompletionParams {
+            text_document: TextDocumentIdentifier {
+                uri: uri.to_string(),
+            },
+            position: Position {
+                line: line as u32,
+                character: col as u32,
+            },
+        };
+
+        if let Some(ref mut request) = cursor.completion_request {
+            if server
+                .borrow()
+                .saved_completions
+                .get(&request.id)
+                .is_some_and(|request| request.is_incomplete)
+            {
+                if let Some(id) = server
+                    .borrow_mut()
+                    .send_request("textDocument/completion", completion_params)
+                {
+                    request.next_id = Some(id);
+                    request.next_position = Some(position);
+                }
+            }
+        } else if character.is_none()
             || server
                 .borrow()
                 .trigger_characters
                 .contains(&character.unwrap())
         {
-            let (line, col) = (
-                piece_table.line_index(position),
-                piece_table.col_index(position),
-            );
-            let completion_params = CompletionParams {
-                text_document: TextDocumentIdentifier {
-                    uri: uri.to_string(),
-                },
-                position: Position {
-                    line: line as u32,
-                    character: col as u32,
-                },
-            };
             if let Some(id) = server
                 .borrow_mut()
                 .send_request("textDocument/completion", completion_params)
             {
                 cursor.completion_request = Some(CompletionRequest {
                     id,
+                    next_id: None,
                     position,
+                    next_position: None,
                     selection_index: 0,
                     selection_view_offset: 0,
+                    manually_triggered: character.is_none(),
                 });
             }
         }

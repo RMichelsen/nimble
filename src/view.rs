@@ -7,6 +7,7 @@ use crate::{
     cursor::{get_filtered_completions, CompletionRequest},
     language_server_types::{CompletionItem, Diagnostic, SignatureHelp},
     piece_table::PieceTable,
+    text_utils::{self, CharType},
 };
 
 const SCROLL_LINES_PER_ROLL: isize = 3;
@@ -133,10 +134,24 @@ impl View {
                             cursor.position,
                         );
 
+                        // Filter from start of word if manually triggered or
+                        let request_position = if request.manually_triggered {
+                            cursor.position.saturating_sub(
+                                cursor
+                                    .chars_until_pred_rev(&buffer.piece_table, |c| {
+                                        text_utils::char_type(c) != CharType::Word
+                                    })
+                                    .unwrap_or(0),
+                            )
+                        // Filter from start of request if triggered by a trigger character
+                        } else {
+                            request.position
+                        };
+
                         if let Some(completion_view) = self.get_completion_view(
                             &buffer.piece_table,
                             &filtered_completions,
-                            request.position,
+                            request_position,
                             num_rows,
                             num_cols,
                         ) {
