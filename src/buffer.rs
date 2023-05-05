@@ -206,8 +206,9 @@ impl Buffer {
                 self.switch_to_normal_mode();
             }
             (VisualLine, Delete) => {
+                self.motion(ExtendSelection);
                 self.command(CopySelection);
-                self.command(CutLineSelection);
+                self.command(CutSelection);
                 self.switch_to_normal_mode();
             }
             (Insert, Delete) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
@@ -488,8 +489,9 @@ impl Buffer {
             }
             (VisualLine, "x") => {
                 self.push_undo_state();
+                self.motion(ExtendSelection);
                 self.command(CopySelection);
-                self.command(CutLineSelection);
+                self.command(CutSelection);
             }
 
             (Visual, "d") => {
@@ -500,16 +502,18 @@ impl Buffer {
             }
             (VisualLine, "d") => {
                 self.push_undo_state();
+                self.motion(ExtendSelection);
                 self.command(CopySelection);
-                self.command(CutLineSelection);
+                self.command(CutSelection);
                 self.switch_to_normal_mode();
             }
 
             (Normal, "dd") => {
                 self.push_undo_state();
                 self.switch_to_visual_mode();
+                self.motion(ExtendSelection);
                 self.command(CopySelection);
-                self.command(CutLineSelection);
+                self.command(CutSelection);
                 self.switch_to_normal_mode();
             }
             (Normal, "D") => {
@@ -699,10 +703,6 @@ impl Buffer {
                 }
 
                 self.lsp_change(content_changes);
-            }
-            CutLineSelection => {
-                self.motion(ExtendSelection);
-                self.command(CutSelection);
             }
             InsertChar(c) => {
                 for i in 0..self.cursors.len() {
@@ -1525,10 +1525,10 @@ impl Buffer {
             {
                 for i in 0..diagnostics.len() {
                     let (mut start, mut end) = old_positions[i];
-                    if start > position {
+                    if start >= position {
                         start = start.saturating_sub(count);
                     }
-                    if end > position {
+                    if end >= position {
                         end = end.saturating_sub(count);
                     }
                     diagnostics[i].range.start.line = self.piece_table.line_index(start) as u32;
@@ -1722,7 +1722,6 @@ enum BufferCommand {
     InsertCursorBelow,
     ReplaceChar(u8),
     CutSelection,
-    CutLineSelection,
     InsertChar(u8),
     InsertNewLine,
     IndentLine,
