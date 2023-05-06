@@ -145,7 +145,7 @@ impl View {
                             )
                         // Filter from start of request if triggered by a trigger character
                         } else {
-                            request.position
+                            request.initial_position
                         };
 
                         if let Some(completion_view) = self.get_completion_view(
@@ -227,12 +227,18 @@ impl View {
                     diagnostic.range.end.character as usize,
                 );
 
-                if !self.pos_in_render_visible_range(start_line, start_col, num_rows, num_cols)
-                    && !self.pos_in_render_visible_range(end_line, end_col, num_rows, num_cols)
+                if (buffer.mode == BufferMode::Insert
+                    && buffer.cursors.iter().any(|cursor| {
+                        (start_line..=end_line)
+                            .contains(&buffer.piece_table.line_index(cursor.position))
+                    }))
+                    || (!self
+                        .pos_in_render_visible_range(start_line, start_col, num_rows, num_cols)
+                        && !self.pos_in_render_visible_range(end_line, end_col, num_rows, num_cols))
                 {
                     continue;
                 }
-
+                
                 if start_line == end_line {
                     f(
                         self.absolute_to_view_row(start_line),

@@ -293,7 +293,14 @@ impl Renderer {
                             diagnostic.range.end.character as usize,
                         );
 
-                        (start_line == line && (start_col..=end_col).contains(&col))
+                        let diagnostic_on_cursor_line = buffer.mode == BufferMode::Insert
+                            && buffer.cursors.iter().any(|cursor| {
+                                (start_line..=end_line)
+                                    .contains(&buffer.piece_table.line_index(cursor.position))
+                            });
+
+                        !diagnostic_on_cursor_line
+                            && (start_line == line && (start_col..=end_col).contains(&col))
                             || (end_line == line && (start_col..=end_col).contains(&col))
                             || (diagnostic.range.start.line as usize
                                 ..diagnostic.range.end.line as usize)

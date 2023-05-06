@@ -30,6 +30,7 @@ pub struct CompletionRequest {
     pub next_id: Option<i32>,
     pub position: usize,
     pub next_position: Option<usize>,
+    pub initial_position: usize,
     pub selection_index: usize,
     pub selection_view_offset: usize,
     pub manually_triggered: bool,
@@ -94,7 +95,7 @@ pub fn get_filtered_completions(
         )
     // Filter from start of request if triggered by a trigger character
     } else {
-        request.position
+        request.initial_position
     };
 
     let match_string: Vec<u8> = piece_table

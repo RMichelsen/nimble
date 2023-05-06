@@ -1618,6 +1618,7 @@ fn lsp_complete(
                     next_id: None,
                     position,
                     next_position: None,
+                    initial_position: position,
                     selection_index: 0,
                     selection_view_offset: 0,
                     manually_triggered: character.is_none(),
