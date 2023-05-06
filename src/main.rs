@@ -7,6 +7,7 @@
 #![feature(let_chains)]
 #![feature(byte_slice_trim_ascii)]
 #![feature(const_fn_floating_point_arithmetic)]
+#![feature(if_let_guard)]
 
 mod buffer;
 mod cursor;
@@ -39,7 +40,7 @@ use winit::platform::macos::WindowExtMacOS;
 use winit::{
     dpi::{LogicalSize, PhysicalPosition},
     event::{ElementState, Event, ModifiersState, MouseButton, MouseScrollDelta, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
+    event_loop::EventLoop,
     window::{Window, WindowBuilder},
 };
 
@@ -60,7 +61,8 @@ fn main() {
     //     "C:/Users/Rasmus/Desktop/nimble/src/language_server_types.rs",
     //     &window,
     // );
-    editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/buffer.rs", &window);
+    // editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/buffer.rs", &window);
+    // editor.open_file("C:/Users/Rasmus/Desktop/testfile.rs", &window);
     // editor.open_file(
     //     "C:/VulkanSDK/1.3.239.0/Source/SPIRV-Reflect/spirv_reflect.c",
     //     &window,
@@ -106,7 +108,9 @@ fn main() {
                 ..
             } => {
                 if !modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::CTRL)) {
-                    editor.handle_char(chr);
+                    if !editor.handle_char(chr) {
+                        control_flow.set_exit();
+                    }
                     request_redraw(&window);
                 }
             }
@@ -116,7 +120,9 @@ fn main() {
             } => {
                 if input.state == ElementState::Pressed {
                     if let Some(keycode) = input.virtual_keycode {
-                        editor.handle_key(keycode, modifiers);
+                        if !editor.handle_key(keycode, modifiers) {
+                            control_flow.set_exit();
+                        }
                         request_redraw(&window);
                     }
                 }
@@ -191,7 +197,7 @@ fn main() {
                 ..
             } => {
                 editor.shutdown();
-                *control_flow = ControlFlow::Exit;
+                control_flow.set_exit();
             }
             _ => (),
         }

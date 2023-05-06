@@ -443,6 +443,41 @@ impl Cursor {
         }
     }
 
+    pub fn goto_line(&mut self, piece_table: &PieceTable, n: usize) {
+        if let Some(line) = piece_table.line_at_index(n.saturating_sub(1)) {
+            self.anchor = line.start;
+            self.position = line.start;
+        } else {
+            let last_char = piece_table.num_chars().saturating_sub(1);
+            self.anchor = last_char;
+            self.position = last_char;
+            self.move_to_start_of_line(&piece_table);
+        }
+    }
+
+    pub fn seek(&mut self, piece_table: &PieceTable, text: &[u8]) {
+        let mut match_text = vec![];
+        let mut offset = 0;
+        for c in piece_table.iter_chars_at(self.position) {
+            match_text.push(c);
+            offset += 1;
+
+            if match_text
+                .iter()
+                .enumerate()
+                .all(|(i, x)| text.get(i).is_some_and(|y| x == y))
+            {
+                if match_text.len() == text.len() {
+                    self.position += offset - text.len();
+                    self.anchor += offset - text.len();
+                    return;
+                }
+            } else {
+                match_text.clear();
+            }
+        }
+    }
+
     pub fn save_selection_to_clipboard(&mut self, piece_table: &PieceTable) {
         let start = min(self.position, self.anchor);
         let end = max(self.position, self.anchor);

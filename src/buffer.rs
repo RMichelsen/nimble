@@ -20,6 +20,7 @@ use crate::{
         cursors_delete_rebalance, cursors_insert_rebalance, cursors_overlapping,
         get_filtered_completions, CompletionRequest, Cursor, SignatureHelpRequest,
     },
+    editor::EditorCommand,
     language_server::LanguageServer,
     language_server_types::{
         CompletionParams, DidChangeTextDocumentParams, DidOpenTextDocumentParams, Position, Range,
@@ -57,7 +58,7 @@ pub struct Buffer {
     pub redo_stack: Vec<BufferState>,
     pub mode: BufferMode,
     pub language_server: Option<Rc<RefCell<LanguageServer>>>,
-    input: String,
+    pub input: String,
     version: i32,
     platform_resources: PlatformResources,
 }
@@ -167,7 +168,7 @@ impl Buffer {
         view: &View,
         num_rows: usize,
         num_cols: usize,
-    ) -> bool {
+    ) -> Option<EditorCommand> {
         match (self.mode, key_code) {
             (_, VirtualKeyCode::Down) => self.motion(Down(1)),
             (_, VirtualKeyCode::Up) => self.motion(Up(1)),
@@ -180,7 +181,10 @@ impl Buffer {
             (_, Right) => self.motion(Forward(1)),
             (_, Left) => self.motion(Backward(1)),
 
-            (Normal, Escape) => self.cursors.truncate(1),
+            (Normal, Escape) => {
+                self.cursors.truncate(1);
+                self.input.clear();
+            }
             (Insert, Escape) => {
                 self.motion(Backward(1));
                 self.switch_to_normal_mode();
@@ -191,10 +195,34 @@ impl Buffer {
                 self.command(DeleteWordBack);
             }
             (Insert, Back) => self.command(DeleteCharBack),
-            (_, Back) => self.motion(Backward(1)),
+            (_, Back) => {
+                if self
+                    .input
+                    .as_bytes()
+                    .first()
+                    .is_some_and(|c| *c == b':' || *c == b'/')
+                {
+                    self.input.pop();
+                } else {
+                    self.motion(Backward(1));
+                }
+            }
 
             (Insert, Return) => self.command(InsertNewLine),
-            (_, Return) => self.motion(Down(1)),
+            (_, Return) => {
+                if self
+                    .input
+                    .as_bytes()
+                    .first()
+                    .is_some_and(|c| *c == b':' || *c == b'/')
+                {
+                    let editor_command = self.handle_input_command();
+                    self.input.clear();
+                    return editor_command;
+                } else {
+                    self.motion(Down(1));
+                }
+            }
 
             (Normal, Delete) => {
                 self.command(CopySelection);
@@ -294,14 +322,14 @@ impl Buffer {
                 self.command(StartCompletion);
             }
 
-            _ => return false,
+            _ => return None,
         }
 
         self.merge_cursors();
-        true
+        None
     }
 
-    pub fn handle_char(&mut self, c: char) -> bool {
+    pub fn handle_char(&mut self, c: char) -> Option<EditorCommand> {
         if self.mode == Insert {
             if c as u8 >= 0x20 && c as u8 <= 0x7E {
                 self.command(InsertChar(c as u8));
@@ -310,7 +338,19 @@ impl Buffer {
                 cursor.reset_anchor();
             }
             self.merge_cursors();
-            return true;
+            return None;
+        }
+
+        if self
+            .input
+            .as_bytes()
+            .first()
+            .is_some_and(|c| *c == b':' || *c == b'/')
+        {
+            if c as u8 >= 0x20 && c as u8 <= 0x7E {
+                self.input.push(c);
+            }
+            return None;
         }
 
         self.input.push(c);
@@ -319,6 +359,7 @@ impl Buffer {
             self.input.clear();
             self.input.push(c);
         }
+        println!("{}", self.input);
 
         match (self.mode, self.input.as_str()) {
             (_, "j") => self.motion(Down(1)),
@@ -331,6 +372,7 @@ impl Buffer {
             (_, "$") => self.motion(ToEndOfLine),
             (_, "^") => self.motion(ToFirstNonBlankChar),
             (_, "gg") => self.motion(ToStartOfFile),
+            (_, "zz") => return Some(EditorCommand::CenterView),
             (_, "G") => self.motion(ToEndOfFile),
             (_, s) if s.starts_with('f') && s.len() == 2 => {
                 self.motion(ForwardToCharInclusive(s.chars().nth(1).unwrap() as u8));
@@ -574,7 +616,7 @@ impl Buffer {
             (VisualLine, "V") => self.switch_to_normal_mode(),
             (_, "V") => self.switch_to_visual_line_mode(),
 
-            _ => return false,
+            _ => return None,
         }
 
         if self.mode == Normal {
@@ -584,7 +626,7 @@ impl Buffer {
         }
         self.input.clear();
         self.merge_cursors();
-        true
+        None
     }
 
     pub fn update_completions(&mut self, server: &mut RefMut<LanguageServer>) {
@@ -631,6 +673,33 @@ impl Buffer {
         }
     }
 
+    fn handle_input_command(&mut self) -> Option<EditorCommand> {
+        let input = self.input.clone();
+        match input.as_str() {
+            input if input.as_bytes().first().is_some_and(|c| *c == b'/') => {
+                self.cursors.truncate(1);
+                self.motion(Seek(input[1..].as_bytes().clone()));
+            }
+            input if let Ok(num) = input[1..].parse::<usize>() => {
+                self.motion(GotoLine(num));
+                self.motion(ToFirstNonBlankChar);
+                return Some(EditorCommand::CenterView);
+            }
+            ":w" => {
+                self.piece_table.save_to(&self.path);
+            }
+            ":wq" => {
+                self.piece_table.save_to(&self.path);
+                return Some(EditorCommand::Quit);
+            }
+            ":qa" => {
+                return Some(EditorCommand::Quit);
+            }
+            _ => ()
+        }
+        None
+    }
+
     fn motion(&mut self, motion: CursorMotion) {
         for cursor in &mut self.cursors {
             match motion {
@@ -651,6 +720,8 @@ impl Buffer {
                 BackwardToCharExclusive(c) => cursor.move_back_to_char_exc(&self.piece_table, c),
                 ExtendSelection => cursor.extend_selection(&self.piece_table),
                 ExtendSelectionInside(c) => cursor.extend_selection_inside(&self.piece_table, c),
+                GotoLine(n) => cursor.goto_line(&self.piece_table, n),
+                Seek(text) => cursor.seek(&self.piece_table, text.as_bytes()),
             }
 
             // Normal mode does not allow cursors to be on newlines
@@ -1723,15 +1794,15 @@ fn is_prefix_of_command(str: &str, mode: BufferMode) -> bool {
     }
 }
 
-const NORMAL_MODE_COMMANDS: [&str; 23] = [
+const NORMAL_MODE_COMMANDS: [&str; 24] = [
     "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "dd", "D", "J", "K", "v", "V", "u",
-    ">", "<", "p", "P", "yy",
+    ">", "<", "p", "P", "yy", "zz",
 ];
-const VISUAL_MODE_COMMANDS: [&str; 17] = [
-    "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "d", ">", "<", "y", "p", "P",
+const VISUAL_MODE_COMMANDS: [&str; 18] = [
+    "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "d", ">", "<", "y", "p", "P", "zz",
 ];
 
-enum CursorMotion {
+enum CursorMotion<'a> {
     Forward(usize),
     Backward(usize),
     Up(usize),
@@ -1749,6 +1820,8 @@ enum CursorMotion {
     BackwardToCharExclusive(u8),
     ExtendSelection,
     ExtendSelectionInside(u8),
+    GotoLine(usize),
+    Seek(&'a [u8]),
 }
 
 #[derive(PartialEq)]

@@ -1,7 +1,7 @@
 use std::{
     cmp::min,
     fs::File,
-    io::{BufReader, Read},
+    io::{BufReader, Read, Write},
 };
 
 use bstr::{ByteSlice, ByteVec};
@@ -126,6 +126,20 @@ impl PieceTable {
                 linebreaks,
             }],
             indent_width,
+        }
+    }
+
+    pub fn save_to(&self, path: &str) {
+        let mut file = File::create(path).unwrap();
+
+        for piece in self.pieces.iter() {
+            let buffer = if piece.file == PieceFile::Original {
+                &self.original
+            } else {
+                &self.add
+            };
+            file.write(&buffer[piece.start..piece.start + piece.length])
+                .unwrap();
         }
     }
 

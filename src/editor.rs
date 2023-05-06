@@ -16,6 +16,11 @@ struct Document {
     view: View,
 }
 
+pub enum EditorCommand {
+    CenterView,
+    Quit,
+}
+
 pub struct Editor {
     renderer: Renderer,
     documents: HashMap<String, Document>,
@@ -209,25 +214,48 @@ impl Editor {
         false
     }
 
-    pub fn handle_key(&mut self, key_code: VirtualKeyCode, modifiers: Option<ModifiersState>) {
+    pub fn handle_key(
+        &mut self,
+        key_code: VirtualKeyCode,
+        modifiers: Option<ModifiersState>,
+    ) -> bool {
         let (num_rows, num_cols) = (self.renderer.num_rows, self.renderer.num_cols);
         if let Some(document) = self.active_document() {
-            if document
-                .buffer
-                .handle_key(key_code, modifiers, &document.view, num_rows, num_cols)
+            if let Some(editor_command) =
+                document
+                    .buffer
+                    .handle_key(key_code, modifiers, &document.view, num_rows, num_cols)
             {
-                document.view.adjust(&document.buffer, num_rows, num_cols);
+                match editor_command {
+                    EditorCommand::CenterView => {
+                        document.view.center(&document.buffer, num_rows, num_cols)
+                    }
+                    EditorCommand::Quit => {
+                        return false;
+                    }
+                }
             }
+            document.view.adjust(&document.buffer, num_rows, num_cols);
         }
+        true
     }
 
-    pub fn handle_char(&mut self, c: char) {
+    pub fn handle_char(&mut self, c: char) -> bool {
         let (num_rows, num_cols) = (self.renderer.num_rows, self.renderer.num_cols);
         if let Some(document) = self.active_document() {
-            if document.buffer.handle_char(c) {
-                document.view.adjust(&document.buffer, num_rows, num_cols);
+            if let Some(editor_command) = document.buffer.handle_char(c) {
+                match editor_command {
+                    EditorCommand::CenterView => {
+                        document.view.center(&document.buffer, num_rows, num_cols)
+                    }
+                    EditorCommand::Quit => {
+                        return false;
+                    }
+                }
             }
+            document.view.adjust(&document.buffer, num_rows, num_cols);
         }
+        true
     }
 
     pub fn open_file(&mut self, path: &str, window: &Window) {

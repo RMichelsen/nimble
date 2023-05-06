@@ -238,7 +238,7 @@ impl View {
                 {
                     continue;
                 }
-                
+
                 if start_line == end_line {
                     f(
                         self.absolute_to_view_row(start_line),
@@ -287,6 +287,13 @@ impl View {
                     self.col_offset += col - (self.col_offset + (num_cols - 2))
                 }
             }
+        }
+    }
+
+    pub fn center(&mut self, buffer: &Buffer, num_rows: usize, num_cols: usize) {
+        if let Some(last_cursor) = buffer.cursors.last() {
+            let (line, _) = last_cursor.get_line_col(&buffer.piece_table);
+            self.line_offset = line.saturating_sub(num_rows / 2);
         }
     }
 

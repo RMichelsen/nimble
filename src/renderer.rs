@@ -126,7 +126,7 @@ impl Renderer {
                 buffer
                     .piece_table
                     .char_index_from_line_col(view.line_offset, 0)
-                    .unwrap(),
+                    .unwrap_or(0),
             ),
         );
         let string_highlights = string_highlights(&text, &comment_highlights);
@@ -323,6 +323,23 @@ impl Renderer {
                     }
                 }
             }
+        }
+
+        if buffer
+            .input
+            .as_bytes()
+            .first()
+            .is_some_and(|c| *c == b':' || *c == b'/')
+        {
+            self.context.draw_popup(
+                self.num_rows,
+                0,
+                true,
+                buffer.input.as_bytes(),
+                SELECTION_COLOR,
+                BACKGROUND_COLOR,
+                None,
+            );
         }
     }
 }
