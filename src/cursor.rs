@@ -456,7 +456,6 @@ impl Cursor {
     }
 
     pub fn seek(&mut self, piece_table: &PieceTable, text: &[u8]) {
-        let t = std::time::Instant::now();
         let mut match_text = vec![];
         let mut offset = 0;
         for c in piece_table.iter_chars_at(self.position + 1) {
@@ -489,6 +488,52 @@ impl Cursor {
             {
                 if match_text.len() == text.len() {
                     self.position = 1 + i - text.len();
+                    self.anchor = self.position;
+                    return;
+                }
+            } else {
+                match_text.clear();
+            }
+        }
+    }
+
+    pub fn seek_back(&mut self, piece_table: &PieceTable, text: &[u8]) {
+        let mut match_text = vec![];
+        let mut offset = 0;
+        for c in piece_table.iter_chars_at_rev(self.position.saturating_sub(1)) {
+            match_text.insert(0, c);
+            offset += 1;
+
+            if match_text.iter().rev().enumerate().all(|(i, x)| {
+                text.get(text.len().saturating_sub(i + 1))
+                    .is_some_and(|y| x == y)
+            }) {
+                if match_text.len() == text.len() {
+                    self.position -= offset;
+                    self.anchor = self.position;
+                    return;
+                }
+            } else {
+                match_text.clear();
+            }
+        }
+
+        match_text.clear();
+
+        let num_chars = piece_table.num_chars();
+        for (i, c) in piece_table
+            .iter_chars_at_rev(num_chars.saturating_sub(1))
+            .enumerate()
+            .take(num_chars - self.position)
+        {
+            match_text.insert(0, c);
+
+            if match_text.iter().rev().enumerate().all(|(i, x)| {
+                text.get(text.len().saturating_sub(i + 1))
+                    .is_some_and(|y| x == y)
+            }) {
+                if match_text.len() == text.len() {
+                    self.position = num_chars.saturating_sub(i + 1);
                     self.anchor = self.position;
                     return;
                 }

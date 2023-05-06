@@ -380,6 +380,12 @@ impl Buffer {
                 self.motion(Seek(search_string.as_bytes()));
                 return Some(EditorCommand::CenterIfNotVisible);
             }
+            (_, "N") => {
+                let search_string = self.search_string.clone();
+                self.cursors.truncate(1);
+                self.motion(SeekBack(search_string.as_bytes()));
+                return Some(EditorCommand::CenterIfNotVisible);
+            }
             (_, "G") => self.motion(ToEndOfFile),
             (_, s) if s.starts_with('f') && s.len() == 2 => {
                 self.motion(ForwardToCharInclusive(s.chars().nth(1).unwrap() as u8));
@@ -731,6 +737,7 @@ impl Buffer {
                 ExtendSelectionInside(c) => cursor.extend_selection_inside(&self.piece_table, c),
                 GotoLine(n) => cursor.goto_line(&self.piece_table, n),
                 Seek(text) => cursor.seek(&self.piece_table, text.as_bytes()),
+                SeekBack(text) => cursor.seek_back(&self.piece_table, text.as_bytes()),
             }
 
             // Normal mode does not allow cursors to be on newlines
@@ -1803,12 +1810,13 @@ fn is_prefix_of_command(str: &str, mode: BufferMode) -> bool {
     }
 }
 
-const NORMAL_MODE_COMMANDS: [&str; 25] = [
+const NORMAL_MODE_COMMANDS: [&str; 26] = [
     "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "dd", "D", "J", "K", "v", "V", "u",
-    ">", "<", "p", "P", "yy", "zz", "n",
+    ">", "<", "p", "P", "yy", "zz", "n", "N",
 ];
-const VISUAL_MODE_COMMANDS: [&str; 19] = [
-    "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "d", ">", "<", "y", "p", "P", "zz", "n",
+const VISUAL_MODE_COMMANDS: [&str; 20] = [
+    "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "d", ">", "<", "y", "p", "P", "zz",
+    "n", "N",
 ];
 
 enum CursorMotion<'a> {
@@ -1831,6 +1839,7 @@ enum CursorMotion<'a> {
     ExtendSelectionInside(u8),
     GotoLine(usize),
     Seek(&'a [u8]),
+    SeekBack(&'a [u8]),
 }
 
 #[derive(PartialEq)]
