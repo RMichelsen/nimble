@@ -18,6 +18,7 @@ struct Document {
 
 pub enum EditorCommand {
     CenterView,
+    CenterIfNotVisible,
     Quit,
 }
 
@@ -230,6 +231,11 @@ impl Editor {
                     EditorCommand::CenterView => {
                         document.view.center(&document.buffer, num_rows, num_cols)
                     }
+                    EditorCommand::CenterIfNotVisible => {
+                        document
+                            .view
+                            .center_if_not_visible(&document.buffer, num_rows, num_cols)
+                    }
                     EditorCommand::Quit => {
                         return false;
                     }
@@ -247,6 +253,11 @@ impl Editor {
                 match editor_command {
                     EditorCommand::CenterView => {
                         document.view.center(&document.buffer, num_rows, num_cols)
+                    }
+                    EditorCommand::CenterIfNotVisible => {
+                        document
+                            .view
+                            .center_if_not_visible(&document.buffer, num_rows, num_cols)
                     }
                     EditorCommand::Quit => {
                         return false;

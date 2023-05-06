@@ -297,6 +297,15 @@ impl View {
         }
     }
 
+    pub fn center_if_not_visible(&mut self, buffer: &Buffer, num_rows: usize, num_cols: usize) {
+        if let Some(last_cursor) = buffer.cursors.last() {
+            let (line, col) = last_cursor.get_line_col(&buffer.piece_table);
+            if !self.pos_in_edit_visible_range(line, col, num_rows, num_cols) {
+                self.line_offset = line.saturating_sub(num_rows / 2);
+            }
+        }
+    }
+
     pub fn get_signature_help_view(
         &self,
         piece_table: &PieceTable,

@@ -59,6 +59,7 @@ pub struct Buffer {
     pub mode: BufferMode,
     pub language_server: Option<Rc<RefCell<LanguageServer>>>,
     pub input: String,
+    search_string: String,
     version: i32,
     platform_resources: PlatformResources,
 }
@@ -85,6 +86,7 @@ impl Buffer {
             mode: BufferMode::Normal,
             language_server,
             input: String::new(),
+            search_string: String::new(),
             version: 1,
             platform_resources: PlatformResources::new(window),
         }
@@ -359,7 +361,6 @@ impl Buffer {
             self.input.clear();
             self.input.push(c);
         }
-        println!("{}", self.input);
 
         match (self.mode, self.input.as_str()) {
             (_, "j") => self.motion(Down(1)),
@@ -373,6 +374,12 @@ impl Buffer {
             (_, "^") => self.motion(ToFirstNonBlankChar),
             (_, "gg") => self.motion(ToStartOfFile),
             (_, "zz") => return Some(EditorCommand::CenterView),
+            (_, "n") => {
+                let search_string = self.search_string.clone();
+                self.cursors.truncate(1);
+                self.motion(Seek(search_string.as_bytes()));
+                return Some(EditorCommand::CenterIfNotVisible);
+            }
             (_, "G") => self.motion(ToEndOfFile),
             (_, s) if s.starts_with('f') && s.len() == 2 => {
                 self.motion(ForwardToCharInclusive(s.chars().nth(1).unwrap() as u8));
@@ -678,7 +685,9 @@ impl Buffer {
         match input.as_str() {
             input if input.as_bytes().first().is_some_and(|c| *c == b'/') => {
                 self.cursors.truncate(1);
-                self.motion(Seek(input[1..].as_bytes().clone()));
+                self.motion(Seek(input[1..].as_bytes()));
+                self.search_string = input[1..].to_string();
+                return Some(EditorCommand::CenterIfNotVisible);
             }
             input if let Ok(num) = input[1..].parse::<usize>() => {
                 self.motion(GotoLine(num));
@@ -1794,12 +1803,12 @@ fn is_prefix_of_command(str: &str, mode: BufferMode) -> bool {
     }
 }
 
-const NORMAL_MODE_COMMANDS: [&str; 24] = [
+const NORMAL_MODE_COMMANDS: [&str; 25] = [
     "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "dd", "D", "J", "K", "v", "V", "u",
-    ">", "<", "p", "P", "yy", "zz",
+    ">", "<", "p", "P", "yy", "zz", "n",
 ];
-const VISUAL_MODE_COMMANDS: [&str; 18] = [
-    "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "d", ">", "<", "y", "p", "P", "zz",
+const VISUAL_MODE_COMMANDS: [&str; 19] = [
+    "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "d", ">", "<", "y", "p", "P", "zz", "n",
 ];
 
 enum CursorMotion<'a> {

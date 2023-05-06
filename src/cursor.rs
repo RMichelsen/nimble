@@ -456,9 +456,10 @@ impl Cursor {
     }
 
     pub fn seek(&mut self, piece_table: &PieceTable, text: &[u8]) {
+        let t = std::time::Instant::now();
         let mut match_text = vec![];
         let mut offset = 0;
-        for c in piece_table.iter_chars_at(self.position) {
+        for c in piece_table.iter_chars_at(self.position + 1) {
             match_text.push(c);
             offset += 1;
 
@@ -468,8 +469,27 @@ impl Cursor {
                 .all(|(i, x)| text.get(i).is_some_and(|y| x == y))
             {
                 if match_text.len() == text.len() {
-                    self.position += offset - text.len();
-                    self.anchor += offset - text.len();
+                    self.position += 1 + offset - text.len();
+                    self.anchor = self.position;
+                    return;
+                }
+            } else {
+                match_text.clear();
+            }
+        }
+
+        match_text.clear();
+        for (i, c) in piece_table.iter_chars_at(0).enumerate().take(self.position) {
+            match_text.push(c);
+
+            if match_text
+                .iter()
+                .enumerate()
+                .all(|(i, x)| text.get(i).is_some_and(|y| x == y))
+            {
+                if match_text.len() == text.len() {
+                    self.position = 1 + i - text.len();
+                    self.anchor = self.position;
                     return;
                 }
             } else {
