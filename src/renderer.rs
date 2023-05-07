@@ -7,10 +7,10 @@ use crate::{
     graphics_context::GraphicsContext,
     language_server::LanguageServer,
     language_server_types::ParameterLabelType,
-    text_utils::{comment_highlights, keyword_highlights, string_highlights},
+    text_utils::{comment_highlights, keyword_highlights, search_highlights, string_highlights},
     theme::{
-        BACKGROUND_COLOR, CURSOR_COLOR, DIAGNOSTIC_COLOR, HIGHLIGHT_COLOR, SELECTION_COLOR,
-        TEXT_COLOR,
+        BACKGROUND_COLOR, CURSOR_COLOR, DIAGNOSTIC_COLOR, HIGHLIGHT_COLOR, SEARCH_COLOR,
+        SELECTION_COLOR, TEXT_COLOR,
     },
     view::View,
 };
@@ -93,6 +93,32 @@ impl Renderer {
     ) {
         use TextEffectKind::*;
 
+        let text = view.visible_text(buffer, self.num_rows);
+        let text_offset = buffer
+            .piece_table
+            .char_index_from_line_col(view.line_offset, 0)
+            .unwrap();
+
+        if buffer.input.as_bytes().first().is_some_and(|c| *c == b'/') {
+            for (start, length) in search_highlights(&text, &buffer.input[1..]) {
+                let (row, col) = (
+                    view.absolute_to_view_row(buffer.piece_table.line_index(text_offset + start)),
+                    view.absolute_to_view_col(buffer.piece_table.col_index(text_offset + start)),
+                );
+
+                let color = if buffer.cursors.last().is_some_and(|cursor| {
+                    ((text_offset + start)..(text_offset + start + length))
+                        .contains(&cursor.position)
+                }) {
+                    SEARCH_COLOR
+                } else {
+                    SELECTION_COLOR
+                };
+
+                self.context.fill_cells(row, col, (length, 1), color);
+            }
+        }
+
         if buffer.mode != BufferMode::Insert {
             view.visible_cursors_iter(buffer, self.num_rows, self.num_cols, |row, col, num| {
                 self.context.fill_cells(row, col, (num, 1), SELECTION_COLOR);
@@ -106,8 +132,6 @@ impl Renderer {
                 self.context.fill_cells(row, col, (1, 1), CURSOR_COLOR);
             }
         });
-
-        let text = view.visible_text(buffer, self.num_rows);
 
         let mut effects = vec![];
         effects.push(TextEffect {

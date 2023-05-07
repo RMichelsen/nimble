@@ -455,10 +455,11 @@ impl Cursor {
         }
     }
 
-    pub fn seek(&mut self, piece_table: &PieceTable, text: &[u8]) {
+    pub fn seek(&mut self, piece_table: &PieceTable, text: &[u8], self_inclusive: bool) {
+        let inclusive_offset = if self_inclusive { 0 } else { 1 };
         let mut match_text = vec![];
         let mut offset = 0;
-        for c in piece_table.iter_chars_at(self.position + 1) {
+        for c in piece_table.iter_chars_at(self.position + inclusive_offset) {
             match_text.push(c);
             offset += 1;
 
@@ -468,7 +469,7 @@ impl Cursor {
                 .all(|(i, x)| text.get(i).is_some_and(|y| x == y))
             {
                 if match_text.len() == text.len() {
-                    self.position += 1 + offset - text.len();
+                    self.position += inclusive_offset + offset - text.len();
                     self.anchor = self.position;
                     return;
                 }
@@ -478,7 +479,11 @@ impl Cursor {
         }
 
         match_text.clear();
-        for (i, c) in piece_table.iter_chars_at(0).enumerate().take(self.position) {
+        for (i, c) in piece_table
+            .iter_chars_at(0)
+            .enumerate()
+            .take(self.position + inclusive_offset)
+        {
             match_text.push(c);
 
             if match_text
@@ -497,10 +502,11 @@ impl Cursor {
         }
     }
 
-    pub fn seek_back(&mut self, piece_table: &PieceTable, text: &[u8]) {
+    pub fn seek_back(&mut self, piece_table: &PieceTable, text: &[u8], self_inclusive: bool) {
+        let inclusive_offset = if self_inclusive { 0 } else { 1 };
         let mut match_text = vec![];
         let mut offset = 0;
-        for c in piece_table.iter_chars_at_rev(self.position.saturating_sub(1)) {
+        for c in piece_table.iter_chars_at_rev(self.position.saturating_sub(inclusive_offset)) {
             match_text.insert(0, c);
             offset += 1;
 
@@ -517,14 +523,13 @@ impl Cursor {
                 match_text.clear();
             }
         }
-
         match_text.clear();
 
         let num_chars = piece_table.num_chars();
         for (i, c) in piece_table
             .iter_chars_at_rev(num_chars.saturating_sub(1))
             .enumerate()
-            .take(num_chars - self.position)
+            .take(num_chars - self.position.saturating_sub(inclusive_offset))
         {
             match_text.insert(0, c);
 

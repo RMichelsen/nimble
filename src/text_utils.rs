@@ -42,6 +42,28 @@ pub fn keyword_highlights(text: &[u8], keywords: Option<&[&str]>) -> Vec<TextEff
     effects
 }
 
+pub fn search_highlights(text: &[u8], match_text: &str) -> Vec<(usize, usize)> {
+    if match_text.is_empty() {
+        return vec![];
+    }
+
+    let mut matches = vec![];
+
+    let mut search_index = 0;
+    let mut current_text = text;
+    while let Some(i) = current_text.as_bstr().find(match_text) {
+        search_index += i;
+
+        // Match here
+        matches.push((search_index, match_text.len()));
+        search_index += match_text.len();
+
+        current_text = &text[search_index..];
+    }
+
+    matches
+}
+
 pub fn leading_multi_line_comment_end(
     text: &[u8],
     multi_line_comment_token_pair: Option<[&str; 2]>,

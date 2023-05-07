@@ -8,3 +8,4 @@ pub const CURSOR_COLOR: Color = Color::from_rgb(102, 148, 156);
 pub const COMMENT_COLOR: Color = Color::from_rgb(140, 222, 148);
 pub const DIAGNOSTIC_COLOR: Color = Color::from_rgb(254, 128, 25);
 pub const HIGHLIGHT_COLOR: Color = Color::from_rgb(255, 255, 255);
+pub const SEARCH_COLOR: Color = Color::from_rgb(230, 116, 81);

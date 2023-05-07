@@ -60,6 +60,7 @@ pub struct Buffer {
     pub language_server: Option<Rc<RefCell<LanguageServer>>>,
     pub input: String,
     search_string: String,
+    search_anchor: usize,
     version: i32,
     platform_resources: PlatformResources,
 }
@@ -87,6 +88,7 @@ impl Buffer {
             language_server,
             input: String::new(),
             search_string: String::new(),
+            search_anchor: 0,
             version: 1,
             platform_resources: PlatformResources::new(window),
         }
@@ -343,14 +345,26 @@ impl Buffer {
             return None;
         }
 
-        if self
-            .input
-            .as_bytes()
-            .first()
-            .is_some_and(|c| *c == b':' || *c == b'/')
-        {
+        if self.input.as_bytes().first().is_some_and(|c| *c == b':') {
             if c as u8 >= 0x20 && c as u8 <= 0x7E {
                 self.input.push(c);
+            }
+            return None;
+        }
+
+        if self.input.as_bytes().first().is_some_and(|c| *c == b'/') {
+            if c as u8 >= 0x20 && c as u8 <= 0x7E {
+                self.input.push(c);
+                let search_string = self.input[1..].to_string();
+                if self
+                    .cursors
+                    .last()
+                    .is_some_and(|cursor| cursor.position == self.search_anchor)
+                {
+                    self.motion(Seek(search_string.as_bytes()));
+                } else {
+                    self.motion(SeekSelfInclusive(search_string.as_bytes()));
+                }
             }
             return None;
         }
@@ -374,16 +388,18 @@ impl Buffer {
             (_, "^") => self.motion(ToFirstNonBlankChar),
             (_, "gg") => self.motion(ToStartOfFile),
             (_, "zz") => return Some(EditorCommand::CenterView),
-            (_, "n") => {
-                let search_string = self.search_string.clone();
+            (_, "/") => {
                 self.cursors.truncate(1);
-                self.motion(Seek(search_string.as_bytes()));
+                self.search_string.clear();
+                self.search_anchor = self.cursors.first().unwrap().position;
+                return None;
+            }
+            (_, "n") => {
+                self.motion(Seek(self.search_string.clone().as_bytes()));
                 return Some(EditorCommand::CenterIfNotVisible);
             }
             (_, "N") => {
-                let search_string = self.search_string.clone();
-                self.cursors.truncate(1);
-                self.motion(SeekBack(search_string.as_bytes()));
+                self.motion(SeekBack(self.search_string.clone().as_bytes()));
                 return Some(EditorCommand::CenterIfNotVisible);
             }
             (_, "G") => self.motion(ToEndOfFile),
@@ -690,8 +706,7 @@ impl Buffer {
         let input = self.input.clone();
         match input.as_str() {
             input if input.as_bytes().first().is_some_and(|c| *c == b'/') => {
-                self.cursors.truncate(1);
-                self.motion(Seek(input[1..].as_bytes()));
+                self.motion(SeekSelfInclusive(input[1..].as_bytes()));
                 self.search_string = input[1..].to_string();
                 return Some(EditorCommand::CenterIfNotVisible);
             }
@@ -736,8 +751,12 @@ impl Buffer {
                 ExtendSelection => cursor.extend_selection(&self.piece_table),
                 ExtendSelectionInside(c) => cursor.extend_selection_inside(&self.piece_table, c),
                 GotoLine(n) => cursor.goto_line(&self.piece_table, n),
-                Seek(text) => cursor.seek(&self.piece_table, text.as_bytes()),
-                SeekBack(text) => cursor.seek_back(&self.piece_table, text.as_bytes()),
+                Seek(text) => cursor.seek(&self.piece_table, text.as_bytes(), false),
+                SeekBack(text) => cursor.seek_back(&self.piece_table, text.as_bytes(), false),
+                SeekSelfInclusive(text) => cursor.seek(&self.piece_table, text.as_bytes(), true),
+                SeekBackSelfInclusive(text) => {
+                    cursor.seek_back(&self.piece_table, text.as_bytes(), true)
+                }
             }
 
             // Normal mode does not allow cursors to be on newlines
@@ -1810,13 +1829,13 @@ fn is_prefix_of_command(str: &str, mode: BufferMode) -> bool {
     }
 }
 
-const NORMAL_MODE_COMMANDS: [&str; 26] = [
+const NORMAL_MODE_COMMANDS: [&str; 27] = [
     "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "dd", "D", "J", "K", "v", "V", "u",
-    ">", "<", "p", "P", "yy", "zz", "n", "N",
+    ">", "<", "p", "P", "yy", "zz", "n", "N", "/",
 ];
-const VISUAL_MODE_COMMANDS: [&str; 20] = [
+const VISUAL_MODE_COMMANDS: [&str; 21] = [
     "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "d", ">", "<", "y", "p", "P", "zz",
-    "n", "N",
+    "n", "N", "/",
 ];
 
 enum CursorMotion<'a> {
@@ -1840,6 +1859,8 @@ enum CursorMotion<'a> {
     GotoLine(usize),
     Seek(&'a [u8]),
     SeekBack(&'a [u8]),
+    SeekSelfInclusive(&'a [u8]),
+    SeekBackSelfInclusive(&'a [u8]),
 }
 
 #[derive(PartialEq)]
