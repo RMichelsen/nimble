@@ -269,6 +269,12 @@ impl Editor {
         true
     }
 
+    pub fn ready_to_quit(&mut self) -> bool {
+        self.documents
+            .iter_mut()
+            .all(|(_, document)| document.buffer.ready_to_quit())
+    }
+
     pub fn open_file(&mut self, path: &str, window: &Window) {
         let language_server = {
             if let Some(language) = language_from_path(path) {

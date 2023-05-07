@@ -1,6 +1,5 @@
-use widestring::{u16str, U16CString};
 use windows::{
-    core::PCWSTR,
+    w,
     Foundation::Numerics::Matrix3x2,
     Win32::{
         Foundation::HWND,
@@ -84,13 +83,13 @@ impl GraphicsContext {
         let text_format = unsafe {
             dwrite_factory
                 .CreateTextFormat(
-                    PCWSTR(U16CString::from_str("Consolas").unwrap().into_raw()),
+                    w!("Consolas"),
                     None,
                     DWRITE_FONT_WEIGHT_NORMAL,
                     DWRITE_FONT_STYLE_NORMAL,
                     DWRITE_FONT_STRETCH_NORMAL,
                     18.0,
-                    PCWSTR(U16CString::from_str("en-us").unwrap().into_raw()),
+                    w!("en-us"),
                 )
                 .unwrap()
         };
@@ -102,7 +101,7 @@ impl GraphicsContext {
 
         let text_layout = unsafe {
             dwrite_factory
-                .CreateTextLayout(u16str!(" ").as_slice(), &text_format, 0.0, 0.0)
+                .CreateTextLayout(&[b' ' as u16], &text_format, 0.0, 0.0)
                 .unwrap()
         };
 
@@ -238,12 +237,15 @@ impl GraphicsContext {
     }
 
     pub fn get_text_bounding_box(&self, text: &[u8]) -> (f64, f64) {
+        let mut wide_text = vec![];
+        for c in text {
+            wide_text.push(*c as u16);
+        }
+
         let text_layout = unsafe {
             self.dwrite_factory
                 .CreateTextLayout(
-                    U16CString::from_str(std::str::from_utf8(text).unwrap())
-                        .unwrap()
-                        .as_slice(),
+                    &wide_text,
                     &self.text_format,
                     self.window_size.0,
                     self.window_size.1,
@@ -260,12 +262,15 @@ impl GraphicsContext {
     }
 
     fn draw_text_with_offset(&self, x: f32, y: f32, text: &[u8], effects: &[TextEffect]) {
+        let mut wide_text = vec![];
+        for c in text {
+            wide_text.push(*c as u16);
+        }
+
         let text_layout = unsafe {
             self.dwrite_factory
                 .CreateTextLayout(
-                    U16CString::from_str(std::str::from_utf8(text).unwrap())
-                        .unwrap()
-                        .as_slice(),
+                    &wide_text,
                     &self.text_format,
                     self.window_size.0,
                     self.window_size.1,
@@ -333,12 +338,20 @@ impl GraphicsContext {
         effects: &[TextEffect],
         col_offset: usize,
     ) {
+        let mut wide_text = vec![];
+        for c in text {
+            wide_text.push(*c as u16);
+        }
+
         let text_layout = unsafe {
             self.dwrite_factory
                 .CreateTextLayout(
-                    U16CString::from_str(std::str::from_utf8(text).unwrap())
-                        .unwrap()
-                        .as_slice(),
+                    &wide_text,
+                    // PCWSTR(HSTRING::from(std::str::from_utf8(text).unwrap()).as_ptr()),
+                    // w!(text),
+                    // U16CString::from_str(std::str::from_utf8(text).unwrap())
+                    //     .unwrap()
+                    //     .as_slice(),
                     &self.text_format,
                     self.window_size.0,
                     self.window_size.1,

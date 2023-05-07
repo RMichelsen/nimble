@@ -1,7 +1,7 @@
 use std::{ffi::CStr, ptr::copy_nonoverlapping};
 
 use windows::{
-    s,
+    w,
     Win32::{
         Foundation::{HANDLE, HGLOBAL, HWND},
         System::{
@@ -10,7 +10,7 @@ use windows::{
             },
             Memory::{GlobalAlloc, GlobalFree, GlobalLock, GlobalUnlock, GMEM_ZEROINIT},
         },
-        UI::WindowsAndMessaging::{MessageBoxA, IDNO, IDYES, MB_YESNOCANCEL},
+        UI::WindowsAndMessaging::{MessageBoxW, IDNO, IDYES, MB_YESNOCANCEL},
     },
 };
 use winit::{platform::windows::WindowExtWindows, window::Window};
@@ -71,10 +71,10 @@ impl PlatformResources {
 
     pub fn confirm_quit(&self, path: &str) -> Option<bool> {
         unsafe {
-            match MessageBoxA(
+            match MessageBoxW(
                 self.hwnd,
-                s!("Save changes?"),
-                s!("Do you want to save changes before quitting?"),
+                w!("Save changes?"),
+                w!("Do you want to save changes before quitting?"),
                 MB_YESNOCANCEL,
             ) {
                 IDYES => return Some(true),

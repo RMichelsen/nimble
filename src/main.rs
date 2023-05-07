@@ -109,7 +109,10 @@ fn main() {
             } => {
                 if !modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::CTRL)) {
                     if !editor.handle_char(chr) {
-                        control_flow.set_exit();
+                        if editor.ready_to_quit() {
+                            editor.shutdown();
+                            control_flow.set_exit();
+                        }
                     }
                     request_redraw(&window);
                 }
@@ -121,7 +124,10 @@ fn main() {
                 if input.state == ElementState::Pressed {
                     if let Some(keycode) = input.virtual_keycode {
                         if !editor.handle_key(keycode, modifiers) {
-                            control_flow.set_exit();
+                            if editor.ready_to_quit() {
+                                editor.shutdown();
+                                control_flow.set_exit();
+                            }
                         }
                         request_redraw(&window);
                     }
@@ -196,8 +202,10 @@ fn main() {
                 event: WindowEvent::CloseRequested,
                 ..
             } => {
-                editor.shutdown();
-                control_flow.set_exit();
+                if editor.ready_to_quit() {
+                    editor.shutdown();
+                    control_flow.set_exit();
+                }
             }
             _ => (),
         }

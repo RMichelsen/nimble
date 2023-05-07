@@ -702,6 +702,21 @@ impl Buffer {
         }
     }
 
+    pub fn ready_to_quit(&mut self) -> bool {
+        if !self.piece_table.dirty {
+            return true;
+        }
+
+        if let Some(user_wants_save) = self.platform_resources.confirm_quit(&self.path) {
+            if user_wants_save {
+                self.piece_table.save_to(&self.path);
+            }
+            return true;
+        }
+
+        return false;
+    }
+
     fn handle_input_command(&mut self) -> Option<EditorCommand> {
         let input = self.input.clone();
         match input.as_str() {
@@ -723,14 +738,7 @@ impl Buffer {
                 return Some(EditorCommand::Quit);
             }
             ":q" | ":qa" => {
-                if !self.piece_table.dirty {
-                    return Some(EditorCommand::Quit);
-                }
-
-                if let Some(user_wants_save) = self.platform_resources.confirm_quit(&self.path) {
-                    if user_wants_save {
-                        self.piece_table.save_to(&self.path);
-                    }
+                if self.ready_to_quit() {
                     return Some(EditorCommand::Quit);
                 }
             }
