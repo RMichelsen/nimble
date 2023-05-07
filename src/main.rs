@@ -32,7 +32,7 @@ mod view;
 
 use std::time::{Duration, Instant};
 
-use editor::Editor;
+use editor::{Editor, EditorCommand};
 #[cfg(target_os = "macos")]
 use objc::{msg_send, runtime::YES, sel, sel_impl};
 #[cfg(target_os = "macos")]
@@ -108,11 +108,15 @@ fn main() {
                 ..
             } => {
                 if !modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::CTRL)) {
-                    if !editor.handle_char(chr) {
-                        if editor.ready_to_quit() {
+                    match editor.handle_char(chr) {
+                        Some(EditorCommand::Quit) if editor.ready_to_quit() => {
                             editor.shutdown();
                             control_flow.set_exit();
                         }
+                        Some(EditorCommand::QuitNoCheck) => {
+                            control_flow.set_exit();
+                        }
+                        _ => (),
                     }
                     request_redraw(&window);
                 }
@@ -122,12 +126,16 @@ fn main() {
                 ..
             } => {
                 if input.state == ElementState::Pressed {
-                    if let Some(keycode) = input.virtual_keycode {
-                        if !editor.handle_key(keycode, modifiers) {
-                            if editor.ready_to_quit() {
+                    if let Some(key_code) = input.virtual_keycode {
+                        match editor.handle_key(key_code, modifiers) {
+                            Some(EditorCommand::Quit) if editor.ready_to_quit() => {
                                 editor.shutdown();
                                 control_flow.set_exit();
                             }
+                            Some(EditorCommand::QuitNoCheck) => {
+                                control_flow.set_exit();
+                            }
+                            _ => (),
                         }
                         request_redraw(&window);
                     }

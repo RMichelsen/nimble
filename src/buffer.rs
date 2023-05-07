@@ -738,9 +738,10 @@ impl Buffer {
                 return Some(EditorCommand::Quit);
             }
             ":q" | ":qa" => {
-                if self.ready_to_quit() {
-                    return Some(EditorCommand::Quit);
-                }
+                return Some(EditorCommand::Quit);
+            }
+            ":q!" | ":qa!" => {
+                return Some(EditorCommand::QuitNoCheck);
             }
             _ => ()
         }

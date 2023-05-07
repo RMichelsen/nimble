@@ -20,6 +20,7 @@ pub enum EditorCommand {
     CenterView,
     CenterIfNotVisible,
     Quit,
+    QuitNoCheck,
 }
 
 pub struct Editor {
@@ -219,7 +220,7 @@ impl Editor {
         &mut self,
         key_code: VirtualKeyCode,
         modifiers: Option<ModifiersState>,
-    ) -> bool {
+    ) -> Option<EditorCommand> {
         let (num_rows, num_cols) = (self.renderer.num_rows, self.renderer.num_cols);
         if let Some(document) = self.active_document() {
             if let Some(editor_command) =
@@ -237,16 +238,19 @@ impl Editor {
                             .center_if_not_visible(&document.buffer, num_rows, num_cols)
                     }
                     EditorCommand::Quit => {
-                        return false;
+                        return Some(EditorCommand::Quit);
+                    }
+                    EditorCommand::QuitNoCheck => {
+                        return Some(EditorCommand::QuitNoCheck);
                     }
                 }
             }
             document.view.adjust(&document.buffer, num_rows, num_cols);
         }
-        true
+        None
     }
 
-    pub fn handle_char(&mut self, c: char) -> bool {
+    pub fn handle_char(&mut self, c: char) -> Option<EditorCommand> {
         let (num_rows, num_cols) = (self.renderer.num_rows, self.renderer.num_cols);
         if let Some(document) = self.active_document() {
             if let Some(editor_command) = document.buffer.handle_char(c) {
@@ -260,13 +264,16 @@ impl Editor {
                             .center_if_not_visible(&document.buffer, num_rows, num_cols)
                     }
                     EditorCommand::Quit => {
-                        return false;
+                        return Some(EditorCommand::Quit);
+                    }
+                    EditorCommand::QuitNoCheck => {
+                        return Some(EditorCommand::QuitNoCheck);
                     }
                 }
             }
             document.view.adjust(&document.buffer, num_rows, num_cols);
         }
-        true
+        None
     }
 
     pub fn ready_to_quit(&mut self) -> bool {
