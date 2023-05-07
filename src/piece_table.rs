@@ -9,6 +9,7 @@ use bstr::{ByteSlice, ByteVec};
 pub struct PieceTable {
     pub pieces: Vec<Piece>,
     pub indent_width: usize,
+    pub dirty: bool,
     original: Vec<u8>,
     add: Vec<u8>,
 }
@@ -119,6 +120,7 @@ impl PieceTable {
         Self {
             original,
             add: vec![],
+            dirty: false,
             pieces: vec![Piece {
                 file: PieceFile::Original,
                 start: 0,
@@ -129,7 +131,7 @@ impl PieceTable {
         }
     }
 
-    pub fn save_to(&self, path: &str) {
+    pub fn save_to(&mut self, path: &str) {
         let mut file = File::create(path).unwrap();
 
         for piece in self.pieces.iter() {
@@ -141,6 +143,8 @@ impl PieceTable {
             file.write(&buffer[piece.start..piece.start + piece.length])
                 .unwrap();
         }
+
+        self.dirty = false;
     }
 
     pub fn iter_chars(&self) -> PieceTableCharIterator {
@@ -254,6 +258,8 @@ impl PieceTable {
 
             current_position = next_position;
         }
+
+        self.dirty = true;
     }
 
     pub fn delete(&mut self, start: usize, end: usize) {
@@ -311,6 +317,8 @@ impl PieceTable {
         }
 
         self.pieces.retain(|piece| piece.length > 0);
+
+        self.dirty = true;
     }
 
     pub fn line_at_index(&self, index: usize) -> Option<Line> {

@@ -722,8 +722,17 @@ impl Buffer {
                 self.piece_table.save_to(&self.path);
                 return Some(EditorCommand::Quit);
             }
-            ":qa" => {
-                return Some(EditorCommand::Quit);
+            ":q" | ":qa" => {
+                if !self.piece_table.dirty {
+                    return Some(EditorCommand::Quit);
+                }
+
+                if let Some(user_wants_save) = self.platform_resources.confirm_quit(&self.path) {
+                    if user_wants_save {
+                        self.piece_table.save_to(&self.path);
+                    }
+                    return Some(EditorCommand::Quit);
+                }
             }
             _ => ()
         }

@@ -20,6 +20,7 @@ windows = { version = "0.46.0", features = [
         "Win32_Foundation", 
         "Win32_System_DataExchange",
         "Win32_System_Memory",
+        "Win32_UI_WindowsAndMessaging",
         "Foundation_Numerics" ] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
