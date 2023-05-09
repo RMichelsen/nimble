@@ -1,4 +1,5 @@
 use windows::{
+    core::ComInterface,
     w,
     Foundation::Numerics::Matrix3x2,
     Win32::{
@@ -16,10 +17,10 @@ use windows::{
                 D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
             },
             DirectWrite::{
-                DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
-                DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_NORMAL,
-                DWRITE_HIT_TEST_METRICS, DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE,
-                DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP,
+                DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout1,
+                DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_WEIGHT_NORMAL, DWRITE_HIT_TEST_METRICS, DWRITE_TEXT_METRICS,
+                DWRITE_TEXT_RANGE, DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP,
             },
             Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
         },
@@ -29,7 +30,7 @@ use winit::{platform::windows::WindowExtWindows, window::Window};
 
 use crate::{
     renderer::{Color, TextEffect, TextEffectKind},
-    theme::TEXT_COLOR,
+    theme::Theme,
     view::View,
 };
 
@@ -38,6 +39,7 @@ pub struct GraphicsContext {
     render_target: ID2D1HwndRenderTarget,
     dwrite_factory: IDWriteFactory,
     text_format: IDWriteTextFormat,
+    character_spacing: f32,
     pub font_size: (f32, f32),
 }
 
@@ -113,13 +115,15 @@ impl GraphicsContext {
                 .unwrap();
         }
 
-        let font_size = (metrics.width, metrics.height);
+        let character_spacing = (metrics.width.ceil() - metrics.width) / 2.0;
+        let font_size = (metrics.width.ceil(), metrics.height);
 
         Self {
             window_size,
             dwrite_factory,
             render_target,
             text_format,
+            character_spacing,
             font_size,
         }
     }
@@ -167,9 +171,9 @@ impl GraphicsContext {
 
             self.render_target.FillRectangle(
                 &D2D_RECT_F {
-                    left: col_offset - 0.5,
+                    left: col_offset,
                     top: row_offset - 0.5,
-                    right: col_offset + self.font_size.0 * size.0 as f32 + 0.5,
+                    right: col_offset + self.font_size.0 * size.0 as f32,
                     bottom: row_offset + self.font_size.1 * size.1 as f32 + 0.5,
                 },
                 &brush,
@@ -255,13 +259,34 @@ impl GraphicsContext {
 
         let mut text_metrics = DWRITE_TEXT_METRICS::default();
         unsafe {
+            text_layout
+                .cast::<IDWriteTextLayout1>()
+                .unwrap()
+                .SetCharacterSpacing(
+                    self.character_spacing,
+                    self.character_spacing,
+                    self.character_spacing,
+                    DWRITE_TEXT_RANGE {
+                        startPosition: 0,
+                        length: wide_text.len() as u32,
+                    },
+                )
+                .unwrap();
+
             text_layout.GetMetrics(&mut text_metrics as *mut _).unwrap();
         }
 
         (text_metrics.width as f64, text_metrics.height as f64)
     }
 
-    fn draw_text_with_offset(&self, x: f32, y: f32, text: &[u8], effects: &[TextEffect]) {
+    fn draw_text_with_offset(
+        &self,
+        x: f32,
+        y: f32,
+        text: &[u8],
+        effects: &[TextEffect],
+        theme: &Theme,
+    ) {
         let mut wide_text = vec![];
         for c in text {
             wide_text.push(*c as u16);
@@ -277,6 +302,22 @@ impl GraphicsContext {
                 )
                 .unwrap()
         };
+
+        unsafe {
+            text_layout
+                .cast::<IDWriteTextLayout1>()
+                .unwrap()
+                .SetCharacterSpacing(
+                    self.character_spacing,
+                    self.character_spacing,
+                    self.character_spacing,
+                    DWRITE_TEXT_RANGE {
+                        startPosition: 0,
+                        length: wide_text.len() as u32,
+                    },
+                )
+                .unwrap();
+        }
 
         for effect in effects {
             match &effect.kind {
@@ -312,9 +353,9 @@ impl GraphicsContext {
                 .render_target
                 .CreateSolidColorBrush(
                     &D2D1_COLOR_F {
-                        r: TEXT_COLOR.r,
-                        g: TEXT_COLOR.g,
-                        b: TEXT_COLOR.b,
+                        r: theme.foreground_color.r,
+                        g: theme.foreground_color.g,
+                        b: theme.foreground_color.b,
                         a: 1.0,
                     },
                     Some(&DEFAULT_BRUSH_PROPERTIES),
@@ -336,6 +377,7 @@ impl GraphicsContext {
         col: usize,
         text: &[u8],
         effects: &[TextEffect],
+        theme: &Theme,
         col_offset: usize,
     ) {
         let mut wide_text = vec![];
@@ -347,17 +389,28 @@ impl GraphicsContext {
             self.dwrite_factory
                 .CreateTextLayout(
                     &wide_text,
-                    // PCWSTR(HSTRING::from(std::str::from_utf8(text).unwrap()).as_ptr()),
-                    // w!(text),
-                    // U16CString::from_str(std::str::from_utf8(text).unwrap())
-                    //     .unwrap()
-                    //     .as_slice(),
                     &self.text_format,
                     self.window_size.0,
                     self.window_size.1,
                 )
                 .unwrap()
         };
+
+        unsafe {
+            text_layout
+                .cast::<IDWriteTextLayout1>()
+                .unwrap()
+                .SetCharacterSpacing(
+                    self.character_spacing,
+                    self.character_spacing,
+                    self.character_spacing,
+                    DWRITE_TEXT_RANGE {
+                        startPosition: 0,
+                        length: wide_text.len() as u32,
+                    },
+                )
+                .unwrap();
+        }
 
         for effect in effects {
             match &effect.kind {
@@ -393,9 +446,9 @@ impl GraphicsContext {
                 .render_target
                 .CreateSolidColorBrush(
                     &D2D1_COLOR_F {
-                        r: TEXT_COLOR.r,
-                        g: TEXT_COLOR.g,
-                        b: TEXT_COLOR.b,
+                        r: theme.foreground_color.r,
+                        g: theme.foreground_color.g,
+                        b: theme.foreground_color.b,
                         a: 1.0,
                     },
                     Some(&DEFAULT_BRUSH_PROPERTIES),
@@ -414,12 +467,25 @@ impl GraphicsContext {
         }
     }
 
-    pub fn draw_text(&self, row: usize, col: usize, text: &[u8], effects: &[TextEffect]) {
-        self.draw_text_with_col_offset(row, col, text, effects, 0)
+    pub fn draw_text(
+        &self,
+        row: usize,
+        col: usize,
+        text: &[u8],
+        effects: &[TextEffect],
+        theme: &Theme,
+    ) {
+        self.draw_text_with_col_offset(row, col, text, effects, theme, 0)
     }
 
-    pub fn draw_text_fit_view(&self, view: &View, text: &[u8], effects: &[TextEffect]) {
-        self.draw_text_with_col_offset(0, 0, text, effects, view.col_offset)
+    pub fn draw_text_fit_view(
+        &self,
+        view: &View,
+        text: &[u8],
+        effects: &[TextEffect],
+        theme: &Theme,
+    ) {
+        self.draw_text_with_col_offset(0, 0, text, effects, theme, view.col_offset)
     }
 
     pub fn set_word_wrapping(&self, wrap: bool) {
@@ -445,6 +511,7 @@ impl GraphicsContext {
         outer_color: Color,
         inner_color: Color,
         effects: Option<&[TextEffect]>,
+        theme: &Theme,
     ) {
         self.set_word_wrapping(true);
 
@@ -525,6 +592,7 @@ impl GraphicsContext {
             row_offset + self.font_size.1 * 0.5,
             text,
             effects.unwrap_or(&[]),
+            theme,
         );
 
         self.set_word_wrapping(false);

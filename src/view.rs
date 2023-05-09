@@ -98,9 +98,9 @@ impl View {
         buffer: &Buffer,
         num_rows: usize,
         num_cols: usize,
-        f: F,
+        mut f: F,
     ) where
-        F: Fn(usize, usize),
+        F: FnMut(usize, usize, usize),
     {
         for cursor in buffer.cursors.iter() {
             let (line, col) = cursor.get_line_col(&buffer.piece_table);
@@ -108,6 +108,7 @@ impl View {
                 f(
                     self.absolute_to_view_row(line),
                     self.absolute_to_view_col(col),
+                    cursor.position,
                 );
             }
         }
@@ -193,10 +194,45 @@ impl View {
         }
     }
 
+    pub fn visible_text_offset(&self, buffer: &Buffer, num_rows: usize) -> usize {
+        buffer
+            .piece_table
+            .char_index_from_line_col(self.line_offset, 0)
+            .unwrap_or(0)
+    }
+
     pub fn visible_text(&self, buffer: &Buffer, num_rows: usize) -> Vec<u8> {
         buffer
             .piece_table
             .text_between_lines(self.line_offset, self.line_offset + num_rows)
+    }
+
+    pub fn lines_before_visible_text(
+        &self,
+        buffer: &Buffer,
+        num_rows: usize,
+        num_lines: usize,
+    ) -> Vec<u8> {
+        if self.line_offset > 0 {
+            buffer.piece_table.text_between_lines(
+                self.line_offset.saturating_sub(num_lines + 1),
+                self.line_offset.saturating_sub(1),
+            )
+        } else {
+            vec![]
+        }
+    }
+
+    pub fn lines_after_visible_text(
+        &self,
+        buffer: &Buffer,
+        num_rows: usize,
+        num_lines: usize,
+    ) -> Vec<u8> {
+        buffer.piece_table.text_between_lines(
+            self.line_offset + num_rows + 1,
+            self.line_offset + num_rows + num_lines + 1,
+        )
     }
 
     pub fn visible_diagnostic_lines_iter<F>(

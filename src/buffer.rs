@@ -31,6 +31,7 @@ use crate::{
     piece_table::{Piece, PieceTable},
     platform_resources::PlatformResources,
     text_utils,
+    tree_sitter::TreeSitter,
     view::View,
 };
 
@@ -58,6 +59,7 @@ pub struct Buffer {
     pub redo_stack: Vec<BufferState>,
     pub mode: BufferMode,
     pub language_server: Option<Rc<RefCell<LanguageServer>>>,
+    pub tree_sitter: Option<Rc<RefCell<TreeSitter>>>,
     pub input: String,
     search_string: String,
     search_anchor: usize,
@@ -71,6 +73,7 @@ impl Buffer {
         window: &Window,
         path: &str,
         language_server: Option<Rc<RefCell<LanguageServer>>>,
+        tree_sitter: Option<Rc<RefCell<TreeSitter>>>,
     ) -> Self {
         let uri = "file:///".to_string() + path;
         let language = language_from_path(path).unwrap();
@@ -87,6 +90,7 @@ impl Buffer {
             mode: BufferMode::Normal,
             language_server,
             input: String::new(),
+            tree_sitter: tree_sitter,
             search_string: String::new(),
             search_anchor: 0,
             version: 1,

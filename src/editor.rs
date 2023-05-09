@@ -8,7 +8,7 @@ use winit::{
 
 use crate::{
     buffer::Buffer, language_server::LanguageServer, language_server_types::VoidParams,
-    language_support::language_from_path, renderer::Renderer, view::View,
+    language_support::language_from_path, renderer::Renderer, tree_sitter::TreeSitter, view::View,
 };
 
 struct Document {
@@ -28,6 +28,7 @@ pub struct Editor {
     documents: HashMap<String, Document>,
     active_document: Option<String>,
     language_servers: HashMap<&'static str, Rc<RefCell<LanguageServer>>>,
+    tree_sitters: HashMap<&'static str, Rc<RefCell<TreeSitter>>>,
 }
 
 impl Editor {
@@ -37,6 +38,7 @@ impl Editor {
             documents: HashMap::default(),
             active_document: None,
             language_servers: HashMap::default(),
+            tree_sitters: HashMap::default(),
         }
     }
 
@@ -111,6 +113,7 @@ impl Editor {
                 &document.buffer,
                 &document.view,
                 &document.buffer.language_server,
+                &document.buffer.tree_sitter,
             );
         }
         self.renderer.end_draw();
@@ -221,6 +224,13 @@ impl Editor {
         key_code: VirtualKeyCode,
         modifiers: Option<ModifiersState>,
     ) -> Option<EditorCommand> {
+        if key_code == VirtualKeyCode::T
+            && modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL))
+        {
+            self.renderer.cycle_theme();
+            return None;
+        }
+
         let (num_rows, num_cols) = (self.renderer.num_rows, self.renderer.num_cols);
         if let Some(document) = self.active_document() {
             if let Some(editor_command) =
@@ -244,8 +254,8 @@ impl Editor {
                         return Some(EditorCommand::QuitNoCheck);
                     }
                 }
+                document.view.adjust(&document.buffer, num_rows, num_cols);
             }
-            document.view.adjust(&document.buffer, num_rows, num_cols);
         }
         None
     }
@@ -299,13 +309,29 @@ impl Editor {
             }
         };
 
+        let tree_sitter = {
+            if let Some(language) = language_from_path(path) {
+                if !self.tree_sitters.contains_key(language.identifier) {
+                    self.tree_sitters.insert(
+                        language.identifier,
+                        Rc::new(RefCell::new(TreeSitter::new(language).unwrap())),
+                    );
+                }
+                Some(Rc::clone(
+                    self.tree_sitters.get(language.identifier).unwrap(),
+                ))
+            } else {
+                None
+            }
+        };
+
         if self.documents.contains_key(path) {
             self.active_document = Some(path.to_string());
         } else {
             self.documents.insert(
                 path.to_string(),
                 Document {
-                    buffer: Buffer::new(window, path, language_server),
+                    buffer: Buffer::new(window, path, language_server, tree_sitter),
                     view: View::new(),
                 },
             );

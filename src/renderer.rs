@@ -7,11 +7,9 @@ use crate::{
     graphics_context::GraphicsContext,
     language_server::LanguageServer,
     language_server_types::ParameterLabelType,
-    text_utils::{comment_highlights, keyword_highlights, search_highlights, string_highlights},
-    theme::{
-        BACKGROUND_COLOR, CURSOR_COLOR, DIAGNOSTIC_COLOR, HIGHLIGHT_COLOR, SEARCH_COLOR,
-        SELECTION_COLOR, TEXT_COLOR,
-    },
+    text_utils::search_highlights,
+    theme::{Theme, THEMES},
+    tree_sitter::TreeSitter,
     view::View,
 };
 
@@ -27,7 +25,7 @@ pub struct TextEffect {
     pub length: usize,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
     pub r: f32,
     pub g: f32,
@@ -49,6 +47,7 @@ pub struct Renderer {
     window_size: (f64, f64),
     pub num_rows: usize,
     pub num_cols: usize,
+    pub theme: Theme,
 }
 
 impl Renderer {
@@ -66,7 +65,16 @@ impl Renderer {
             window_size,
             num_rows,
             num_cols,
+            theme: THEMES[0],
         }
+    }
+
+    pub fn cycle_theme(&mut self) {
+        let i = THEMES
+            .iter()
+            .position(|theme| *theme == self.theme)
+            .unwrap();
+        self.theme = THEMES[(i + 1) % THEMES.len()];
     }
 
     pub fn get_font_size(&self) -> (f64, f64) {
@@ -78,7 +86,7 @@ impl Renderer {
 
     pub fn start_draw(&self) {
         self.context.begin_draw();
-        self.context.clear(BACKGROUND_COLOR);
+        self.context.clear(self.theme.background_color);
     }
 
     pub fn end_draw(&self) {
@@ -90,6 +98,7 @@ impl Renderer {
         buffer: &Buffer,
         view: &View,
         language_server: &Option<Rc<RefCell<LanguageServer>>>,
+        tree_sitter: &Option<Rc<RefCell<TreeSitter>>>,
     ) {
         use TextEffectKind::*;
 
@@ -110,9 +119,9 @@ impl Renderer {
                     ((text_offset + start)..(text_offset + start + length))
                         .contains(&cursor.position)
                 }) {
-                    SEARCH_COLOR
+                    self.theme.foreground_color
                 } else {
-                    SELECTION_COLOR
+                    self.theme.background_color
                 };
 
                 self.context.fill_cells(row, col, (length, 1), color);
@@ -121,45 +130,48 @@ impl Renderer {
 
         if buffer.mode != BufferMode::Insert {
             view.visible_cursors_iter(buffer, self.num_rows, self.num_cols, |row, col, num| {
-                self.context.fill_cells(row, col, (num, 1), SELECTION_COLOR);
+                self.context
+                    .fill_cells(row, col, (num, 1), self.theme.selection_background_color);
             });
         }
 
-        view.visible_cursor_leads_iter(buffer, self.num_rows, self.num_cols, |row, col| {
-            if buffer.mode == BufferMode::Insert {
-                self.context.fill_cell_slim_line(row, col, CURSOR_COLOR);
-            } else {
-                self.context.fill_cells(row, col, (1, 1), CURSOR_COLOR);
-            }
-        });
-
-        let mut effects = vec![];
-        effects.push(TextEffect {
-            kind: ForegroundColor(TEXT_COLOR),
+        let mut effects = vec![TextEffect {
+            kind: ForegroundColor(self.theme.foreground_color),
             start: 0,
             length: text.len(),
+        }];
+
+        view.visible_cursor_leads_iter(buffer, self.num_rows, self.num_cols, |row, col, pos| {
+            if buffer.mode == BufferMode::Insert {
+                self.context
+                    .fill_cell_slim_line(row, col, self.theme.cursor_color);
+            } else {
+                self.context
+                    .fill_cells(row, col, (1, 1), self.theme.cursor_color);
+            }
+            effects.push(TextEffect {
+                kind: TextEffectKind::ForegroundColor(self.theme.background_color),
+                start: pos - view.visible_text_offset(buffer, self.num_rows),
+                length: 1,
+            })
         });
 
-        let keyword_highlights = keyword_highlights(&text, buffer.language.keywords);
+        // We give tree-sitter a bit of extra context to be able to highlight out-of-view multi-line comments
+        if let Some(tree_sitter) = &tree_sitter {
+            let mut text_before = view.lines_before_visible_text(buffer, self.num_rows, 50);
+            let offset = text_before.len();
+            text_before.extend(&text);
+            text_before.extend(&view.lines_after_visible_text(buffer, self.num_rows, 50));
+            effects.extend(tree_sitter.borrow_mut().highlight_text(
+                &text_before,
+                offset,
+                text.len(),
+                &self.theme,
+            ));
+        }
 
-        let comment_highlights = comment_highlights(
-            &text,
-            buffer.language.line_comment_token,
-            buffer.language.multi_line_comment_token_pair,
-            buffer.piece_table.iter_chars_at_rev(
-                buffer
-                    .piece_table
-                    .char_index_from_line_col(view.line_offset, 0)
-                    .unwrap_or(0),
-            ),
-        );
-        let string_highlights = string_highlights(&text, &comment_highlights);
-
-        effects.extend(keyword_highlights);
-        effects.extend(comment_highlights);
-        effects.extend(string_highlights);
-
-        self.context.draw_text_fit_view(view, &text, &effects);
+        self.context
+            .draw_text_fit_view(view, &text, &effects, &self.theme);
 
         if let Some(server) = language_server {
             if let Some(diagnostics) = server
@@ -174,7 +186,7 @@ impl Renderer {
                     self.num_cols,
                     |row, col, count| {
                         self.context
-                            .underline_cells(row, col, count, DIAGNOSTIC_COLOR);
+                            .underline_cells(row, col, count, self.theme.diagnostic_color);
                     },
                 );
             }
@@ -191,13 +203,13 @@ impl Renderer {
                     completion_view.row,
                     completion_view.col.saturating_sub(1),
                     (completion_view.width + 1, completion_view.height),
-                    SELECTION_COLOR,
+                    self.theme.selection_background_color,
                 );
                 self.context.fill_cells(
                     completion_view.row + selected_item,
                     completion_view.col.saturating_sub(1),
                     (completion_view.width + 1, 1),
-                    CURSOR_COLOR,
+                    self.theme.cursor_color,
                 );
 
                 let mut selected_item_start_position = 0;
@@ -218,12 +230,12 @@ impl Renderer {
 
                 let effects = [
                     TextEffect {
-                        kind: ForegroundColor(TEXT_COLOR),
+                        kind: ForegroundColor(self.theme.foreground_color),
                         start: 0,
                         length: completion_string.len(),
                     },
                     TextEffect {
-                        kind: ForegroundColor(HIGHLIGHT_COLOR),
+                        kind: ForegroundColor(self.theme.foreground_color),
                         start: selected_item_start_position,
                         length: completions[request.selection_index]
                             .insert_text
@@ -238,6 +250,7 @@ impl Renderer {
                     completion_view.col,
                     completion_string.as_bytes(),
                     &effects,
+                    &self.theme,
                 );
             },
         );
@@ -269,7 +282,7 @@ impl Renderer {
                                             .is_ascii_alphanumeric()
                                         {
                                             effects.push(TextEffect {
-                                                kind: ForegroundColor(HIGHLIGHT_COLOR),
+                                                kind: ForegroundColor(self.theme.foreground_color),
                                                 start,
                                                 length: label.len(),
                                             });
@@ -278,7 +291,7 @@ impl Renderer {
                                 }
                                 ParameterLabelType::Offsets(start, end) => {
                                     effects.push(TextEffect {
-                                        kind: ForegroundColor(HIGHLIGHT_COLOR),
+                                        kind: ForegroundColor(self.theme.foreground_color),
                                         start: *start as usize,
                                         length: *end as usize - *start as usize + 1,
                                     });
@@ -292,9 +305,10 @@ impl Renderer {
                         signature_help_view.col,
                         true,
                         active_signature.label.as_bytes(),
-                        SELECTION_COLOR,
-                        BACKGROUND_COLOR,
+                        self.theme.selection_background_color,
+                        self.theme.background_color,
                         Some(&effects),
+                        &self.theme,
                     );
                 }
             },
@@ -340,9 +354,10 @@ impl Renderer {
                             col,
                             false,
                             diagnostic.message.as_bytes(),
-                            SELECTION_COLOR,
-                            BACKGROUND_COLOR,
+                            self.theme.selection_background_color,
+                            self.theme.background_color,
                             None,
+                            &self.theme,
                         );
                     }
                 }
@@ -360,9 +375,10 @@ impl Renderer {
                 0,
                 true,
                 buffer.input.as_bytes(),
-                SELECTION_COLOR,
-                BACKGROUND_COLOR,
+                self.theme.selection_background_color,
+                self.theme.background_color,
                 None,
+                &self.theme,
             );
         }
     }

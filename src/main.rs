@@ -17,6 +17,10 @@ mod language_server_types;
 mod language_support;
 mod piece_table;
 mod renderer;
+mod text_utils;
+mod theme;
+mod tree_sitter;
+mod view;
 
 #[cfg_attr(target_os = "windows", path = "graphics_context_windows.rs")]
 #[cfg_attr(target_os = "macos", path = "graphics_context_macos.rs")]
@@ -25,10 +29,6 @@ mod graphics_context;
 #[cfg_attr(target_os = "windows", path = "platform_resources_windows.rs")]
 #[cfg_attr(target_os = "macos", path = "platform_resources_macos.rs")]
 mod platform_resources;
-
-mod text_utils;
-mod theme;
-mod view;
 
 use std::time::{Duration, Instant};
 
@@ -61,12 +61,12 @@ fn main() {
     //     "C:/Users/Rasmus/Desktop/nimble/src/language_server_types.rs",
     //     &window,
     // );
-    editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/buffer.rs", &window);
+    // editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/buffer.rs", &window);
     // editor.open_file("C:/Users/Rasmus/Desktop/testfile.rs", &window);
-    // editor.open_file(
-    //     "C:/VulkanSDK/1.3.239.0/Source/SPIRV-Reflect/spirv_reflect.c",
-    //     &window,
-    // );
+    editor.open_file(
+        "C:/VulkanSDK/1.3.239.0/Source/SPIRV-Reflect/spirv_reflect.c",
+        &window,
+    );
     // editor.open_file(
     //     "C:/Users/Rasmus/Desktop/Nvy/src/renderer/renderer.cpp",
     //     &window,

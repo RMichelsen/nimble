@@ -7,6 +7,10 @@ edition = "2021"
 bstr = "1.4.0"
 serde = { version = "1.0.159", features = ["derive"] }
 serde_json = "1.0.95"
+tree-sitter = "0.20.10"
+tree-sitter-highlight = "0.20.1"
+tree-sitter-c = "0.20.2"
+tree-sitter-rust = "0.20.3"
 winit = "0.28.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
