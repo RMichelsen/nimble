@@ -458,6 +458,7 @@ dependencies = [
  "tree-sitter",
  "tree-sitter-c",
  "tree-sitter-highlight",
+ "tree-sitter-python",
  "tree-sitter-rust",
  "windows",
  "winit",
@@ -888,6 +889,16 @@ checksum = "042342584c5a7a0b833d9fc4e2bdab3f9868ddc6c4b339a1e01451c6720868bc"
 dependencies = [
  "regex",
  "thiserror",
+ "tree-sitter",
+]
+
+[[package]]
+name = "tree-sitter-python"
+version = "0.20.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dda114f58048f5059dcf158aff691dffb8e113e6d2b50d94263fd68711975287"
+dependencies = [
+ "cc",
  "tree-sitter",
 ]
 

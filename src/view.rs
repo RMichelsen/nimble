@@ -207,34 +207,6 @@ impl View {
             .text_between_lines(self.line_offset, self.line_offset + num_rows)
     }
 
-    pub fn lines_before_visible_text(
-        &self,
-        buffer: &Buffer,
-        num_rows: usize,
-        num_lines: usize,
-    ) -> Vec<u8> {
-        if self.line_offset > 0 {
-            buffer.piece_table.text_between_lines(
-                self.line_offset.saturating_sub(num_lines + 1),
-                self.line_offset.saturating_sub(1),
-            )
-        } else {
-            vec![]
-        }
-    }
-
-    pub fn lines_after_visible_text(
-        &self,
-        buffer: &Buffer,
-        num_rows: usize,
-        num_lines: usize,
-    ) -> Vec<u8> {
-        buffer.piece_table.text_between_lines(
-            self.line_offset + num_rows + 1,
-            self.line_offset + num_rows + num_lines + 1,
-        )
-    }
-
     pub fn visible_diagnostic_lines_iter<F>(
         &self,
         buffer: &Buffer,

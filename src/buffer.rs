@@ -52,7 +52,7 @@ pub struct BufferState {
 pub struct Buffer {
     pub path: String,
     pub uri: String,
-    pub language: &'static Language,
+    pub language: Option<&'static Language>,
     pub piece_table: PieceTable,
     pub cursors: Vec<Cursor>,
     pub undo_stack: Vec<BufferState>,
@@ -76,7 +76,7 @@ impl Buffer {
         tree_sitter: Option<Rc<RefCell<TreeSitter>>>,
     ) -> Self {
         let uri = "file:///".to_string() + path;
-        let language = language_from_path(path).unwrap();
+        let language = language_from_path(path);
         let piece_table = PieceTable::from_file(path);
 
         Self {
@@ -103,7 +103,7 @@ impl Buffer {
         let open_params = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {
                 uri: self.uri.clone(),
-                language_id: self.language.identifier.to_string(),
+                language_id: self.language.unwrap().identifier.to_string(),
                 version: 0,
                 text: unsafe { String::from_utf8_unchecked(text) },
             },
@@ -924,35 +924,38 @@ impl Buffer {
                     chars.append(&mut vec![b' '; line_indent]);
 
                     let mut cursor_offset = chars.len();
-                    if let Some(indent_chars) = self.language.indent_chars {
-                        if let Some(char_before) =
-                            self.piece_table.char_at(cursor_position.saturating_sub(1))
-                        {
-                            if indent_chars.contains(&char_before) {
-                                chars.append(&mut vec![b' '; self.piece_table.indent_width]);
-                                cursor_offset = chars.len();
 
-                                let char_after = self.piece_table.char_at(cursor_position);
-                                match (char_before, char_after) {
-                                    (b'(', Some(b')'))
-                                    | (b'{', Some(b'}'))
-                                    | (b'[', Some(b'[')) => {
-                                        chars.push(b'\n');
-                                        chars.append(&mut vec![b' '; line_indent]);
+                    if let Some(language) = &self.language {
+                        if let Some(indent_chars) = language.indent_chars {
+                            if let Some(char_before) =
+                                self.piece_table.char_at(cursor_position.saturating_sub(1))
+                            {
+                                if indent_chars.contains(&char_before) {
+                                    chars.append(&mut vec![b' '; self.piece_table.indent_width]);
+                                    cursor_offset = chars.len();
+
+                                    let char_after = self.piece_table.char_at(cursor_position);
+                                    match (char_before, char_after) {
+                                        (b'(', Some(b')'))
+                                        | (b'{', Some(b'}'))
+                                        | (b'[', Some(b'[')) => {
+                                            chars.push(b'\n');
+                                            chars.append(&mut vec![b' '; line_indent]);
+                                        }
+                                        _ => (),
                                     }
-                                    _ => (),
                                 }
                             }
-                        }
-                    } else if let Some(indent_words) = self.language.indent_words {
-                        for word in indent_words {
-                            if self
-                                .piece_table
-                                .line_at_char_starts_with(cursor_position, word.as_bytes())
-                            {
-                                chars.append(&mut vec![b' '; self.piece_table.indent_width]);
-                                cursor_offset = chars.len();
-                                break;
+                        } else if let Some(indent_words) = language.indent_words {
+                            for word in indent_words {
+                                if self
+                                    .piece_table
+                                    .line_at_char_starts_with(cursor_position, word.as_bytes())
+                                {
+                                    chars.append(&mut vec![b' '; self.piece_table.indent_width]);
+                                    cursor_offset = chars.len();
+                                    break;
+                                }
                             }
                         }
                     }
@@ -1010,84 +1013,86 @@ impl Buffer {
             }
             // TODO: Improve performance: selecting many lines (1000+) is slow.
             ToggleComment => {
-                if let Some(line_comment_token) = self.language.line_comment_token {
-                    let mut content_changes = vec![];
-                    let length = line_comment_token.len();
-                    let mut indent = usize::MAX;
-                    let mut uncomment = true;
+                let line_comment_token = if self.language.is_some() {
+                    self.language.unwrap().line_comment_token.unwrap_or("//")
+                } else {
+                    "//"
+                };
 
-                    // We only uncomment if and only if all lines start with a comment
-                    for i in 0..self.cursors.len() {
-                        let line = self.piece_table.line_index(self.cursors[i].position);
-                        let anchor_line = self.piece_table.line_index(self.cursors[i].anchor);
+                let mut content_changes = vec![];
+                let length = line_comment_token.len();
+                let mut indent = usize::MAX;
+                let mut uncomment = true;
 
-                        for i in min(line, anchor_line)..=max(line, anchor_line) {
-                            if let Some(line) = self.piece_table.line_at_index(i) {
-                                let bytes: Vec<u8> = self
-                                    .piece_table
-                                    .iter_chars_at(line.start)
-                                    .take(line.length)
-                                    .collect();
-                                if bytes.is_empty() {
-                                    continue;
-                                }
+                // We only uncomment if and only if all lines start with a comment
+                for i in 0..self.cursors.len() {
+                    let line = self.piece_table.line_index(self.cursors[i].position);
+                    let anchor_line = self.piece_table.line_index(self.cursors[i].anchor);
 
-                                if !bytes.trim().starts_with_str(line_comment_token.as_bytes()) {
-                                    uncomment = false;
-                                }
-
-                                indent = min(
-                                    indent,
-                                    bytes
-                                        .iter()
-                                        .position(|c| !c.is_ascii_whitespace())
-                                        .unwrap_or(0),
-                                );
+                    for i in min(line, anchor_line)..=max(line, anchor_line) {
+                        if let Some(line) = self.piece_table.line_at_index(i) {
+                            let bytes: Vec<u8> = self
+                                .piece_table
+                                .iter_chars_at(line.start)
+                                .take(line.length)
+                                .collect();
+                            if bytes.is_empty() {
+                                continue;
                             }
+
+                            if !bytes.trim().starts_with_str(line_comment_token.as_bytes()) {
+                                uncomment = false;
+                            }
+
+                            indent = min(
+                                indent,
+                                bytes
+                                    .iter()
+                                    .position(|c| !c.is_ascii_whitespace())
+                                    .unwrap_or(0),
+                            );
                         }
                     }
-
-                    for i in 0..self.cursors.len() {
-                        let line = self.piece_table.line_index(self.cursors[i].position);
-                        let anchor_line = self.piece_table.line_index(self.cursors[i].anchor);
-
-                        for i in min(line, anchor_line)..=max(line, anchor_line) {
-                            if let Some(line) = self.piece_table.line_at_index(i) {
-                                let bytes: Vec<u8> = self
-                                    .piece_table
-                                    .iter_chars_at(line.start)
-                                    .take(line.length)
-                                    .collect();
-                                if bytes.is_empty() {
-                                    continue;
-                                }
-
-                                if uncomment {
-                                    let token_index = bytes.find(line_comment_token).unwrap();
-                                    let start = line.start + token_index;
-                                    let end = if bytes
-                                        .get(token_index + length)
-                                        .is_some_and(|c| c.is_ascii_whitespace())
-                                    {
-                                        start + length + 1
-                                    } else {
-                                        start + length
-                                    };
-                                    content_changes.push(self.delete_chars(start, end));
-                                } else {
-                                    let start = line.start + indent;
-                                    content_changes.push(
-                                        self.insert_chars(start, line_comment_token.as_bytes()),
-                                    );
-                                    content_changes
-                                        .push(self.insert_chars(start + length, &[b' ']));
-                                }
-                            }
-                        }
-                    }
-
-                    self.lsp_change(content_changes);
                 }
+
+                for i in 0..self.cursors.len() {
+                    let line = self.piece_table.line_index(self.cursors[i].position);
+                    let anchor_line = self.piece_table.line_index(self.cursors[i].anchor);
+
+                    for i in min(line, anchor_line)..=max(line, anchor_line) {
+                        if let Some(line) = self.piece_table.line_at_index(i) {
+                            let bytes: Vec<u8> = self
+                                .piece_table
+                                .iter_chars_at(line.start)
+                                .take(line.length)
+                                .collect();
+                            if bytes.is_empty() {
+                                continue;
+                            }
+
+                            if uncomment {
+                                let token_index = bytes.find(line_comment_token).unwrap();
+                                let start = line.start + token_index;
+                                let end = if bytes
+                                    .get(token_index + length)
+                                    .is_some_and(|c| c.is_ascii_whitespace())
+                                {
+                                    start + length + 1
+                                } else {
+                                    start + length
+                                };
+                                content_changes.push(self.delete_chars(start, end));
+                            } else {
+                                let start = line.start + indent;
+                                content_changes
+                                    .push(self.insert_chars(start, line_comment_token.as_bytes()));
+                                content_changes.push(self.insert_chars(start + length, &[b' ']));
+                            }
+                        }
+                    }
+                }
+
+                self.lsp_change(content_changes);
             }
             DeleteCharBack => {
                 let mut content_changes = vec![];
@@ -1221,7 +1226,6 @@ impl Buffer {
                     self.piece_table.pieces = state.pieces;
                     self.cursors = state.cursors;
                 }
-
                 self.lsp_reload();
             }
             Redo => {

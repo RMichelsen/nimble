@@ -27,6 +27,10 @@ impl TreeSitter {
                 tree_sitter_rust::language(),
                 tree_sitter_rust::HIGHLIGHT_QUERY,
             ),
+            "python" => (
+                tree_sitter_python::language(),
+                tree_sitter_python::HIGHLIGHT_QUERY,
+            ),
             _ => return None,
         };
 
@@ -41,13 +45,7 @@ impl TreeSitter {
         })
     }
 
-    pub fn highlight_text(
-        &mut self,
-        text: &[u8],
-        offset: usize,
-        length: usize,
-        theme: &Theme,
-    ) -> Vec<TextEffect> {
+    pub fn highlight_text(&mut self, text: &[u8], length: usize, theme: &Theme) -> Vec<TextEffect> {
         let mut effects = vec![];
 
         if let Ok(highlights) = self
@@ -63,16 +61,12 @@ impl TreeSitter {
                     }
                     HighlightEvent::HighlightEnd => color = None,
                     HighlightEvent::Source { start, end } => {
-                        if end > offset && end < offset + length {
-                            let start = if start > offset { start - offset } else { 0 };
-                            let end = end - offset;
-                            if let Some(color) = color {
-                                effects.push(TextEffect {
-                                    kind: crate::renderer::TextEffectKind::ForegroundColor(color),
-                                    start,
-                                    length: end - start,
-                                });
-                            }
+                        if let Some(color) = color {
+                            effects.push(TextEffect {
+                                kind: crate::renderer::TextEffectKind::ForegroundColor(color),
+                                start,
+                                length: end - start,
+                            });
                         }
                     }
                 }

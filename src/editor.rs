@@ -53,7 +53,7 @@ impl Editor {
                         match response.method {
                             "initialize" => {
                                 for document in self.documents.values() {
-                                    if *identifier == document.buffer.language.identifier {
+                                    if *identifier == document.buffer.language.unwrap().identifier {
                                         document.buffer.send_did_open(&mut server);
                                     }
                                 }
@@ -294,17 +294,17 @@ impl Editor {
 
     pub fn open_file(&mut self, path: &str, window: &Window) {
         let language_server = {
-            if let Some(language) = language_from_path(path) {
-                if !self.language_servers.contains_key(language.identifier) {
-                    self.language_servers.insert(
-                        language.identifier,
-                        Rc::new(RefCell::new(LanguageServer::new(language).unwrap())),
-                    );
-                }
-                Some(Rc::clone(
-                    self.language_servers.get(language.identifier).unwrap(),
-                ))
-            } else {
+            if let Some(language) = language_from_path(path) &&
+                let Some(server) = LanguageServer::new(language) &&
+                !self.language_servers.contains_key(language.identifier) 
+                    {
+                        self.language_servers
+                            .insert(language.identifier, Rc::new(RefCell::new(server)));
+                        Some(Rc::clone(
+                            self.language_servers.get(language.identifier).unwrap(),
+                        ))
+                    }
+            else {
                 None
             }
         };

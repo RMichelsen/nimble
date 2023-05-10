@@ -66,6 +66,10 @@ fn main() {
         "C:/Users/Rasmus/Desktop/Nvy/src/renderer/renderer.cpp",
         &window,
     );
+    // editor.open_file(
+    //     "C:/Users/Rasmus/AppData/Local/Programs/Python/Python310/Lib/_pydecimal.py",
+    //     &window,
+    // );
     request_redraw(&window);
 
     let mut modifiers: Option<ModifiersState> = None;

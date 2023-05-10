@@ -7,7 +7,7 @@ use crate::{
     graphics_context::GraphicsContext,
     language_server::LanguageServer,
     language_server_types::ParameterLabelType,
-    text_utils::search_highlights,
+    text_utils::{comment_highlights, search_highlights},
     theme::{Theme, THEMES},
     tree_sitter::TreeSitter,
     view::View,
@@ -111,18 +111,32 @@ impl Renderer {
             length: text.len(),
         }];
 
-        // We give tree-sitter a bit of extra context to be able to highlight out-of-view multi-line comments
         if let Some(tree_sitter) = &tree_sitter {
-            let mut text_before = view.lines_before_visible_text(buffer, self.num_rows, 50);
-            let offset = text_before.len();
-            text_before.extend(&text);
-            text_before.extend(&view.lines_after_visible_text(buffer, self.num_rows, 50));
-            effects.extend(tree_sitter.borrow_mut().highlight_text(
-                &text_before,
-                offset,
-                text.len(),
-                &self.theme,
-            ));
+            effects.extend(
+                tree_sitter
+                    .borrow_mut()
+                    .highlight_text(&text, text.len(), &self.theme),
+            );
+        }
+
+        if let Some(language) = buffer.language {
+            for (start, length) in comment_highlights(
+                &text,
+                language.line_comment_token,
+                language.multi_line_comment_token_pair,
+                buffer.piece_table.iter_chars_at_rev(
+                    buffer
+                        .piece_table
+                        .char_index_from_line_col(view.line_offset, 0)
+                        .unwrap_or(0),
+                ),
+            ) {
+                effects.push(TextEffect {
+                    kind: TextEffectKind::ForegroundColor(self.theme.comment_color),
+                    start,
+                    length,
+                })
+            }
         }
 
         if buffer.input.as_bytes().first().is_some_and(|c| *c == b'/') {
