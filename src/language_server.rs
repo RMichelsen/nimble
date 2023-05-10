@@ -50,7 +50,7 @@ impl LanguageServer {
         let mut server = Command::new(language.lsp_executable?)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            // .stderr(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .ok()?;
         let mut stdin = server.stdin.take()?;
