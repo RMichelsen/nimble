@@ -250,19 +250,19 @@ impl GraphicsContext {
         }
     }
 
-    pub fn get_text_bounding_box(&self, text: &[u8], col_offset: f32) -> (f64, f64) {
+    pub fn get_text_bounding_box(&self, x: f32, y: f32, text: &[u8]) -> (f64, f64) {
         let mut wide_text = vec![];
         for c in text {
             wide_text.push(*c as u16);
         }
 
-        let text_layout = unsafe {
+        let text_layout: _ = unsafe {
             self.dwrite_factory
                 .CreateTextLayout(
                     &wide_text,
                     &self.text_format,
-                    self.window_size.0 - col_offset,
-                    self.window_size.1,
+                    self.window_size.0 - x.clamp(0.0, f32::MAX),
+                    self.window_size.1 - y.clamp(0.0, f32::MAX),
                 )
                 .unwrap()
         };
@@ -307,8 +307,8 @@ impl GraphicsContext {
                 .CreateTextLayout(
                     &wide_text,
                     &self.text_format,
-                    self.window_size.0 - x,
-                    self.window_size.1 - y,
+                    self.window_size.0 - x.clamp(0.0, f32::MAX),
+                    self.window_size.1 - y.clamp(0.0, f32::MAX),
                 )
                 .unwrap()
         };
@@ -513,11 +513,10 @@ impl GraphicsContext {
         }
     }
 
-    pub fn draw_popup(
+    pub fn draw_popup_below(
         &self,
         row: usize,
         col: usize,
-        grow_up: bool,
         text: &[u8],
         outer_color: Color,
         inner_color: Color,
@@ -529,9 +528,112 @@ impl GraphicsContext {
         let (mut row_offset, col_offset) =
             (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
 
-        let (width, height) = self.get_text_bounding_box(text, col_offset);
+        let (width, height) = self.get_text_bounding_box(
+            col_offset + self.font_size.1 * 0.5,
+            row_offset + self.font_size.1 * 0.5,
+            text,
+        );
 
-        if grow_up {
+        if row_offset + height as f32 > self.window_size.1 {
+            row_offset -= height as f32 + self.font_size.1 + self.font_size.1;
+        }
+
+        let (width, height) = (
+            (width / self.font_size.0 as f64).round() as usize,
+            (height / self.font_size.1 as f64).round() as usize,
+        );
+
+        unsafe {
+            let outer_brush = self
+                .render_target
+                .CreateSolidColorBrush(
+                    &D2D1_COLOR_F {
+                        r: outer_color.r,
+                        g: outer_color.g,
+                        b: outer_color.b,
+                        a: 1.0,
+                    },
+                    Some(&DEFAULT_BRUSH_PROPERTIES),
+                )
+                .unwrap();
+
+            self.render_target.FillRectangle(
+                &D2D_RECT_F {
+                    left: col_offset - 0.5,
+                    top: row_offset - 0.5,
+                    right: col_offset + self.font_size.0 * width as f32 + self.font_size.1 + 0.5,
+                    bottom: row_offset + self.font_size.1 * height as f32 + self.font_size.1 + 0.5,
+                },
+                &outer_brush,
+            );
+
+            let inner_brush = self
+                .render_target
+                .CreateSolidColorBrush(
+                    &D2D1_COLOR_F {
+                        r: inner_color.r,
+                        g: inner_color.g,
+                        b: inner_color.b,
+                        a: 1.0,
+                    },
+                    Some(&DEFAULT_BRUSH_PROPERTIES),
+                )
+                .unwrap();
+
+            self.render_target.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: D2D_RECT_F {
+                        left: col_offset - 0.5 + self.font_size.1 * 0.25,
+                        top: row_offset - 0.5 + self.font_size.1 * 0.25,
+                        right: col_offset
+                            + self.font_size.0 * width as f32
+                            + self.font_size.1 * 0.75
+                            + 0.5,
+                        bottom: row_offset
+                            + self.font_size.1 * height as f32
+                            + self.font_size.1 * 0.75
+                            + 0.5,
+                    },
+                    radiusX: 1.5,
+                    radiusY: 1.5,
+                },
+                &inner_brush,
+            );
+        }
+
+        self.draw_text_with_offset(
+            col_offset + self.font_size.1 * 0.5,
+            row_offset + self.font_size.1 * 0.5,
+            text,
+            effects.unwrap_or(&[]),
+            theme,
+        );
+
+        self.set_word_wrapping(false);
+    }
+
+    pub fn draw_popup_above(
+        &self,
+        row: usize,
+        col: usize,
+        text: &[u8],
+        outer_color: Color,
+        inner_color: Color,
+        effects: Option<&[TextEffect]>,
+        theme: &Theme,
+    ) {
+        self.set_word_wrapping(true);
+
+        let (mut row_offset, col_offset) =
+            (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
+
+        let (width, height) = self.get_text_bounding_box(
+            col_offset + self.font_size.1 * 0.5,
+            row_offset + self.font_size.1 * 0.5,
+            text,
+        );
+
+        if row_offset - height as f32 > 0.0 {
             row_offset -= height as f32 + self.font_size.1 + self.font_size.1;
         }
 

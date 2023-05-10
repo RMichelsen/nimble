@@ -42,6 +42,13 @@ impl Color {
     }
 }
 
+pub struct RenderLayout {
+    row_offset: usize,
+    col_offset: usize,
+    num_rows: usize,
+    num_cols: usize,
+}
+
 pub struct Renderer {
     context: GraphicsContext,
     window_size: (f64, f64),
@@ -106,7 +113,6 @@ impl Renderer {
             .take_while(|i| 10usize.pow(*i) <= buffer.piece_table.num_lines())
             .count()
             + 2;
-
         let text = view.visible_text(buffer, self.num_rows);
         let text_offset = view.visible_text_offset(buffer, self.num_rows);
 
@@ -145,27 +151,29 @@ impl Renderer {
         }
 
         if buffer.input.as_bytes().first().is_some_and(|c| *c == b'/') {
+            let mut first_result_found = false;
             for (start, length) in search_highlights(&text, &buffer.input[1..]) {
                 let (row, col) = (
                     view.absolute_to_view_row(buffer.piece_table.line_index(text_offset + start)),
                     view.absolute_to_view_col(buffer.piece_table.col_index(text_offset + start)),
                 );
 
-                let (foreground_color, background_color) =
-                    if buffer.cursors.last().is_some_and(|cursor| {
-                        ((text_offset + start)..(text_offset + start + length))
-                            .contains(&cursor.position)
+                let (foreground_color, background_color) = if !first_result_found
+                    && buffer.cursors.last().is_some_and(|cursor| {
+                        let ahead_of_cursor = text_offset + start >= cursor.position;
+                        first_result_found = ahead_of_cursor;
+                        ahead_of_cursor
                     }) {
-                        (
-                            self.theme.active_search_foreground_color,
-                            self.theme.active_search_background_color,
-                        )
-                    } else {
-                        (
-                            self.theme.active_search_background_color,
-                            self.theme.search_background_color,
-                        )
-                    };
+                    (
+                        self.theme.active_search_foreground_color,
+                        self.theme.active_search_background_color,
+                    )
+                } else {
+                    (
+                        self.theme.search_foreground_color,
+                        self.theme.search_background_color,
+                    )
+                };
 
                 self.context.fill_cells(
                     row,
@@ -173,33 +181,6 @@ impl Renderer {
                     (length, 1),
                     background_color,
                 );
-                effects.push(TextEffect {
-                    kind: ForegroundColor(self.theme.background_color),
-                    start,
-                    length,
-                })
-            }
-        }
-
-        if buffer.mode != BufferMode::Insert {
-            view.visible_cursors_iter(buffer, self.num_rows, self.num_cols, |row, col, num| {
-                self.context.fill_cells(
-                    row,
-                    col + numbers_col_offset,
-                    (num, 1),
-                    self.theme.selection_background_color,
-                );
-            });
-        }
-
-        view.visible_cursor_leads_iter(buffer, self.num_rows, self.num_cols, |row, col, pos| {
-            if buffer.mode == BufferMode::Insert {
-                self.context.fill_cell_slim_line(
-                    row,
-                    col + numbers_col_offset,
-                    self.theme.cursor_color,
-                );
-            } else {
                 self.context.fill_cells(
                     row,
                     col + numbers_col_offset,
@@ -208,11 +189,49 @@ impl Renderer {
                 );
                 effects.push(TextEffect {
                     kind: ForegroundColor(self.theme.background_color),
-                    start: pos - text_offset,
-                    length: 1,
-                })
+                    start,
+                    length,
+                });
             }
-        });
+        } else {
+            if buffer.mode != BufferMode::Insert {
+                view.visible_cursors_iter(buffer, self.num_rows, self.num_cols, |row, col, num| {
+                    self.context.fill_cells(
+                        row,
+                        col + numbers_col_offset,
+                        (num, 1),
+                        self.theme.selection_background_color,
+                    );
+                });
+            }
+
+            view.visible_cursor_leads_iter(
+                buffer,
+                self.num_rows,
+                self.num_cols,
+                |row, col, pos| {
+                    if buffer.mode == BufferMode::Insert {
+                        self.context.fill_cell_slim_line(
+                            row,
+                            col + numbers_col_offset,
+                            self.theme.cursor_color,
+                        );
+                    } else {
+                        self.context.fill_cells(
+                            row,
+                            col + numbers_col_offset,
+                            (1, 1),
+                            self.theme.cursor_color,
+                        );
+                        effects.push(TextEffect {
+                            kind: ForegroundColor(self.theme.background_color),
+                            start: pos - text_offset,
+                            length: 1,
+                        })
+                    }
+                },
+            );
+        }
 
         let mut numbers = String::default();
         for line in view.line_offset + 1..=view.line_offset + 1 + self.num_rows {
@@ -370,10 +389,9 @@ impl Renderer {
                         }
                     }
 
-                    self.context.draw_popup(
+                    self.context.draw_popup_above(
                         signature_help_view.row,
                         signature_help_view.col + numbers_col_offset,
-                        true,
                         active_signature.label.as_bytes(),
                         self.theme.selection_background_color,
                         self.theme.background_color,
@@ -419,10 +437,9 @@ impl Renderer {
                             view.absolute_to_view_col(col),
                         );
 
-                        self.context.draw_popup(
+                        self.context.draw_popup_below(
                             row,
                             col + numbers_col_offset,
-                            false,
                             diagnostic.message.as_bytes(),
                             self.theme.selection_background_color,
                             self.theme.background_color,
@@ -440,10 +457,9 @@ impl Renderer {
             .first()
             .is_some_and(|c| *c == b':' || *c == b'/')
         {
-            self.context.draw_popup(
+            self.context.draw_popup_below(
                 self.num_rows,
                 numbers_col_offset.saturating_sub(2),
-                true,
                 buffer.input.as_bytes(),
                 self.theme.selection_background_color,
                 self.theme.background_color,

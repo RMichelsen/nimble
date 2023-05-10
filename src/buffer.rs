@@ -349,26 +349,14 @@ impl Buffer {
             return None;
         }
 
-        if self.input.as_bytes().first().is_some_and(|c| *c == b':') {
+        if self
+            .input
+            .as_bytes()
+            .first()
+            .is_some_and(|c| *c == b':' || *c == b'/')
+        {
             if c as u8 >= 0x20 && c as u8 <= 0x7E {
                 self.input.push(c);
-            }
-            return None;
-        }
-
-        if self.input.as_bytes().first().is_some_and(|c| *c == b'/') {
-            if c as u8 >= 0x20 && c as u8 <= 0x7E {
-                self.input.push(c);
-                let search_string = self.input[1..].to_string();
-                if self
-                    .cursors
-                    .last()
-                    .is_some_and(|cursor| cursor.position == self.search_anchor)
-                {
-                    self.motion(Seek(search_string.as_bytes()));
-                } else {
-                    self.motion(SeekSelfInclusive(search_string.as_bytes()));
-                }
             }
             return None;
         }
