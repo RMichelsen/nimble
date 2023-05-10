@@ -494,8 +494,9 @@ impl GraphicsContext {
         text: &[u8],
         effects: &[TextEffect],
         theme: &Theme,
+        numbers_col_offset: usize,
     ) {
-        self.draw_text_with_col_offset(0, 0, text, effects, theme, view.col_offset)
+        self.draw_text_with_col_offset(0, numbers_col_offset, text, effects, theme, view.col_offset)
     }
 
     pub fn set_word_wrapping(&self, wrap: bool) {
@@ -590,8 +591,8 @@ impl GraphicsContext {
                             + self.font_size.1 * 0.75
                             + 0.5,
                     },
-                    radiusX: 2.0,
-                    radiusY: 2.0,
+                    radiusX: 1.5,
+                    radiusY: 1.5,
                 },
                 &inner_brush,
             );

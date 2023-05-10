@@ -201,6 +201,12 @@ impl PieceTable {
         self.pieces.iter().fold(0, |acc, piece| acc + piece.length)
     }
 
+    pub fn num_lines(&self) -> usize {
+        self.pieces
+            .iter()
+            .fold(0, |acc, piece| acc + piece.linebreaks.len())
+    }
+
     pub fn insert(&mut self, position: usize, bytes: &[u8]) {
         let piece = Piece {
             file: PieceFile::Add,

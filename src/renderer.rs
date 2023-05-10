@@ -102,6 +102,11 @@ impl Renderer {
     ) {
         use TextEffectKind::*;
 
+        let numbers_col_offset = (0..)
+            .take_while(|i| 10usize.pow(*i) <= buffer.piece_table.num_lines())
+            .count()
+            + 2;
+
         let text = view.visible_text(buffer, self.num_rows);
         let text_offset = view.visible_text_offset(buffer, self.num_rows);
 
@@ -132,7 +137,7 @@ impl Renderer {
                 ),
             ) {
                 effects.push(TextEffect {
-                    kind: TextEffectKind::ForegroundColor(self.theme.comment_color),
+                    kind: ForegroundColor(self.theme.comment_color),
                     start,
                     length,
                 })
@@ -162,10 +167,14 @@ impl Renderer {
                         )
                     };
 
-                self.context
-                    .fill_cells(row, col, (length, 1), background_color);
+                self.context.fill_cells(
+                    row,
+                    col + numbers_col_offset,
+                    (length, 1),
+                    background_color,
+                );
                 effects.push(TextEffect {
-                    kind: TextEffectKind::ForegroundColor(self.theme.background_color),
+                    kind: ForegroundColor(self.theme.background_color),
                     start,
                     length,
                 })
@@ -174,28 +183,59 @@ impl Renderer {
 
         if buffer.mode != BufferMode::Insert {
             view.visible_cursors_iter(buffer, self.num_rows, self.num_cols, |row, col, num| {
-                self.context
-                    .fill_cells(row, col, (num, 1), self.theme.selection_background_color);
+                self.context.fill_cells(
+                    row,
+                    col + numbers_col_offset,
+                    (num, 1),
+                    self.theme.selection_background_color,
+                );
             });
         }
 
         view.visible_cursor_leads_iter(buffer, self.num_rows, self.num_cols, |row, col, pos| {
             if buffer.mode == BufferMode::Insert {
-                self.context
-                    .fill_cell_slim_line(row, col, self.theme.cursor_color);
+                self.context.fill_cell_slim_line(
+                    row,
+                    col + numbers_col_offset,
+                    self.theme.cursor_color,
+                );
             } else {
-                self.context
-                    .fill_cells(row, col, (1, 1), self.theme.cursor_color);
+                self.context.fill_cells(
+                    row,
+                    col + numbers_col_offset,
+                    (1, 1),
+                    self.theme.cursor_color,
+                );
                 effects.push(TextEffect {
-                    kind: TextEffectKind::ForegroundColor(self.theme.background_color),
+                    kind: ForegroundColor(self.theme.background_color),
                     start: pos - text_offset,
                     length: 1,
                 })
             }
         });
 
+        let mut numbers = String::default();
+        for line in view.line_offset + 1..=view.line_offset + 1 + self.num_rows {
+            numbers.push(b' ' as char);
+            numbers.push_str(line.to_string().as_str());
+            numbers.push(b' ' as char);
+            numbers.push(b'\n' as char);
+        }
+
+        self.context.draw_text(
+            0,
+            0,
+            numbers.as_bytes(),
+            &[TextEffect {
+                kind: ForegroundColor(self.theme.numbers_color),
+                start: 0,
+                length: numbers.len(),
+            }],
+            &self.theme,
+        );
+
         self.context
-            .draw_text_fit_view(view, &text, &effects, &self.theme);
+            .draw_text_fit_view(view, &text, &effects, &self.theme, numbers_col_offset);
 
         if let Some(server) = language_server {
             if let Some(diagnostics) = server
@@ -209,8 +249,12 @@ impl Renderer {
                     self.num_rows,
                     self.num_cols,
                     |row, col, count| {
-                        self.context
-                            .underline_cells(row, col, count, self.theme.diagnostic_color);
+                        self.context.underline_cells(
+                            row,
+                            col + numbers_col_offset,
+                            count,
+                            self.theme.diagnostic_color,
+                        );
                     },
                 );
             }
@@ -225,13 +269,13 @@ impl Renderer {
 
                 self.context.fill_cells(
                     completion_view.row,
-                    completion_view.col.saturating_sub(1),
+                    completion_view.col.saturating_sub(1) + numbers_col_offset,
                     (completion_view.width + 1, completion_view.height),
                     self.theme.selection_background_color,
                 );
                 self.context.fill_cells(
                     completion_view.row + selected_item,
-                    completion_view.col.saturating_sub(1),
+                    completion_view.col.saturating_sub(1) + numbers_col_offset,
                     (completion_view.width + 1, 1),
                     self.theme.cursor_color,
                 );
@@ -271,7 +315,7 @@ impl Renderer {
 
                 self.context.draw_text(
                     completion_view.row,
-                    completion_view.col,
+                    completion_view.col + numbers_col_offset,
                     completion_string.as_bytes(),
                     &effects,
                     &self.theme,
@@ -328,7 +372,7 @@ impl Renderer {
 
                     self.context.draw_popup(
                         signature_help_view.row,
-                        signature_help_view.col,
+                        signature_help_view.col + numbers_col_offset,
                         true,
                         active_signature.label.as_bytes(),
                         self.theme.selection_background_color,
@@ -377,7 +421,7 @@ impl Renderer {
 
                         self.context.draw_popup(
                             row,
-                            col,
+                            col + numbers_col_offset,
                             false,
                             diagnostic.message.as_bytes(),
                             self.theme.selection_background_color,
@@ -398,7 +442,7 @@ impl Renderer {
         {
             self.context.draw_popup(
                 self.num_rows,
-                0,
+                numbers_col_offset.saturating_sub(2),
                 true,
                 buffer.input.as_bytes(),
                 self.theme.selection_background_color,

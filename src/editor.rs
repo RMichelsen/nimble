@@ -138,10 +138,14 @@ impl Editor {
         let font_size = self.renderer.get_font_size();
         if let Some(document) = self.active_document() {
             let (line, col) = document.view.get_line_col(mouse_position, font_size);
+            let numbers_col_offset = (0..)
+                .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
+                .count()
+                + 2;
             if modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::SHIFT)) {
-                document.buffer.insert_cursor(line, col);
+                document.buffer.insert_cursor(line, col.saturating_sub(numbers_col_offset));
             } else {
-                document.buffer.set_cursor(line, col);
+                document.buffer.set_cursor(line, col.saturating_sub(numbers_col_offset));
             }
         }
     }
@@ -158,7 +162,11 @@ impl Editor {
         let font_size = self.renderer.get_font_size();
         if let Some(document) = self.active_document() {
             let (line, col) = document.view.get_line_col(mouse_position, font_size);
-            document.buffer.set_drag(line, col);
+            let numbers_col_offset = (0..)
+                .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
+                .count()
+                + 2;
+            document.buffer.set_drag(line, col.saturating_sub(numbers_col_offset));
         }
     }
 
@@ -170,9 +178,13 @@ impl Editor {
         let font_size = self.renderer.get_font_size();
         if let Some(document) = self.active_document() {
             let (line, col) = document.view.get_line_col(mouse_position, font_size);
+            let numbers_col_offset = (0..)
+                .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
+                .count()
+                + 2;
             if modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::SHIFT)) {
-                document.buffer.insert_cursor(line, col);
-            } else if document.buffer.handle_mouse_double_click(line, col) {
+                document.buffer.insert_cursor(line, col.saturating_sub(numbers_col_offset));
+            } else if document.buffer.handle_mouse_double_click(line, col.saturating_sub(numbers_col_offset)) {
                 return true;
             }
         }
@@ -188,7 +200,11 @@ impl Editor {
     pub fn handle_mouse_hover(&mut self, mouse_position: LogicalPosition<f64>) {
         let font_size = self.renderer.get_font_size();
         if let Some(document) = self.active_document() {
-            document.view.hover(mouse_position, font_size);
+            let numbers_col_offset = (0..)
+                .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
+                .count()
+                + 2;
+            document.view.hover(mouse_position, font_size, numbers_col_offset);
         }
     }
 

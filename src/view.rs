@@ -44,8 +44,14 @@ impl View {
         self.scroll_vertical(buffer, -sign * SCROLL_LINES_PER_ROLL)
     }
 
-    pub fn hover(&mut self, mouse_position: LogicalPosition<f64>, font_size: (f64, f64)) {
-        self.hover = Some(self.get_line_col(mouse_position, font_size));
+    pub fn hover(
+        &mut self,
+        mouse_position: LogicalPosition<f64>,
+        font_size: (f64, f64),
+        numbers_col_offset: usize,
+    ) {
+        let (line, col) = self.get_line_col(mouse_position, font_size);
+        self.hover = Some((line, col.saturating_sub(numbers_col_offset)));
     }
 
     pub fn exit_hover(&mut self) {
