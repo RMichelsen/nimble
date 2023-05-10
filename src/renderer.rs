@@ -103,58 +103,13 @@ impl Renderer {
         use TextEffectKind::*;
 
         let text = view.visible_text(buffer, self.num_rows);
-        let text_offset = buffer
-            .piece_table
-            .char_index_from_line_col(view.line_offset, 0)
-            .unwrap();
-
-        if buffer.input.as_bytes().first().is_some_and(|c| *c == b'/') {
-            for (start, length) in search_highlights(&text, &buffer.input[1..]) {
-                let (row, col) = (
-                    view.absolute_to_view_row(buffer.piece_table.line_index(text_offset + start)),
-                    view.absolute_to_view_col(buffer.piece_table.col_index(text_offset + start)),
-                );
-
-                let color = if buffer.cursors.last().is_some_and(|cursor| {
-                    ((text_offset + start)..(text_offset + start + length))
-                        .contains(&cursor.position)
-                }) {
-                    self.theme.foreground_color
-                } else {
-                    self.theme.background_color
-                };
-
-                self.context.fill_cells(row, col, (length, 1), color);
-            }
-        }
-
-        if buffer.mode != BufferMode::Insert {
-            view.visible_cursors_iter(buffer, self.num_rows, self.num_cols, |row, col, num| {
-                self.context
-                    .fill_cells(row, col, (num, 1), self.theme.selection_background_color);
-            });
-        }
+        let text_offset = view.visible_text_offset(buffer, self.num_rows);
 
         let mut effects = vec![TextEffect {
             kind: ForegroundColor(self.theme.foreground_color),
             start: 0,
             length: text.len(),
         }];
-
-        view.visible_cursor_leads_iter(buffer, self.num_rows, self.num_cols, |row, col, pos| {
-            if buffer.mode == BufferMode::Insert {
-                self.context
-                    .fill_cell_slim_line(row, col, self.theme.cursor_color);
-            } else {
-                self.context
-                    .fill_cells(row, col, (1, 1), self.theme.cursor_color);
-            }
-            effects.push(TextEffect {
-                kind: TextEffectKind::ForegroundColor(self.theme.background_color),
-                start: pos - view.visible_text_offset(buffer, self.num_rows),
-                length: 1,
-            })
-        });
 
         // We give tree-sitter a bit of extra context to be able to highlight out-of-view multi-line comments
         if let Some(tree_sitter) = &tree_sitter {
@@ -169,6 +124,61 @@ impl Renderer {
                 &self.theme,
             ));
         }
+
+        if buffer.input.as_bytes().first().is_some_and(|c| *c == b'/') {
+            for (start, length) in search_highlights(&text, &buffer.input[1..]) {
+                let (row, col) = (
+                    view.absolute_to_view_row(buffer.piece_table.line_index(text_offset + start)),
+                    view.absolute_to_view_col(buffer.piece_table.col_index(text_offset + start)),
+                );
+
+                let (foreground_color, background_color) =
+                    if buffer.cursors.last().is_some_and(|cursor| {
+                        ((text_offset + start)..(text_offset + start + length))
+                            .contains(&cursor.position)
+                    }) {
+                        (
+                            self.theme.active_search_foreground_color,
+                            self.theme.active_search_background_color,
+                        )
+                    } else {
+                        (
+                            self.theme.active_search_background_color,
+                            self.theme.search_background_color,
+                        )
+                    };
+
+                self.context
+                    .fill_cells(row, col, (length, 1), background_color);
+                effects.push(TextEffect {
+                    kind: TextEffectKind::ForegroundColor(self.theme.background_color),
+                    start,
+                    length,
+                })
+            }
+        }
+
+        if buffer.mode != BufferMode::Insert {
+            view.visible_cursors_iter(buffer, self.num_rows, self.num_cols, |row, col, num| {
+                self.context
+                    .fill_cells(row, col, (num, 1), self.theme.selection_background_color);
+            });
+        }
+
+        view.visible_cursor_leads_iter(buffer, self.num_rows, self.num_cols, |row, col, pos| {
+            if buffer.mode == BufferMode::Insert {
+                self.context
+                    .fill_cell_slim_line(row, col, self.theme.cursor_color);
+            } else {
+                self.context
+                    .fill_cells(row, col, (1, 1), self.theme.cursor_color);
+                effects.push(TextEffect {
+                    kind: TextEffectKind::ForegroundColor(self.theme.background_color),
+                    start: pos - text_offset,
+                    length: 1,
+                })
+            }
+        });
 
         self.context
             .draw_text_fit_view(view, &text, &effects, &self.theme);
@@ -235,7 +245,7 @@ impl Renderer {
                         length: completion_string.len(),
                     },
                     TextEffect {
-                        kind: ForegroundColor(self.theme.foreground_color),
+                        kind: ForegroundColor(self.theme.background_color),
                         start: selected_item_start_position,
                         length: completions[request.selection_index]
                             .insert_text
@@ -282,7 +292,9 @@ impl Renderer {
                                             .is_ascii_alphanumeric()
                                         {
                                             effects.push(TextEffect {
-                                                kind: ForegroundColor(self.theme.foreground_color),
+                                                kind: ForegroundColor(
+                                                    self.theme.active_parameter_color,
+                                                ),
                                                 start,
                                                 length: label.len(),
                                             });

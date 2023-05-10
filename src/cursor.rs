@@ -451,7 +451,7 @@ impl Cursor {
             let last_char = piece_table.num_chars().saturating_sub(1);
             self.anchor = last_char;
             self.position = last_char;
-            self.move_to_start_of_line(&piece_table);
+            self.move_to_start_of_line(piece_table);
         }
     }
 

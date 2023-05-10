@@ -77,8 +77,8 @@ impl PlatformResources {
                 w!("Do you want to save changes before quitting?"),
                 MB_YESNOCANCEL,
             ) {
-                IDYES => return Some(true),
-                IDNO => return Some(false),
+                IDYES => Some(true),
+                IDNO => Some(false),
                 _ => None,
             }
         }

@@ -10,11 +10,13 @@ use windows::{
                     D2D1_ALPHA_MODE_IGNORE, D2D1_COLOR_F, D2D1_PIXEL_FORMAT, D2D_POINT_2F,
                     D2D_RECT_F, D2D_SIZE_U,
                 },
-                D2D1CreateFactory, ID2D1Factory, ID2D1HwndRenderTarget, D2D1_BRUSH_PROPERTIES,
-                D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
-                D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES,
-                D2D1_PRESENT_OPTIONS_IMMEDIATELY, D2D1_RENDER_TARGET_PROPERTIES,
-                D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
+                D2D1CreateFactory, ID2D1Factory, ID2D1HwndRenderTarget,
+                D2D1_ANTIALIAS_MODE_ALIASED, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                D2D1_BRUSH_PROPERTIES, D2D1_DRAW_TEXT_OPTIONS_NONE,
+                D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
+                D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_IMMEDIATELY,
+                D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT,
+                D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
             },
             DirectWrite::{
                 DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout1,
@@ -156,6 +158,8 @@ impl GraphicsContext {
             (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
 
         unsafe {
+            self.render_target
+                .SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
             let brush = self
                 .render_target
                 .CreateSolidColorBrush(
@@ -178,6 +182,8 @@ impl GraphicsContext {
                 },
                 &brush,
             );
+            self.render_target
+                .SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
         }
     }
 
@@ -186,6 +192,8 @@ impl GraphicsContext {
             (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
 
         unsafe {
+            self.render_target
+                .SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
             let brush = self
                 .render_target
                 .CreateSolidColorBrush(
@@ -200,13 +208,15 @@ impl GraphicsContext {
                 .unwrap();
             self.render_target.FillRectangle(
                 &D2D_RECT_F {
-                    left: col_offset - 0.5,
+                    left: col_offset,
                     top: row_offset - 0.5,
-                    right: col_offset + self.font_size.0 * 0.1 + 0.5,
+                    right: col_offset + self.font_size.0 * 0.15,
                     bottom: row_offset + self.font_size.1 + 0.5,
                 },
                 &brush,
             );
+            self.render_target
+                .SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
         }
     }
 

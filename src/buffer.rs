@@ -90,7 +90,7 @@ impl Buffer {
             mode: BufferMode::Normal,
             language_server,
             input: String::new(),
-            tree_sitter: tree_sitter,
+            tree_sitter,
             search_string: String::new(),
             search_anchor: 0,
             version: 1,
@@ -718,7 +718,7 @@ impl Buffer {
             return true;
         }
 
-        return false;
+        false
     }
 
     fn handle_input_command(&mut self) -> Option<EditorCommand> {

@@ -140,7 +140,7 @@ impl PieceTable {
             } else {
                 &self.add
             };
-            file.write(&buffer[piece.start..piece.start + piece.length])
+            file.write_all(&buffer[piece.start..piece.start + piece.length])
                 .unwrap();
         }
 

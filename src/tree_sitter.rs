@@ -2,12 +2,16 @@ use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter}
 
 use crate::{language_support::Language, renderer::TextEffect, theme::Theme};
 
-const HIGHLIGHT_NAMES: [&str; 5] = [
+const HIGHLIGHT_NAMES: [&str; 9] = [
     "keyword",
     "type.builtin",
     "type",
-    "string_literal",
+    "string",
     "comment",
+    "function",
+    "function.method",
+    "constant.builtin",
+    "constant",
 ];
 
 pub struct TreeSitter {
@@ -52,26 +56,22 @@ impl TreeSitter {
         {
             let mut color = None;
 
-            for highlight in highlights {
-                if let Ok(highlight) = highlight {
-                    match highlight {
-                        HighlightEvent::HighlightStart(style) => {
-                            color = Some(theme.tree_sitter_colors[style.0]);
-                        }
-                        HighlightEvent::HighlightEnd => color = None,
-                        HighlightEvent::Source { start, end } => {
-                            if end > offset && end < offset + length {
-                                let start = if start > offset { start - offset } else { 0 };
-                                let end = end - offset;
-                                if let Some(color) = color {
-                                    effects.push(TextEffect {
-                                        kind: crate::renderer::TextEffectKind::ForegroundColor(
-                                            color,
-                                        ),
-                                        start,
-                                        length: end - start,
-                                    });
-                                }
+            for highlight in highlights.flatten() {
+                match highlight {
+                    HighlightEvent::HighlightStart(style) => {
+                        color = Some(theme.tree_sitter_colors[style.0]);
+                    }
+                    HighlightEvent::HighlightEnd => color = None,
+                    HighlightEvent::Source { start, end } => {
+                        if end > offset && end < offset + length {
+                            let start = if start > offset { start - offset } else { 0 };
+                            let end = end - offset;
+                            if let Some(color) = color {
+                                effects.push(TextEffect {
+                                    kind: crate::renderer::TextEffectKind::ForegroundColor(color),
+                                    start,
+                                    length: end - start,
+                                });
                             }
                         }
                     }
