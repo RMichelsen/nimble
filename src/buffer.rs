@@ -1716,10 +1716,8 @@ fn lsp_complete(
             },
         };
 
-        let is_trigger_character = server
-            .borrow()
-            .trigger_characters
-            .contains(&character.unwrap());
+        let is_trigger_character =
+            character.is_some_and(|c| server.borrow().trigger_characters.contains(&c));
 
         if let Some(ref mut request) = cursor.completion_request && !is_trigger_character {
             if server
