@@ -250,7 +250,7 @@ impl GraphicsContext {
         }
     }
 
-    pub fn get_text_bounding_box(&self, text: &[u8]) -> (f64, f64) {
+    pub fn get_text_bounding_box(&self, text: &[u8], col_offset: f32) -> (f64, f64) {
         let mut wide_text = vec![];
         for c in text {
             wide_text.push(*c as u16);
@@ -261,7 +261,7 @@ impl GraphicsContext {
                 .CreateTextLayout(
                     &wide_text,
                     &self.text_format,
-                    self.window_size.0,
+                    self.window_size.0 - col_offset,
                     self.window_size.1,
                 )
                 .unwrap()
@@ -307,8 +307,8 @@ impl GraphicsContext {
                 .CreateTextLayout(
                     &wide_text,
                     &self.text_format,
-                    self.window_size.0,
-                    self.window_size.1,
+                    self.window_size.0 - x,
+                    self.window_size.1 - y,
                 )
                 .unwrap()
         };
@@ -525,10 +525,10 @@ impl GraphicsContext {
     ) {
         self.set_word_wrapping(true);
 
-        let (width, height) = self.get_text_bounding_box(text);
-
         let (mut row_offset, col_offset) =
             (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
+
+        let (width, height) = self.get_text_bounding_box(text, col_offset);
 
         if grow_up {
             row_offset -= height as f32 + self.font_size.1 + self.font_size.1;

@@ -1716,7 +1716,12 @@ fn lsp_complete(
             },
         };
 
-        if let Some(ref mut request) = cursor.completion_request {
+        let is_trigger_character = server
+            .borrow()
+            .trigger_characters
+            .contains(&character.unwrap());
+
+        if let Some(ref mut request) = cursor.completion_request && !is_trigger_character {
             if server
                 .borrow()
                 .saved_completions
@@ -1731,11 +1736,7 @@ fn lsp_complete(
                     request.next_position = Some(position);
                 }
             }
-        } else if character.is_none()
-            || server
-                .borrow()
-                .trigger_characters
-                .contains(&character.unwrap())
+        } else if character.is_none() || is_trigger_character
         {
             if let Some(id) = server
                 .borrow_mut()

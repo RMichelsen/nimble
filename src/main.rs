@@ -61,11 +61,11 @@ fn main() {
     //     "C:/Users/Rasmus/Desktop/nimble/src/language_server_types.rs",
     //     &window,
     // );
-    editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/tree_sitter.rs", &window);
-    // editor.open_file(
-    //     "C:/Users/Rasmus/Desktop/Nvy/src/renderer/renderer.cpp",
-    //     &window,
-    // );
+    // editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/tree_sitter.rs", &window);
+    editor.open_file(
+        "C:/Users/Rasmus/Desktop/Nvy/src/renderer/renderer.cpp",
+        &window,
+    );
     request_redraw(&window);
 
     let mut modifiers: Option<ModifiersState> = None;

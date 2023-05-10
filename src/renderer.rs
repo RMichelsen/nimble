@@ -350,11 +350,11 @@ impl Renderer {
                             });
 
                         !diagnostic_on_cursor_line
-                            && (start_line == line && (start_col..=end_col).contains(&col))
-                            || (end_line == line && (start_col..=end_col).contains(&col))
-                            || (diagnostic.range.start.line as usize
-                                ..diagnostic.range.end.line as usize)
-                                .contains(&line)
+                            && ((start_line == line && (start_col..=end_col).contains(&col))
+                                || (end_line == line && (start_col..=end_col).contains(&col))
+                                || (diagnostic.range.start.line as usize
+                                    ..diagnostic.range.end.line as usize)
+                                    .contains(&line))
                     }) {
                         let (row, col) = (
                             view.absolute_to_view_row(line) + 1,
