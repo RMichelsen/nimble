@@ -5,15 +5,39 @@ use windows::{
     Win32::{
         Foundation::{HANDLE, HGLOBAL, HWND},
         System::{
+            Com::{CoCreateInstance, CLSCTX_ALL},
             DataExchange::{
                 CloseClipboard, EmptyClipboard, GetClipboardData, OpenClipboard, SetClipboardData,
             },
             Memory::{GlobalAlloc, GlobalFree, GlobalLock, GlobalUnlock, GMEM_ZEROINIT},
         },
-        UI::WindowsAndMessaging::{MessageBoxW, IDNO, IDYES, MB_YESNOCANCEL},
+        UI::{
+            Shell::{FileOpenDialog, IFileOpenDialog, FOS_PICKFOLDERS, SIGDN_FILESYSPATH},
+            WindowsAndMessaging::{MessageBoxW, IDNO, IDYES, MB_YESNOCANCEL},
+        },
     },
 };
 use winit::{platform::windows::WindowExtWindows, window::Window};
+
+pub fn open_folder() -> Option<String> {
+    unsafe {
+        let file_dialog: IFileOpenDialog =
+            CoCreateInstance(&FileOpenDialog, None, CLSCTX_ALL).ok()?;
+
+        file_dialog.SetOptions(FOS_PICKFOLDERS).ok()?;
+        file_dialog.Show(None).ok()?;
+
+        if let Ok(result) = file_dialog.GetResult() {
+            return result
+                .GetDisplayName(SIGDN_FILESYSPATH)
+                .unwrap()
+                .to_string()
+                .ok();
+        }
+    };
+
+    None
+}
 
 pub struct PlatformResources {
     hwnd: HWND,

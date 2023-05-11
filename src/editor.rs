@@ -8,7 +8,7 @@ use winit::{
 
 use crate::{
     buffer::Buffer, language_server::LanguageServer, language_server_types::VoidParams,
-    language_support::language_from_path, renderer::{Renderer, RenderLayout}, tree_sitter::TreeSitter, view::View,
+    language_support::language_from_path, renderer::{Renderer, RenderLayout}, tree_sitter::TreeSitter, view::View, platform_resources,
 };
 
 struct Document {
@@ -25,6 +25,7 @@ pub enum EditorCommand {
 
 pub struct Editor {
     renderer: Renderer,
+    workspace: Option<String>,
     documents: HashMap<String, Document>,
     active_document: Option<String>,
     language_servers: HashMap<&'static str, Rc<RefCell<LanguageServer>>>,
@@ -35,11 +36,16 @@ impl Editor {
     pub fn new(window: &Window) -> Self {
         Self {
             renderer: Renderer::new(window),
+            workspace: None,
             documents: HashMap::default(),
             active_document: None,
             language_servers: HashMap::default(),
             tree_sitters: HashMap::default(),
         }
+    }
+
+    pub fn open_workspace(&mut self) {
+        self.workspace = platform_resources::open_folder();
     }
 
     pub fn handle_lsp_responses(&mut self) -> bool {
@@ -274,6 +280,12 @@ impl Editor {
             && modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL))
         {
             self.renderer.cycle_theme();
+            return None;
+        }
+        else if key_code == VirtualKeyCode::O
+            && modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL))
+        {
+            self.open_workspace();
             return None;
         }
 
