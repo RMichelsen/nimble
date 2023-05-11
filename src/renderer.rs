@@ -88,7 +88,7 @@ impl Renderer {
     ) {
         use TextEffectKind::*;
 
-        let text = view.visible_text(buffer, &layout);
+        let text = view.visible_text(buffer, layout);
         let text_offset = view.visible_text_offset(buffer);
 
         let mut effects = vec![TextEffect {
@@ -151,9 +151,9 @@ impl Renderer {
                 };
 
                 self.context
-                    .fill_cells(row, col, &layout, (length, 1), background_color);
+                    .fill_cells(row, col, layout, (length, 1), background_color);
                 self.context
-                    .fill_cells(row, col, &layout, (1, 1), self.theme.cursor_color);
+                    .fill_cells(row, col, layout, (1, 1), self.theme.cursor_color);
                 effects.push(TextEffect {
                     kind: ForegroundColor(self.theme.background_color),
                     start,
@@ -162,24 +162,24 @@ impl Renderer {
             }
         } else {
             if buffer.mode != BufferMode::Insert {
-                view.visible_cursors_iter(&layout, buffer, |row, col, num| {
+                view.visible_cursors_iter(layout, buffer, |row, col, num| {
                     self.context.fill_cells(
                         row,
                         col,
-                        &layout,
+                        layout,
                         (num, 1),
                         self.theme.selection_background_color,
                     );
                 });
             }
 
-            view.visible_cursor_leads_iter(buffer, &layout, |row, col, pos| {
+            view.visible_cursor_leads_iter(buffer, layout, |row, col, pos| {
                 if buffer.mode == BufferMode::Insert {
                     self.context
                         .fill_cell_slim_line(row, col, &layout, self.theme.cursor_color);
                 } else {
                     self.context
-                        .fill_cells(row, col, &layout, (1, 1), self.theme.cursor_color);
+                        .fill_cells(row, col, layout, (1, 1), self.theme.cursor_color);
                     effects.push(TextEffect {
                         kind: ForegroundColor(self.theme.background_color),
                         start: pos - text_offset,
@@ -190,7 +190,7 @@ impl Renderer {
         }
 
         self.context
-            .draw_text_fit_view(view, &layout, &text, &effects, &self.theme);
+            .draw_text_fit_view(view, layout, &text, &effects, &self.theme);
 
         if let Some(server) = language_server {
             if let Some(diagnostics) = server
@@ -200,13 +200,13 @@ impl Renderer {
             {
                 view.visible_diagnostic_lines_iter(
                     buffer,
-                    &layout,
+                    layout,
                     diagnostics,
                     |row, col, count| {
                         self.context.underline_cells(
                             row,
                             col,
-                            &layout,
+                            layout,
                             count,
                             self.theme.diagnostic_color,
                         );
@@ -215,20 +215,20 @@ impl Renderer {
             }
         }
 
-        view.visible_completions(buffer, &layout, |completions, completion_view, request| {
+        view.visible_completions(buffer, layout, |completions, completion_view, request| {
             let selected_item = request.selection_index - request.selection_view_offset;
 
             self.context.fill_cells(
                 completion_view.row,
                 completion_view.col.saturating_sub(1),
-                &layout,
+                layout,
                 (completion_view.width + 1, completion_view.height),
                 self.theme.selection_background_color,
             );
             self.context.fill_cells(
                 completion_view.row + selected_item,
                 completion_view.col.saturating_sub(1),
-                &layout,
+                layout,
                 (completion_view.width + 1, 1),
                 self.theme.cursor_color,
             );
@@ -269,14 +269,15 @@ impl Renderer {
             self.context.draw_text(
                 completion_view.row,
                 completion_view.col,
-                &layout,
+                layout,
                 completion_string.as_bytes(),
                 &effects,
                 &self.theme,
+                false,
             );
         });
 
-        view.visible_signature_helps(buffer, &layout, |signature_help, signature_help_view| {
+        view.visible_signature_helps(buffer, layout, |signature_help, signature_help_view| {
             if let Some(active_signature) = signature_help
                 .signatures
                 .get(signature_help.active_signature.unwrap_or(0) as usize)
@@ -322,7 +323,7 @@ impl Renderer {
                 self.context.draw_popup_above(
                     signature_help_view.row,
                     signature_help_view.col,
-                    &layout,
+                    layout,
                     active_signature.label.as_bytes(),
                     self.theme.selection_background_color,
                     self.theme.background_color,
@@ -370,7 +371,7 @@ impl Renderer {
                         self.context.draw_popup_below(
                             row,
                             col,
-                            &layout,
+                            layout,
                             diagnostic.message.as_bytes(),
                             self.theme.selection_background_color,
                             self.theme.background_color,
@@ -391,7 +392,7 @@ impl Renderer {
             self.context.draw_popup_below(
                 layout.num_rows,
                 0,
-                &layout,
+                layout,
                 buffer.input.as_bytes(),
                 self.theme.selection_background_color,
                 self.theme.background_color,
@@ -405,7 +406,6 @@ impl Renderer {
         let mut numbers = String::default();
         let num_lines = buffer.piece_table.num_lines();
         for line in view.line_offset + 1..=min(view.line_offset + 1 + layout.num_rows, num_lines) {
-            numbers.push(b' ' as char);
             numbers.push_str(line.to_string().as_str());
             numbers.push(b' ' as char);
             numbers.push(b'\n' as char);
@@ -422,6 +422,7 @@ impl Renderer {
                 length: numbers.len(),
             }],
             &self.theme,
+            true,
         );
     }
 }

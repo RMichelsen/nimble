@@ -21,8 +21,9 @@ use windows::{
             DirectWrite::{
                 DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout1,
                 DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_WEIGHT_NORMAL, DWRITE_HIT_TEST_METRICS, DWRITE_TEXT_METRICS,
-                DWRITE_TEXT_RANGE, DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP,
+                DWRITE_FONT_WEIGHT_NORMAL, DWRITE_HIT_TEST_METRICS, DWRITE_TEXT_ALIGNMENT_TRAILING,
+                DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE, DWRITE_WORD_WRAPPING_NO_WRAP,
+                DWRITE_WORD_WRAPPING_WRAP,
             },
             Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
         },
@@ -275,7 +276,7 @@ impl GraphicsContext {
             wide_text.push(*c as u16);
         }
 
-        let text_layout: _ = unsafe {
+        let text_layout = unsafe {
             self.dwrite_factory
                 .CreateTextLayout(
                     &wide_text,
@@ -327,8 +328,8 @@ impl GraphicsContext {
                 .CreateTextLayout(
                     &wide_text,
                     &self.text_format,
-                    self.window_size.0 - x.clamp(0.0, f32::MAX),
-                    self.window_size.1 - y.clamp(0.0, f32::MAX),
+                    self.font_size.0 * layout.num_cols as f32,
+                    self.font_size.1 * layout.num_rows as f32,
                 )
                 .unwrap()
         };
@@ -410,6 +411,7 @@ impl GraphicsContext {
         effects: &[TextEffect],
         theme: &Theme,
         col_offset: usize,
+        align_right: bool,
     ) {
         let mut wide_text = vec![];
         for c in text {
@@ -428,6 +430,12 @@ impl GraphicsContext {
         };
 
         unsafe {
+            if align_right {
+                text_layout
+                    .SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING)
+                    .unwrap();
+            }
+
             text_layout
                 .cast::<IDWriteTextLayout1>()
                 .unwrap()
@@ -507,8 +515,9 @@ impl GraphicsContext {
         text: &[u8],
         effects: &[TextEffect],
         theme: &Theme,
+        align_right: bool,
     ) {
-        self.draw_text_with_col_offset(row, col, layout, text, effects, theme, 0)
+        self.draw_text_with_col_offset(row, col, layout, text, effects, theme, 0, align_right)
     }
 
     pub fn draw_text_fit_view(
@@ -519,7 +528,7 @@ impl GraphicsContext {
         effects: &[TextEffect],
         theme: &Theme,
     ) {
-        self.draw_text_with_col_offset(0, 0, layout, text, effects, theme, view.col_offset)
+        self.draw_text_with_col_offset(0, 0, layout, text, effects, theme, view.col_offset, false)
     }
 
     pub fn set_word_wrapping(&self, wrap: bool) {

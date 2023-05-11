@@ -130,9 +130,9 @@ impl Editor {
 
             let numbers_layout = RenderLayout {
                 row_offset: 0,
-                col_offset: 0,
+                col_offset: 1,
                 num_rows: buffer_layout.num_rows,
-                num_cols: numbers_num_cols,
+                num_cols: numbers_num_cols.saturating_sub(2),
             };
 
             self.renderer.draw_buffer(
