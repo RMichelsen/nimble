@@ -143,7 +143,7 @@ impl Editor {
                 &document.buffer.tree_sitter,
             );
 
-            self.renderer.draw_numbers(&numbers_layout, &document.view);
+            self.renderer.draw_numbers(&document.buffer, &numbers_layout, &document.view);
         }
         self.renderer.end_draw();
     }

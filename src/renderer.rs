@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, cmp::min, rc::Rc};
 
 use winit::window::Window;
 
@@ -401,9 +401,10 @@ impl Renderer {
         }
     }
 
-    pub fn draw_numbers(&mut self, layout: &RenderLayout, view: &View) {
+    pub fn draw_numbers(&mut self, buffer: &Buffer, layout: &RenderLayout, view: &View) {
         let mut numbers = String::default();
-        for line in view.line_offset + 1..=view.line_offset + 1 + layout.num_rows {
+        let num_lines = buffer.piece_table.num_lines();
+        for line in view.line_offset + 1..=min(view.line_offset + 1 + layout.num_rows, num_lines) {
             numbers.push(b' ' as char);
             numbers.push_str(line.to_string().as_str());
             numbers.push(b' ' as char);

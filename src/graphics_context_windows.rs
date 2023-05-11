@@ -280,8 +280,8 @@ impl GraphicsContext {
                 .CreateTextLayout(
                     &wide_text,
                     &self.text_format,
-                    self.window_size.0 - x.clamp(0.0, f32::MAX),
-                    self.window_size.1 - y.clamp(0.0, f32::MAX),
+                    (self.window_size.0 - x).clamp(0.0, f32::MAX),
+                    (self.window_size.1 - y).clamp(0.0, f32::MAX),
                 )
                 .unwrap()
         };
