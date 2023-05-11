@@ -1,9 +1,14 @@
-use std::{cell::RefCell, cmp::min, rc::Rc};
+use std::{
+    cell::RefCell,
+    cmp::{max, min},
+    rc::Rc,
+};
 
 use winit::window::Window;
 
 use crate::{
     buffer::{Buffer, BufferMode},
+    editor::{FileFinder, MAX_SHOWN_FILE_FINDER_ITEMS},
     graphics_context::GraphicsContext,
     language_server::LanguageServer,
     language_server_types::ParameterLabelType,
@@ -32,6 +37,7 @@ pub struct Color {
     pub b: f32,
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct RenderLayout {
     pub row_offset: usize,
     pub col_offset: usize,
@@ -76,6 +82,68 @@ impl Renderer {
 
     pub fn end_draw(&self) {
         self.context.end_draw();
+    }
+
+    pub fn draw_file_finder(
+        &mut self,
+        layout: &mut RenderLayout,
+        workspace: &str,
+        file_finder: &FileFinder,
+    ) {
+        let selected_item = file_finder.selection_index - file_finder.selection_view_offset;
+
+        let mut longest_string = file_finder
+            .files
+            .iter()
+            .max_by(|x, y| x.len().cmp(&y.len()))
+            .map(|x| x.len() + 1)
+            .unwrap_or(0);
+        longest_string = max(longest_string, file_finder.search_string.len());
+
+        layout.col_offset -= longest_string / 2;
+
+        let mut selected_item_start_position = 0;
+        let mut completion_string = String::default();
+        for (i, item) in file_finder
+            .files
+            .iter()
+            .enumerate()
+            .skip(file_finder.selection_view_offset)
+            .take(MAX_SHOWN_FILE_FINDER_ITEMS)
+        {
+            if i - file_finder.selection_view_offset == selected_item {
+                selected_item_start_position = completion_string.len();
+            }
+
+            completion_string.push_str(item.as_os_str().to_str().unwrap());
+            completion_string.push('\n');
+        }
+
+        let effects = [
+            TextEffect {
+                kind: TextEffectKind::ForegroundColor(self.theme.foreground_color),
+                start: 0,
+                length: completion_string.len(),
+            },
+            TextEffect {
+                kind: TextEffectKind::ForegroundColor(self.theme.background_color),
+                start: selected_item_start_position,
+                length: file_finder.files[file_finder.selection_index].len(),
+            },
+        ];
+
+        self.context.draw_completion_popup(
+            0,
+            0,
+            layout,
+            &file_finder.search_string,
+            file_finder.selection_index - file_finder.selection_view_offset,
+            completion_string.as_bytes(),
+            self.theme.selection_background_color,
+            self.theme.background_color,
+            Some(&effects),
+            &self.theme,
+        );
     }
 
     pub fn draw_buffer(
@@ -176,7 +244,7 @@ impl Renderer {
             view.visible_cursor_leads_iter(buffer, layout, |row, col, pos| {
                 if buffer.mode == BufferMode::Insert {
                     self.context
-                        .fill_cell_slim_line(row, col, &layout, self.theme.cursor_color);
+                        .fill_cell_slim_line(row, col, layout, self.theme.cursor_color);
                 } else {
                     self.context
                         .fill_cells(row, col, layout, (1, 1), self.theme.cursor_color);
@@ -414,7 +482,7 @@ impl Renderer {
         self.context.draw_text(
             0,
             0,
-            &layout,
+            layout,
             numbers.as_bytes(),
             &[TextEffect {
                 kind: TextEffectKind::ForegroundColor(self.theme.numbers_color),

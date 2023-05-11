@@ -1,5 +1,6 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, cmp::min, ffi::{OsString, OsStr}};
 
+use walkdir::WalkDir;
 use winit::{
     dpi::LogicalPosition,
     event::{ModifiersState, VirtualKeyCode},
@@ -16,6 +17,8 @@ struct Document {
     view: View,
 }
 
+pub const MAX_SHOWN_FILE_FINDER_ITEMS: usize = 10;
+
 pub enum EditorCommand {
     CenterView,
     CenterIfNotVisible,
@@ -23,9 +26,17 @@ pub enum EditorCommand {
     QuitNoCheck,
 }
 
+pub struct FileFinder {
+    pub files: Vec<OsString>,
+    pub search_string: String,
+    pub selection_index: usize,
+    pub selection_view_offset: usize,
+}
+
 pub struct Editor {
     renderer: Renderer,
     workspace: Option<String>,
+    file_finder: Option<FileFinder>,
     documents: HashMap<String, Document>,
     active_document: Option<String>,
     language_servers: HashMap<&'static str, Rc<RefCell<LanguageServer>>>,
@@ -37,6 +48,7 @@ impl Editor {
         Self {
             renderer: Renderer::new(window),
             workspace: None,
+            file_finder: None,
             documents: HashMap::default(),
             active_document: None,
             language_servers: HashMap::default(),
@@ -113,20 +125,21 @@ impl Editor {
 
     pub fn render(&mut self, window: &Window) {
         self.renderer.start_draw();
+
+        let window_size = (
+            window.inner_size().width as f64 / window.scale_factor(),
+            window.inner_size().height as f64 / window.scale_factor(),
+        );
+        let font_size = self.renderer.get_font_size();
+
         if let Some(document) = &self.active_document {
             let document = &self.documents[document];
-
-            let window_size = (
-                window.inner_size().width as f64 / window.scale_factor(),
-                window.inner_size().height as f64 / window.scale_factor(),
-            );
 
             let numbers_num_cols = (0..)
                 .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
                 .count()
                 + 2;
 
-            let font_size = self.renderer.get_font_size();
             let buffer_layout = RenderLayout {
                 row_offset: 0,
                 col_offset: numbers_num_cols,
@@ -151,6 +164,18 @@ impl Editor {
 
             self.renderer.draw_numbers(&document.buffer, &numbers_layout, &document.view);
         }
+
+        if let (Some(workspace), Some(file_finder)) = (&self.workspace, &self.file_finder) {
+            let num_cols = (window_size.0 / font_size.0).ceil() as usize;
+            let mut file_finder_layout = RenderLayout {
+                row_offset: 0,
+                col_offset: num_cols / 2,
+                num_rows: (window_size.1 / font_size.1).ceil() as usize,
+                num_cols,
+            };
+            self.renderer.draw_file_finder(&mut file_finder_layout, workspace, file_finder);
+        }
+
         self.renderer.end_draw();
     }
 
@@ -276,17 +301,54 @@ impl Editor {
         key_code: VirtualKeyCode,
         modifiers: Option<ModifiersState>,
     ) -> Option<EditorCommand> {
-        if key_code == VirtualKeyCode::T
-            && modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL))
-        {
-            self.renderer.cycle_theme();
-            return None;
-        }
-        else if key_code == VirtualKeyCode::O
-            && modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL))
-        {
-            self.open_workspace();
-            return None;
+        match key_code {
+            VirtualKeyCode::T if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+                self.renderer.cycle_theme();
+                return None;
+            }
+            VirtualKeyCode::O if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+                self.open_workspace();
+                return None;
+            }
+            VirtualKeyCode::P if self.workspace.is_some() && modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+                self.file_finder = Some(FileFinder::new(self.workspace.as_ref().unwrap()));
+                return None;
+            }
+            VirtualKeyCode::J if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+                if let Some(file_finder) = &mut self.file_finder {
+                    file_finder.selection_index = min(
+                        file_finder.selection_index + 1,
+                        100
+                        );
+                    if file_finder.selection_index >= file_finder.selection_view_offset + MAX_SHOWN_FILE_FINDER_ITEMS {
+                        file_finder.selection_view_offset += 1;
+                    }
+                }
+            }
+            VirtualKeyCode::K if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+                if let Some(file_finder) = &mut self.file_finder {
+                    file_finder.selection_index = file_finder.selection_index.saturating_sub(1);
+                    if file_finder.selection_index < file_finder.selection_view_offset {
+                        file_finder.selection_view_offset -= 1;
+                    }
+                }
+            }
+            VirtualKeyCode::Back if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+                if let Some(file_finder) = &mut self.file_finder {
+                    file_finder.search_string.clear();
+                }
+            }
+            VirtualKeyCode::Back => {
+                if let Some(file_finder) = &mut self.file_finder {
+                    file_finder.search_string.pop();
+                }
+            }
+            VirtualKeyCode::Return => {
+                if let Some(file_finder) = &mut self.file_finder {
+                    file_finder.search_string.pop();
+                }
+            }
+            _ => (),
         }
 
         let font_size = self.renderer.get_font_size();
@@ -336,6 +398,13 @@ impl Editor {
     }
 
     pub fn handle_char(&mut self, window: &Window, c: char) -> Option<EditorCommand> {
+        if let Some(file_finder) = &mut self.file_finder {
+            if c as u8 >= 0x20 && c as u8 <= 0x7E {
+                file_finder.search_string.push(c);
+            }
+            return None;
+        }
+
         let font_size = self.renderer.get_font_size();
         if let Some(document) = self.active_document() {
             let window_size = (
@@ -436,6 +505,23 @@ impl Editor {
             self.documents.get_mut(document)
         } else {
             None
+        }
+    }
+}
+
+impl FileFinder {
+    pub fn new(path: &str) -> Self {
+        Self { 
+            files: WalkDir::new(path)
+                .into_iter()
+                .filter_entry(|e| e.file_name() != OsStr::new(".git"))
+                .flatten()
+                .filter(|e| e.file_type().is_file())
+                .map(|e| e.file_name().to_os_string())
+                .collect(),
+            search_string: String::default(), 
+            selection_index: 0, 
+            selection_view_offset: 0 
         }
     }
 }

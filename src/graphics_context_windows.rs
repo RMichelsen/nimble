@@ -750,6 +750,199 @@ impl GraphicsContext {
 
         self.set_word_wrapping(false);
     }
+
+    pub fn draw_completion_popup(
+        &self,
+        row: usize,
+        col: usize,
+        layout: &RenderLayout,
+        search_string: &str,
+        selection_view_index: usize,
+        text: &[u8],
+        outer_color: Color,
+        inner_color: Color,
+        effects: Option<&[TextEffect]>,
+        theme: &Theme,
+    ) {
+        self.set_word_wrapping(true);
+
+        let (mut row_offset, col_offset) = (
+            (row + layout.row_offset) as f32 * self.font_size.1,
+            (col + layout.col_offset) as f32 * self.font_size.0,
+        );
+
+        let (width, height) = self.get_text_bounding_box(
+            col_offset + self.font_size.1 * 0.5,
+            row_offset + self.font_size.1 * 0.5,
+            text,
+        );
+
+        let width = width.max(
+            self.get_text_bounding_box(
+                col_offset + self.font_size.1 * 0.5,
+                row_offset + self.font_size.1 * 0.5,
+                search_string.as_bytes(),
+            )
+            .0,
+        );
+
+        let (width, height) = (
+            (width / self.font_size.0 as f64).round() as usize,
+            (height / self.font_size.1 as f64).round() as usize,
+        );
+
+        unsafe {
+            let outer_brush = self
+                .render_target
+                .CreateSolidColorBrush(
+                    &D2D1_COLOR_F {
+                        r: outer_color.r,
+                        g: outer_color.g,
+                        b: outer_color.b,
+                        a: 1.0,
+                    },
+                    Some(&DEFAULT_BRUSH_PROPERTIES),
+                )
+                .unwrap();
+
+            self.render_target.FillRectangle(
+                &D2D_RECT_F {
+                    left: col_offset - 0.5,
+                    top: row_offset - 0.5,
+                    right: col_offset + self.font_size.0 * width as f32 + self.font_size.1 + 0.5,
+                    bottom: row_offset + self.font_size.1 * height as f32 + self.font_size.1 + 0.5,
+                },
+                &outer_brush,
+            );
+        }
+
+        unsafe {
+            let inner_brush = self
+                .render_target
+                .CreateSolidColorBrush(
+                    &D2D1_COLOR_F {
+                        r: theme.foreground_color.r,
+                        g: theme.foreground_color.g,
+                        b: theme.foreground_color.b,
+                        a: 1.0,
+                    },
+                    Some(&DEFAULT_BRUSH_PROPERTIES),
+                )
+                .unwrap();
+
+            self.render_target.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: D2D_RECT_F {
+                        left: col_offset - 0.5 + self.font_size.1 * 0.25,
+                        top: row_offset - 0.5 + self.font_size.1 * 0.25,
+                        right: col_offset
+                            + self.font_size.0 * width as f32
+                            + self.font_size.1 * 0.75
+                            + 0.5,
+                        bottom: row_offset + self.font_size.1 + self.font_size.1 * 0.25,
+                    },
+                    radiusX: 1.5,
+                    radiusY: 1.5,
+                },
+                &inner_brush,
+            );
+        }
+
+        self.draw_text_with_offset(
+            col_offset + self.font_size.1 * 0.5,
+            row_offset + self.font_size.1 * 0.25,
+            layout,
+            search_string.as_bytes(),
+            &[TextEffect {
+                kind: TextEffectKind::ForegroundColor(theme.background_color),
+                start: 0,
+                length: search_string.len(),
+            }],
+            theme,
+        );
+
+        row_offset += self.font_size.1 + 0.5;
+
+        unsafe {
+            let inner_brush = self
+                .render_target
+                .CreateSolidColorBrush(
+                    &D2D1_COLOR_F {
+                        r: inner_color.r,
+                        g: inner_color.g,
+                        b: inner_color.b,
+                        a: 1.0,
+                    },
+                    Some(&DEFAULT_BRUSH_PROPERTIES),
+                )
+                .unwrap();
+
+            self.render_target.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: D2D_RECT_F {
+                        left: col_offset - 0.5 + self.font_size.1 * 0.25,
+                        top: row_offset - 0.5 + self.font_size.1 * 0.25,
+                        right: col_offset
+                            + self.font_size.0 * width as f32
+                            + self.font_size.1 * 0.75
+                            + 0.5,
+                        bottom: row_offset
+                            + self.font_size.1 * (height.saturating_sub(1)) as f32
+                            + self.font_size.1 * 0.75
+                            + 0.5,
+                    },
+                    radiusX: 1.5,
+                    radiusY: 1.5,
+                },
+                &inner_brush,
+            );
+
+            let inner_brush = self
+                .render_target
+                .CreateSolidColorBrush(
+                    &D2D1_COLOR_F {
+                        r: theme.active_search_background_color.r,
+                        g: theme.active_search_background_color.g,
+                        b: theme.active_search_background_color.b,
+                        a: 1.0,
+                    },
+                    Some(&DEFAULT_BRUSH_PROPERTIES),
+                )
+                .unwrap();
+
+            self.render_target.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: D2D_RECT_F {
+                        left: col_offset - 0.5 + self.font_size.1 * 0.25,
+                        top: row_offset + self.font_size.1 * selection_view_index as f32 - 0.5
+                            + self.font_size.1 * 0.5,
+                        right: col_offset
+                            + self.font_size.0 * width as f32
+                            + self.font_size.1 * 0.75
+                            + 0.5,
+                        bottom: row_offset
+                            + self.font_size.1 * (selection_view_index + 1) as f32
+                            + self.font_size.1 * 0.5
+                            + 0.5,
+                    },
+                    radiusX: 1.5,
+                    radiusY: 1.5,
+                },
+                &inner_brush,
+            );
+        }
+
+        self.draw_text_with_offset(
+            col_offset + self.font_size.1 * 0.5,
+            row_offset + self.font_size.1 * 0.5,
+            layout,
+            text,
+            effects.unwrap_or(&[]),
+            theme,
+        );
+
+        self.set_word_wrapping(false);
+    }
 }
 
 const DEFAULT_BRUSH_PROPERTIES: D2D1_BRUSH_PROPERTIES = D2D1_BRUSH_PROPERTIES {
