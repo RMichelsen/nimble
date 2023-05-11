@@ -31,7 +31,7 @@ use windows::{
 use winit::{platform::windows::WindowExtWindows, window::Window};
 
 use crate::{
-    renderer::{Color, TextEffect, TextEffectKind},
+    renderer::{Color, RenderLayout, TextEffect, TextEffectKind},
     theme::Theme,
     view::View,
 };
@@ -153,9 +153,18 @@ impl GraphicsContext {
         }
     }
 
-    pub fn fill_cells(&self, row: usize, col: usize, size: (usize, usize), color: Color) {
-        let (row_offset, col_offset) =
-            (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
+    pub fn fill_cells(
+        &self,
+        row: usize,
+        col: usize,
+        layout: &RenderLayout,
+        size: (usize, usize),
+        color: Color,
+    ) {
+        let (row_offset, col_offset) = (
+            (row + layout.row_offset) as f32 * self.font_size.1,
+            (col + layout.col_offset) as f32 * self.font_size.0,
+        );
 
         unsafe {
             self.render_target
@@ -187,10 +196,11 @@ impl GraphicsContext {
         }
     }
 
-    pub fn fill_cell_slim_line(&self, row: usize, col: usize, color: Color) {
-        let (row_offset, col_offset) =
-            (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
-
+    pub fn fill_cell_slim_line(&self, row: usize, col: usize, layout: &RenderLayout, color: Color) {
+        let (row_offset, col_offset) = (
+            (row + layout.row_offset) as f32 * self.font_size.1,
+            (col + layout.col_offset) as f32 * self.font_size.0,
+        );
         unsafe {
             self.render_target
                 .SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
@@ -220,9 +230,18 @@ impl GraphicsContext {
         }
     }
 
-    pub fn underline_cells(&self, row: usize, col: usize, count: usize, color: Color) {
-        let (row_offset, col_offset) =
-            (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
+    pub fn underline_cells(
+        &self,
+        row: usize,
+        col: usize,
+        layout: &RenderLayout,
+        count: usize,
+        color: Color,
+    ) {
+        let (row_offset, col_offset) = (
+            (row + layout.row_offset) as f32 * self.font_size.1,
+            (col + layout.col_offset) as f32 * self.font_size.0,
+        );
 
         unsafe {
             let brush = self
@@ -293,6 +312,7 @@ impl GraphicsContext {
         &self,
         x: f32,
         y: f32,
+        layout: &RenderLayout,
         text: &[u8],
         effects: &[TextEffect],
         theme: &Theme,
@@ -385,6 +405,7 @@ impl GraphicsContext {
         &self,
         row: usize,
         col: usize,
+        layout: &RenderLayout,
         text: &[u8],
         effects: &[TextEffect],
         theme: &Theme,
@@ -400,8 +421,8 @@ impl GraphicsContext {
                 .CreateTextLayout(
                     &wide_text,
                     &self.text_format,
-                    self.window_size.0,
-                    self.window_size.1,
+                    self.font_size.0 * layout.num_cols as f32,
+                    self.font_size.1 * layout.num_rows as f32,
                 )
                 .unwrap()
         };
@@ -467,8 +488,9 @@ impl GraphicsContext {
 
             self.render_target.DrawTextLayout(
                 D2D_POINT_2F {
-                    x: -self.font_size.0 * col_offset as f32 + self.font_size.0 * col as f32,
-                    y: self.font_size.1 * row as f32,
+                    x: -self.font_size.0 * col_offset as f32
+                        + self.font_size.0 * (col + layout.col_offset) as f32,
+                    y: self.font_size.1 * (row + layout.row_offset) as f32,
                 },
                 &text_layout,
                 &brush,
@@ -481,22 +503,23 @@ impl GraphicsContext {
         &self,
         row: usize,
         col: usize,
+        layout: &RenderLayout,
         text: &[u8],
         effects: &[TextEffect],
         theme: &Theme,
     ) {
-        self.draw_text_with_col_offset(row, col, text, effects, theme, 0)
+        self.draw_text_with_col_offset(row, col, layout, text, effects, theme, 0)
     }
 
     pub fn draw_text_fit_view(
         &self,
         view: &View,
+        layout: &RenderLayout,
         text: &[u8],
         effects: &[TextEffect],
         theme: &Theme,
-        numbers_col_offset: usize,
     ) {
-        self.draw_text_with_col_offset(0, numbers_col_offset, text, effects, theme, view.col_offset)
+        self.draw_text_with_col_offset(0, 0, layout, text, effects, theme, view.col_offset)
     }
 
     pub fn set_word_wrapping(&self, wrap: bool) {
@@ -517,6 +540,7 @@ impl GraphicsContext {
         &self,
         row: usize,
         col: usize,
+        layout: &RenderLayout,
         text: &[u8],
         outer_color: Color,
         inner_color: Color,
@@ -525,8 +549,10 @@ impl GraphicsContext {
     ) {
         self.set_word_wrapping(true);
 
-        let (mut row_offset, col_offset) =
-            (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
+        let (mut row_offset, col_offset) = (
+            (row + layout.row_offset) as f32 * self.font_size.1,
+            (col + layout.col_offset) as f32 * self.font_size.0,
+        );
 
         let (width, height) = self.get_text_bounding_box(
             col_offset + self.font_size.1 * 0.5,
@@ -604,6 +630,7 @@ impl GraphicsContext {
         self.draw_text_with_offset(
             col_offset + self.font_size.1 * 0.5,
             row_offset + self.font_size.1 * 0.5,
+            layout,
             text,
             effects.unwrap_or(&[]),
             theme,
@@ -616,6 +643,7 @@ impl GraphicsContext {
         &self,
         row: usize,
         col: usize,
+        layout: &RenderLayout,
         text: &[u8],
         outer_color: Color,
         inner_color: Color,
@@ -624,8 +652,10 @@ impl GraphicsContext {
     ) {
         self.set_word_wrapping(true);
 
-        let (mut row_offset, col_offset) =
-            (row as f32 * self.font_size.1, col as f32 * self.font_size.0);
+        let (mut row_offset, col_offset) = (
+            (row + layout.row_offset) as f32 * self.font_size.1,
+            (col + layout.col_offset) as f32 * self.font_size.0,
+        );
 
         let (width, height) = self.get_text_bounding_box(
             col_offset + self.font_size.1 * 0.5,
@@ -703,6 +733,7 @@ impl GraphicsContext {
         self.draw_text_with_offset(
             col_offset + self.font_size.1 * 0.5,
             row_offset + self.font_size.1 * 0.5,
+            layout,
             text,
             effects.unwrap_or(&[]),
             theme,

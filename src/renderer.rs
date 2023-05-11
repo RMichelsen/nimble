@@ -32,46 +32,24 @@ pub struct Color {
     pub b: f32,
 }
 
-impl Color {
-    pub const fn from_rgb(r: u8, g: u8, b: u8) -> Self {
-        Self {
-            r: r as f32 / 255.0,
-            g: g as f32 / 255.0,
-            b: b as f32 / 255.0,
-        }
-    }
-}
-
 pub struct RenderLayout {
-    row_offset: usize,
-    col_offset: usize,
-    num_rows: usize,
-    num_cols: usize,
+    pub row_offset: usize,
+    pub col_offset: usize,
+    pub num_rows: usize,
+    pub num_cols: usize,
 }
 
 pub struct Renderer {
     context: GraphicsContext,
-    window_size: (f64, f64),
-    pub num_rows: usize,
-    pub num_cols: usize,
     pub theme: Theme,
 }
 
 impl Renderer {
     pub fn new(window: &Window) -> Self {
         let context = GraphicsContext::new(window);
-        let window_size = (
-            window.inner_size().width as f64 / window.scale_factor(),
-            window.inner_size().height as f64 / window.scale_factor(),
-        );
-        let num_rows = (window_size.1 / context.font_size.1 as f64).ceil() as usize;
-        let num_cols = (window_size.0 / context.font_size.0 as f64).ceil() as usize;
 
         Self {
             context,
-            window_size,
-            num_rows,
-            num_cols,
             theme: THEMES[0],
         }
     }
@@ -103,18 +81,15 @@ impl Renderer {
     pub fn draw_buffer(
         &mut self,
         buffer: &Buffer,
+        layout: &RenderLayout,
         view: &View,
         language_server: &Option<Rc<RefCell<LanguageServer>>>,
         tree_sitter: &Option<Rc<RefCell<TreeSitter>>>,
     ) {
         use TextEffectKind::*;
 
-        let numbers_col_offset = (0..)
-            .take_while(|i| 10usize.pow(*i) <= buffer.piece_table.num_lines())
-            .count()
-            + 2;
-        let text = view.visible_text(buffer, self.num_rows);
-        let text_offset = view.visible_text_offset(buffer, self.num_rows);
+        let text = view.visible_text(buffer, &layout);
+        let text_offset = view.visible_text_offset(buffer);
 
         let mut effects = vec![TextEffect {
             kind: ForegroundColor(self.theme.foreground_color),
@@ -175,18 +150,10 @@ impl Renderer {
                     )
                 };
 
-                self.context.fill_cells(
-                    row,
-                    col + numbers_col_offset,
-                    (length, 1),
-                    background_color,
-                );
-                self.context.fill_cells(
-                    row,
-                    col + numbers_col_offset,
-                    (1, 1),
-                    self.theme.cursor_color,
-                );
+                self.context
+                    .fill_cells(row, col, &layout, (length, 1), background_color);
+                self.context
+                    .fill_cells(row, col, &layout, (1, 1), self.theme.cursor_color);
                 effects.push(TextEffect {
                     kind: ForegroundColor(self.theme.background_color),
                     start,
@@ -195,66 +162,35 @@ impl Renderer {
             }
         } else {
             if buffer.mode != BufferMode::Insert {
-                view.visible_cursors_iter(buffer, self.num_rows, self.num_cols, |row, col, num| {
+                view.visible_cursors_iter(&layout, buffer, |row, col, num| {
                     self.context.fill_cells(
                         row,
-                        col + numbers_col_offset,
+                        col,
+                        &layout,
                         (num, 1),
                         self.theme.selection_background_color,
                     );
                 });
             }
 
-            view.visible_cursor_leads_iter(
-                buffer,
-                self.num_rows,
-                self.num_cols,
-                |row, col, pos| {
-                    if buffer.mode == BufferMode::Insert {
-                        self.context.fill_cell_slim_line(
-                            row,
-                            col + numbers_col_offset,
-                            self.theme.cursor_color,
-                        );
-                    } else {
-                        self.context.fill_cells(
-                            row,
-                            col + numbers_col_offset,
-                            (1, 1),
-                            self.theme.cursor_color,
-                        );
-                        effects.push(TextEffect {
-                            kind: ForegroundColor(self.theme.background_color),
-                            start: pos - text_offset,
-                            length: 1,
-                        })
-                    }
-                },
-            );
+            view.visible_cursor_leads_iter(buffer, &layout, |row, col, pos| {
+                if buffer.mode == BufferMode::Insert {
+                    self.context
+                        .fill_cell_slim_line(row, col, &layout, self.theme.cursor_color);
+                } else {
+                    self.context
+                        .fill_cells(row, col, &layout, (1, 1), self.theme.cursor_color);
+                    effects.push(TextEffect {
+                        kind: ForegroundColor(self.theme.background_color),
+                        start: pos - text_offset,
+                        length: 1,
+                    })
+                }
+            });
         }
-
-        let mut numbers = String::default();
-        for line in view.line_offset + 1..=view.line_offset + 1 + self.num_rows {
-            numbers.push(b' ' as char);
-            numbers.push_str(line.to_string().as_str());
-            numbers.push(b' ' as char);
-            numbers.push(b'\n' as char);
-        }
-
-        self.context.draw_text(
-            0,
-            0,
-            numbers.as_bytes(),
-            &[TextEffect {
-                kind: ForegroundColor(self.theme.numbers_color),
-                start: 0,
-                length: numbers.len(),
-            }],
-            &self.theme,
-        );
 
         self.context
-            .draw_text_fit_view(view, &text, &effects, &self.theme, numbers_col_offset);
+            .draw_text_fit_view(view, &layout, &text, &effects, &self.theme);
 
         if let Some(server) = language_server {
             if let Some(diagnostics) = server
@@ -264,13 +200,13 @@ impl Renderer {
             {
                 view.visible_diagnostic_lines_iter(
                     buffer,
+                    &layout,
                     diagnostics,
-                    self.num_rows,
-                    self.num_cols,
                     |row, col, count| {
                         self.context.underline_cells(
                             row,
-                            col + numbers_col_offset,
+                            col,
+                            &layout,
                             count,
                             self.theme.diagnostic_color,
                         );
@@ -279,128 +215,122 @@ impl Renderer {
             }
         }
 
-        view.visible_completions(
-            buffer,
-            self.num_rows,
-            self.num_cols,
-            |completions, completion_view, request| {
-                let selected_item = request.selection_index - request.selection_view_offset;
+        view.visible_completions(buffer, &layout, |completions, completion_view, request| {
+            let selected_item = request.selection_index - request.selection_view_offset;
 
-                self.context.fill_cells(
-                    completion_view.row,
-                    completion_view.col.saturating_sub(1) + numbers_col_offset,
-                    (completion_view.width + 1, completion_view.height),
-                    self.theme.selection_background_color,
-                );
-                self.context.fill_cells(
-                    completion_view.row + selected_item,
-                    completion_view.col.saturating_sub(1) + numbers_col_offset,
-                    (completion_view.width + 1, 1),
-                    self.theme.cursor_color,
-                );
+            self.context.fill_cells(
+                completion_view.row,
+                completion_view.col.saturating_sub(1),
+                &layout,
+                (completion_view.width + 1, completion_view.height),
+                self.theme.selection_background_color,
+            );
+            self.context.fill_cells(
+                completion_view.row + selected_item,
+                completion_view.col.saturating_sub(1),
+                &layout,
+                (completion_view.width + 1, 1),
+                self.theme.cursor_color,
+            );
 
-                let mut selected_item_start_position = 0;
-                let mut completion_string = String::default();
-                for (i, item) in completions
-                    .iter()
-                    .enumerate()
-                    .skip(request.selection_view_offset)
-                    .take(completion_view.height)
-                {
-                    if i - request.selection_view_offset == selected_item {
-                        selected_item_start_position = completion_string.len();
-                    }
-
-                    completion_string.push_str(item.insert_text.as_ref().unwrap_or(&item.label));
-                    completion_string.push('\n');
+            let mut selected_item_start_position = 0;
+            let mut completion_string = String::default();
+            for (i, item) in completions
+                .iter()
+                .enumerate()
+                .skip(request.selection_view_offset)
+                .take(completion_view.height)
+            {
+                if i - request.selection_view_offset == selected_item {
+                    selected_item_start_position = completion_string.len();
                 }
 
-                let effects = [
-                    TextEffect {
-                        kind: ForegroundColor(self.theme.foreground_color),
-                        start: 0,
-                        length: completion_string.len(),
-                    },
-                    TextEffect {
-                        kind: ForegroundColor(self.theme.background_color),
-                        start: selected_item_start_position,
-                        length: completions[request.selection_index]
-                            .insert_text
-                            .as_ref()
-                            .unwrap_or(&completions[request.selection_index].label)
-                            .len(),
-                    },
-                ];
+                completion_string.push_str(item.insert_text.as_ref().unwrap_or(&item.label));
+                completion_string.push('\n');
+            }
 
-                self.context.draw_text(
-                    completion_view.row,
-                    completion_view.col + numbers_col_offset,
-                    completion_string.as_bytes(),
-                    &effects,
-                    &self.theme,
-                );
-            },
-        );
+            let effects = [
+                TextEffect {
+                    kind: ForegroundColor(self.theme.foreground_color),
+                    start: 0,
+                    length: completion_string.len(),
+                },
+                TextEffect {
+                    kind: ForegroundColor(self.theme.background_color),
+                    start: selected_item_start_position,
+                    length: completions[request.selection_index]
+                        .insert_text
+                        .as_ref()
+                        .unwrap_or(&completions[request.selection_index].label)
+                        .len(),
+                },
+            ];
 
-        view.visible_signature_helps(
-            buffer,
-            self.num_rows,
-            self.num_cols,
-            |signature_help, signature_help_view| {
-                if let Some(active_signature) = signature_help
-                    .signatures
-                    .get(signature_help.active_signature.unwrap_or(0) as usize)
-                {
-                    let active_parameter = active_signature
-                        .active_parameter
-                        .or(signature_help.active_parameter);
+            self.context.draw_text(
+                completion_view.row,
+                completion_view.col,
+                &layout,
+                completion_string.as_bytes(),
+                &effects,
+                &self.theme,
+            );
+        });
 
-                    let mut effects = vec![];
-                    if let Some(parameters) = &active_signature.parameters {
-                        if let Some(active_parameter) =
-                            active_parameter.and_then(|i| parameters.get(i as usize))
-                        {
-                            match &active_parameter.label {
-                                ParameterLabelType::String(label) => {
-                                    for (start, _) in
-                                        active_signature.label.match_indices(label.as_str())
+        view.visible_signature_helps(buffer, &layout, |signature_help, signature_help_view| {
+            if let Some(active_signature) = signature_help
+                .signatures
+                .get(signature_help.active_signature.unwrap_or(0) as usize)
+            {
+                let active_parameter = active_signature
+                    .active_parameter
+                    .or(signature_help.active_parameter);
+
+                let mut effects = vec![];
+                if let Some(parameters) = &active_signature.parameters {
+                    if let Some(active_parameter) =
+                        active_parameter.and_then(|i| parameters.get(i as usize))
+                    {
+                        match &active_parameter.label {
+                            ParameterLabelType::String(label) => {
+                                for (start, _) in
+                                    active_signature.label.match_indices(label.as_str())
+                                {
+                                    if !active_signature.label.as_bytes()[start + label.len()]
+                                        .is_ascii_alphanumeric()
                                     {
-                                        if !active_signature.label.as_bytes()[start + label.len()]
-                                            .is_ascii_alphanumeric()
-                                        {
-                                            effects.push(TextEffect {
-                                                kind: ForegroundColor(
-                                                    self.theme.active_parameter_color,
-                                                ),
-                                                start,
-                                                length: label.len(),
-                                            });
-                                        }
+                                        effects.push(TextEffect {
+                                            kind: ForegroundColor(
+                                                self.theme.active_parameter_color,
+                                            ),
+                                            start,
+                                            length: label.len(),
+                                        });
                                     }
                                 }
-                                ParameterLabelType::Offsets(start, end) => {
-                                    effects.push(TextEffect {
-                                        kind: ForegroundColor(self.theme.foreground_color),
-                                        start: *start as usize,
-                                        length: *end as usize - *start as usize + 1,
-                                    });
-                                }
+                            }
+                            ParameterLabelType::Offsets(start, end) => {
+                                effects.push(TextEffect {
+                                    kind: ForegroundColor(self.theme.foreground_color),
+                                    start: *start as usize,
+                                    length: *end as usize - *start as usize + 1,
+                                });
                             }
                         }
                     }
-
-                    self.context.draw_popup_above(
-                        signature_help_view.row,
-                        signature_help_view.col + numbers_col_offset,
-                        active_signature.label.as_bytes(),
-                        self.theme.selection_background_color,
-                        self.theme.background_color,
-                        Some(&effects),
-                        &self.theme,
-                    );
                 }
-            },
-        );
+
+                self.context.draw_popup_above(
+                    signature_help_view.row,
+                    signature_help_view.col,
+                    &layout,
+                    active_signature.label.as_bytes(),
+                    self.theme.selection_background_color,
+                    self.theme.background_color,
+                    Some(&effects),
+                    &self.theme,
+                );
+            }
+        });
 
         if let Some(server) = language_server {
             if let Some(diagnostics) = server
@@ -439,7 +369,8 @@ impl Renderer {
 
                         self.context.draw_popup_below(
                             row,
-                            col + numbers_col_offset,
+                            col,
+                            &layout,
                             diagnostic.message.as_bytes(),
                             self.theme.selection_background_color,
                             self.theme.background_color,
@@ -458,14 +389,48 @@ impl Renderer {
             .is_some_and(|c| *c == b':' || *c == b'/')
         {
             self.context.draw_popup_below(
-                self.num_rows,
-                numbers_col_offset.saturating_sub(2),
+                layout.num_rows,
+                0,
+                &layout,
                 buffer.input.as_bytes(),
                 self.theme.selection_background_color,
                 self.theme.background_color,
                 None,
                 &self.theme,
             );
+        }
+    }
+
+    pub fn draw_numbers(&mut self, layout: &RenderLayout, view: &View) {
+        let mut numbers = String::default();
+        for line in view.line_offset + 1..=view.line_offset + 1 + layout.num_rows {
+            numbers.push(b' ' as char);
+            numbers.push_str(line.to_string().as_str());
+            numbers.push(b' ' as char);
+            numbers.push(b'\n' as char);
+        }
+
+        self.context.draw_text(
+            0,
+            0,
+            &layout,
+            numbers.as_bytes(),
+            &[TextEffect {
+                kind: TextEffectKind::ForegroundColor(self.theme.numbers_color),
+                start: 0,
+                length: numbers.len(),
+            }],
+            &self.theme,
+        );
+    }
+}
+
+impl Color {
+    pub const fn from_rgb(r: u8, g: u8, b: u8) -> Self {
+        Self {
+            r: r as f32 / 255.0,
+            g: g as f32 / 255.0,
+            b: b as f32 / 255.0,
         }
     }
 }

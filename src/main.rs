@@ -54,7 +54,7 @@ fn main() {
         .unwrap();
 
     let mut editor = Editor::new(&window);
-    editor.render();
+    editor.render(&window);
     window.set_visible(true);
 
     // editor.open_file(
@@ -81,12 +81,12 @@ fn main() {
     event_loop.run(move |event, _, control_flow| {
         // Handle incoming responses, re-render if necessary
         if editor.handle_lsp_responses() {
-            editor.render();
+            editor.render(&window);
         }
 
         match event {
             Event::RedrawRequested(_) => {
-                editor.render();
+                editor.render(&window);
             }
             Event::WindowEvent {
                 event: WindowEvent::MouseWheel { delta, .. },
@@ -107,7 +107,7 @@ fn main() {
                 ..
             } => {
                 if !modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::CTRL)) {
-                    match editor.handle_char(chr) {
+                    match editor.handle_char(&window, chr) {
                         Some(EditorCommand::Quit) if editor.ready_to_quit() => {
                             editor.shutdown();
                             control_flow.set_exit();
@@ -126,7 +126,7 @@ fn main() {
             } => {
                 if input.state == ElementState::Pressed {
                     if let Some(key_code) = input.virtual_keycode {
-                        match editor.handle_key(key_code, modifiers) {
+                        match editor.handle_key(&window, key_code, modifiers) {
                             Some(EditorCommand::Quit) if editor.ready_to_quit() => {
                                 editor.shutdown();
                                 control_flow.set_exit();

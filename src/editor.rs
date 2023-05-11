@@ -8,7 +8,7 @@ use winit::{
 
 use crate::{
     buffer::Buffer, language_server::LanguageServer, language_server_types::VoidParams,
-    language_support::language_from_path, renderer::Renderer, tree_sitter::TreeSitter, view::View,
+    language_support::language_from_path, renderer::{Renderer, RenderLayout}, tree_sitter::TreeSitter, view::View,
 };
 
 struct Document {
@@ -105,16 +105,45 @@ impl Editor {
         require_redraw
     }
 
-    pub fn render(&mut self) {
+    pub fn render(&mut self, window: &Window) {
         self.renderer.start_draw();
         if let Some(document) = &self.active_document {
             let document = &self.documents[document];
+
+            let window_size = (
+                window.inner_size().width as f64 / window.scale_factor(),
+                window.inner_size().height as f64 / window.scale_factor(),
+            );
+
+            let numbers_num_cols = (0..)
+                .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
+                .count()
+                + 2;
+
+            let font_size = self.renderer.get_font_size();
+            let buffer_layout = RenderLayout {
+                row_offset: 0,
+                col_offset: numbers_num_cols,
+                num_rows: (window_size.1 / font_size.1).ceil() as usize,
+                num_cols: (window_size.0 / font_size.0).ceil() as usize,
+            };
+
+            let numbers_layout = RenderLayout {
+                row_offset: 0,
+                col_offset: 0,
+                num_rows: buffer_layout.num_rows,
+                num_cols: numbers_num_cols,
+            };
+
             self.renderer.draw_buffer(
                 &document.buffer,
+                &buffer_layout,
                 &document.view,
                 &document.buffer.language_server,
                 &document.buffer.tree_sitter,
             );
+
+            self.renderer.draw_numbers(&numbers_layout, &document.view);
         }
         self.renderer.end_draw();
     }
@@ -237,6 +266,7 @@ impl Editor {
 
     pub fn handle_key(
         &mut self,
+        window: &Window,
         key_code: VirtualKeyCode,
         modifiers: Option<ModifiersState>,
     ) -> Option<EditorCommand> {
@@ -247,21 +277,38 @@ impl Editor {
             return None;
         }
 
-        let (num_rows, num_cols) = (self.renderer.num_rows, self.renderer.num_cols);
+        let font_size = self.renderer.get_font_size();
         if let Some(document) = self.active_document() {
+            let window_size = (
+                window.inner_size().width as f64 / window.scale_factor(),
+                window.inner_size().height as f64 / window.scale_factor(),
+            );
+
+            let numbers_num_cols = (0..)
+                .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
+                .count()
+                + 2;
+
+            let buffer_layout = RenderLayout {
+                row_offset: 0,
+                col_offset: numbers_num_cols,
+                num_rows: (window_size.1 / font_size.1).ceil() as usize,
+                num_cols: (window_size.0 / font_size.0).ceil() as usize,
+            };
+
             if let Some(editor_command) =
                 document
                     .buffer
-                    .handle_key(key_code, modifiers, &document.view, num_rows, num_cols)
+                    .handle_key(key_code, modifiers, &document.view, buffer_layout.num_rows, buffer_layout.num_cols)
             {
                 match editor_command {
                     EditorCommand::CenterView => {
-                        document.view.center(&document.buffer, num_rows, num_cols)
+                        document.view.center(&document.buffer, &buffer_layout)
                     }
                     EditorCommand::CenterIfNotVisible => {
                         document
                             .view
-                            .center_if_not_visible(&document.buffer, num_rows, num_cols)
+                            .center_if_not_visible(&document.buffer, &buffer_layout)
                     }
                     EditorCommand::Quit => {
                         return Some(EditorCommand::Quit);
@@ -270,24 +317,41 @@ impl Editor {
                         return Some(EditorCommand::QuitNoCheck);
                     }
                 }
-                document.view.adjust(&document.buffer, num_rows, num_cols);
+                document.view.adjust(&document.buffer, &buffer_layout)
             }
         }
         None
     }
 
-    pub fn handle_char(&mut self, c: char) -> Option<EditorCommand> {
-        let (num_rows, num_cols) = (self.renderer.num_rows, self.renderer.num_cols);
+    pub fn handle_char(&mut self, window: &Window, c: char) -> Option<EditorCommand> {
+        let font_size = self.renderer.get_font_size();
         if let Some(document) = self.active_document() {
+            let window_size = (
+                window.inner_size().width as f64 / window.scale_factor(),
+                window.inner_size().height as f64 / window.scale_factor(),
+            );
+
+            let numbers_num_cols = (0..)
+                .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
+                .count()
+                + 2;
+
+            let buffer_layout = RenderLayout {
+                row_offset: 0,
+                col_offset: numbers_num_cols,
+                num_rows: (window_size.1 / font_size.1).ceil() as usize,
+                num_cols: (window_size.0 / font_size.0).ceil() as usize,
+            };
+
             if let Some(editor_command) = document.buffer.handle_char(c) {
                 match editor_command {
                     EditorCommand::CenterView => {
-                        document.view.center(&document.buffer, num_rows, num_cols)
+                        document.view.center(&document.buffer, &buffer_layout)
                     }
                     EditorCommand::CenterIfNotVisible => {
                         document
                             .view
-                            .center_if_not_visible(&document.buffer, num_rows, num_cols)
+                            .center_if_not_visible(&document.buffer, &buffer_layout)
                     }
                     EditorCommand::Quit => {
                         return Some(EditorCommand::Quit);
@@ -297,8 +361,8 @@ impl Editor {
                     }
                 }
             }
-            document.view.adjust(&document.buffer, num_rows, num_cols);
-        }
+            document.view.adjust(&document.buffer, &buffer_layout)
+            }
         None
     }
 

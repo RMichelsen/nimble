@@ -7,6 +7,7 @@ use crate::{
     cursor::{get_filtered_completions, CompletionRequest},
     language_server_types::{CompletionItem, Diagnostic, SignatureHelp},
     piece_table::PieceTable,
+    renderer::RenderLayout,
     text_utils::{self, CharType},
 };
 
@@ -58,7 +59,7 @@ impl View {
         self.hover = None;
     }
 
-    pub fn visible_cursors_iter<F>(&self, buffer: &Buffer, num_rows: usize, num_cols: usize, f: F)
+    pub fn visible_cursors_iter<F>(&self, layout: &RenderLayout, buffer: &Buffer, f: F)
     where
         F: Fn(usize, usize, usize),
     {
@@ -71,7 +72,12 @@ impl View {
                     let end = buffer.piece_table.line_at_index(line).unwrap().length;
                     let num = (start..=end)
                         .filter(|col| {
-                            self.pos_in_render_visible_range(line, *col, num_rows, num_cols)
+                            self.pos_in_render_visible_range(
+                                line,
+                                *col,
+                                layout.num_rows,
+                                layout.num_cols,
+                            )
                         })
                         .count();
                     f(
@@ -86,7 +92,12 @@ impl View {
                 for range in cursor.get_selection_ranges(&buffer.piece_table) {
                     let num = (range.start..=range.end)
                         .filter(|col| {
-                            self.pos_in_render_visible_range(range.line, *col, num_rows, num_cols)
+                            self.pos_in_render_visible_range(
+                                range.line,
+                                *col,
+                                layout.num_rows,
+                                layout.num_cols,
+                            )
                         })
                         .count();
                     f(
@@ -99,18 +110,13 @@ impl View {
         }
     }
 
-    pub fn visible_cursor_leads_iter<F>(
-        &self,
-        buffer: &Buffer,
-        num_rows: usize,
-        num_cols: usize,
-        mut f: F,
-    ) where
+    pub fn visible_cursor_leads_iter<F>(&self, buffer: &Buffer, layout: &RenderLayout, mut f: F)
+    where
         F: FnMut(usize, usize, usize),
     {
         for cursor in buffer.cursors.iter() {
             let (line, col) = cursor.get_line_col(&buffer.piece_table);
-            if self.pos_in_render_visible_range(line, col, num_rows, num_cols) {
+            if self.pos_in_render_visible_range(line, col, layout.num_rows, layout.num_cols) {
                 f(
                     self.absolute_to_view_row(line),
                     self.absolute_to_view_col(col),
@@ -120,7 +126,7 @@ impl View {
         }
     }
 
-    pub fn visible_completions<F>(&self, buffer: &Buffer, num_rows: usize, num_cols: usize, f: F)
+    pub fn visible_completions<F>(&self, buffer: &Buffer, layout: &RenderLayout, f: F)
     where
         F: Fn(&[CompletionItem], &CompletionView, &CompletionRequest),
     {
@@ -159,8 +165,8 @@ impl View {
                             &buffer.piece_table,
                             &filtered_completions,
                             request_position,
-                            num_rows,
-                            num_cols,
+                            layout.num_rows,
+                            layout.num_cols,
                         ) {
                             f(&filtered_completions, &completion_view, &request);
                         }
@@ -170,13 +176,8 @@ impl View {
         }
     }
 
-    pub fn visible_signature_helps<F>(
-        &self,
-        buffer: &Buffer,
-        num_rows: usize,
-        num_cols: usize,
-        f: F,
-    ) where
+    pub fn visible_signature_helps<F>(&self, buffer: &Buffer, layout: &RenderLayout, f: F)
+    where
         F: Fn(&SignatureHelp, &SignatureHelpView),
     {
         if let Some(server) = &buffer.language_server {
@@ -189,8 +190,8 @@ impl View {
                             &buffer.piece_table,
                             signature_help,
                             request.position,
-                            num_rows,
-                            num_cols,
+                            layout.num_rows,
+                            layout.num_cols,
                         ) {
                             f(signature_help, &signature_help_view);
                         }
@@ -200,25 +201,24 @@ impl View {
         }
     }
 
-    pub fn visible_text_offset(&self, buffer: &Buffer, num_rows: usize) -> usize {
+    pub fn visible_text_offset(&self, buffer: &Buffer) -> usize {
         buffer
             .piece_table
             .char_index_from_line_col(self.line_offset, 0)
             .unwrap_or(0)
     }
 
-    pub fn visible_text(&self, buffer: &Buffer, num_rows: usize) -> Vec<u8> {
+    pub fn visible_text(&self, buffer: &Buffer, layout: &RenderLayout) -> Vec<u8> {
         buffer
             .piece_table
-            .text_between_lines(self.line_offset, self.line_offset + num_rows)
+            .text_between_lines(self.line_offset, self.line_offset + layout.num_rows)
     }
 
     pub fn visible_diagnostic_lines_iter<F>(
         &self,
         buffer: &Buffer,
+        layout: &RenderLayout,
         diagnostics: &[Diagnostic],
-        num_rows: usize,
-        num_cols: usize,
         mut f: F,
     ) where
         F: FnMut(usize, usize, usize),
@@ -246,9 +246,17 @@ impl View {
                         (start_line..=end_line)
                             .contains(&buffer.piece_table.line_index(cursor.position))
                     }))
-                    || (!self
-                        .pos_in_render_visible_range(start_line, start_col, num_rows, num_cols)
-                        && !self.pos_in_render_visible_range(end_line, end_col, num_rows, num_cols))
+                    || (!self.pos_in_render_visible_range(
+                        start_line,
+                        start_col,
+                        layout.num_rows,
+                        layout.num_cols,
+                    ) && !self.pos_in_render_visible_range(
+                        end_line,
+                        end_col,
+                        layout.num_rows,
+                        layout.num_cols,
+                    ))
                 {
                     continue;
                 }
@@ -285,37 +293,37 @@ impl View {
         }
     }
 
-    pub fn adjust(&mut self, buffer: &Buffer, num_rows: usize, num_cols: usize) {
+    pub fn adjust(&mut self, buffer: &Buffer, layout: &RenderLayout) {
         if let Some(last_cursor) = buffer.cursors.last() {
             let (line, col) = last_cursor.get_line_col(&buffer.piece_table);
-            if !self.pos_in_edit_visible_range(line, col, num_rows, num_cols) {
+            if !self.pos_in_edit_visible_range(line, col, layout.num_rows, layout.num_cols) {
                 if line < self.line_offset {
                     self.line_offset = line;
-                } else if line > (self.line_offset + (num_rows - 2)) {
-                    self.line_offset += line - (self.line_offset + (num_rows - 2))
+                } else if line > (self.line_offset + (layout.num_rows - 2)) {
+                    self.line_offset += line - (self.line_offset + (layout.num_rows - 2))
                 }
 
                 if col < self.col_offset {
                     self.col_offset = col;
-                } else if col > (self.col_offset + (num_cols - 2)) {
-                    self.col_offset += col - (self.col_offset + (num_cols - 2))
+                } else if col > (self.col_offset + (layout.num_cols - 2)) {
+                    self.col_offset += col - (self.col_offset + (layout.num_cols - 2))
                 }
             }
         }
     }
 
-    pub fn center(&mut self, buffer: &Buffer, num_rows: usize, num_cols: usize) {
+    pub fn center(&mut self, buffer: &Buffer, layout: &RenderLayout) {
         if let Some(last_cursor) = buffer.cursors.last() {
             let (line, _) = last_cursor.get_line_col(&buffer.piece_table);
-            self.line_offset = line.saturating_sub(num_rows / 2);
+            self.line_offset = line.saturating_sub(layout.num_rows / 2);
         }
     }
 
-    pub fn center_if_not_visible(&mut self, buffer: &Buffer, num_rows: usize, num_cols: usize) {
+    pub fn center_if_not_visible(&mut self, buffer: &Buffer, layout: &RenderLayout) {
         if let Some(last_cursor) = buffer.cursors.last() {
             let (line, col) = last_cursor.get_line_col(&buffer.piece_table);
-            if !self.pos_in_edit_visible_range(line, col, num_rows, num_cols) {
-                self.line_offset = line.saturating_sub(num_rows / 2);
+            if !self.pos_in_edit_visible_range(line, col, layout.num_rows, layout.num_cols) {
+                self.line_offset = line.saturating_sub(layout.num_rows / 2);
             }
         }
     }
