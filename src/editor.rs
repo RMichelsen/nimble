@@ -6,6 +6,7 @@ use std::{
     rc::Rc,
 };
 
+use fuzzy_matcher::{clangd::ClangdMatcher, FuzzyMatcher};
 use walkdir::WalkDir;
 use winit::{
     dpi::LogicalPosition,
@@ -40,6 +41,7 @@ pub enum EditorCommand {
     QuitAllNoCheck,
 }
 
+#[derive(Debug)]
 pub struct FileIdentifier {
     pub name: OsString,
     pub path: OsString,
@@ -227,8 +229,11 @@ impl Editor {
                 .draw_file_finder(&mut self.file_finder_layout, workspace, file_finder);
         }
 
-        self.renderer
-            .draw_status_line(&self.workspace, &self.status_line_layout);
+        self.renderer.draw_status_line(
+            &self.workspace,
+            &self.active_document,
+            &self.status_line_layout,
+        );
 
         self.renderer.end_draw();
     }
@@ -408,6 +413,7 @@ impl Editor {
             VirtualKeyCode::Back => {
                 if let Some(file_finder) = &mut self.file_finder {
                     file_finder.search_string.pop();
+                    file_finder.filter_files();
                     return true;
                 }
             }
@@ -513,6 +519,7 @@ impl Editor {
         if let Some(file_finder) = &mut self.file_finder {
             if c as u8 >= 0x20 && c as u8 <= 0x7E {
                 file_finder.search_string.push(c);
+                file_finder.filter_files();
             }
             return true;
         }
@@ -659,5 +666,18 @@ impl FileFinder {
             selection_index: 0,
             selection_view_offset: 0,
         }
+    }
+
+    pub fn filter_files(&mut self) {
+        let matcher = ClangdMatcher::default();
+
+        self.files.sort_by(|f0, f1| {
+            if let (Some(n0), Some(n1)) = (f0.name.to_str(), f1.name.to_str()) {
+                let s0 = matcher.fuzzy_match(n0, &self.search_string).unwrap_or(0);
+                let s1 = matcher.fuzzy_match(n1, &self.search_string).unwrap_or(0);
+                return s1.cmp(&s0);
+            }
+            0.cmp(&0)
+        });
     }
 }

@@ -146,18 +146,34 @@ impl Renderer {
         );
     }
 
-    pub fn draw_status_line(&mut self, workspace: &Option<String>, layout: &RenderLayout) {
-        if let Some(workspace) = workspace {
-            self.context.fill_cells(
-                0,
-                0,
-                layout,
-                (layout.num_cols, 2),
-                self.theme.status_line_background_color,
-            );
-            self.context
-                .draw_text(0, 0, layout, workspace.as_bytes(), &[], &self.theme, false);
-        }
+    pub fn draw_status_line(
+        &mut self,
+        workspace: &Option<String>,
+        opened_file: &Option<String>,
+        layout: &RenderLayout,
+    ) {
+        self.context.fill_cells(
+            0,
+            0,
+            layout,
+            (layout.num_cols, 2),
+            self.theme.status_line_background_color,
+        );
+
+        let status_line = format!(
+            " Workspace: {}, Editing: {}",
+            workspace.as_ref().unwrap_or(&String::from("None")),
+            opened_file.as_ref().unwrap_or(&String::from("None"))
+        );
+        self.context.draw_text(
+            0,
+            0,
+            layout,
+            status_line.as_bytes(),
+            &[],
+            &self.theme,
+            false,
+        );
     }
 
     pub fn draw_buffer(

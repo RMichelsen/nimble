@@ -56,19 +56,6 @@ fn main() {
     editor.render(&window);
     window.set_visible(true);
 
-    // editor.open_file(
-    //     "C:/Users/Rasmus/Desktop/nimble/src/language_server_types.rs",
-    //     &window,
-    // );
-    // editor.open_file("C:/Users/Rasmus/Desktop/nimble/src/tree_sitter.rs", &window);
-    editor.open_file(
-        "C:/Users/Rasmus/Desktop/Nvy/src/renderer/renderer.cpp",
-        &window,
-    );
-    // editor.open_file(
-    //     "C:/Users/Rasmus/AppData/Local/Programs/Python/Python310/Lib/_pydecimal.py",
-    //     &window,
-    // );
     request_redraw(&window);
 
     let mut modifiers: Option<ModifiersState> = None;
