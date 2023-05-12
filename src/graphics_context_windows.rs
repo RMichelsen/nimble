@@ -270,7 +270,13 @@ impl GraphicsContext {
         }
     }
 
-    pub fn get_text_bounding_box(&self, x: f32, y: f32, text: &[u8]) -> (f64, f64) {
+    pub fn get_text_bounding_box(
+        &self,
+        x: f32,
+        y: f32,
+        layout: &RenderLayout,
+        text: &[u8],
+    ) -> (f64, f64) {
         let mut wide_text = vec![];
         for c in text {
             wide_text.push(*c as u16);
@@ -281,8 +287,8 @@ impl GraphicsContext {
                 .CreateTextLayout(
                     &wide_text,
                     &self.text_format,
-                    (self.window_size.0 - x).clamp(0.0, f32::MAX),
-                    (self.window_size.1 - y).clamp(0.0, f32::MAX),
+                    (self.font_size.0 * layout.num_cols as f32 - x).clamp(0.0, f32::MAX),
+                    (self.font_size.1 * layout.num_rows as f32 - y).clamp(0.0, f32::MAX),
                 )
                 .unwrap()
         };
@@ -328,8 +334,8 @@ impl GraphicsContext {
                 .CreateTextLayout(
                     &wide_text,
                     &self.text_format,
-                    self.font_size.0 * layout.num_cols as f32,
-                    self.font_size.1 * layout.num_rows as f32,
+                    (self.font_size.0 * layout.num_cols as f32 - x).clamp(0.0, f32::MAX),
+                    (self.font_size.1 * layout.num_rows as f32 - y).clamp(0.0, f32::MAX),
                 )
                 .unwrap()
         };
@@ -566,6 +572,7 @@ impl GraphicsContext {
         let (width, height) = self.get_text_bounding_box(
             col_offset + self.font_size.1 * 0.5,
             row_offset + self.font_size.1 * 0.5,
+            layout,
             text,
         );
 
@@ -669,6 +676,7 @@ impl GraphicsContext {
         let (width, height) = self.get_text_bounding_box(
             col_offset + self.font_size.1 * 0.5,
             row_offset + self.font_size.1 * 0.5,
+            layout,
             text,
         );
 
@@ -774,6 +782,7 @@ impl GraphicsContext {
         let (width, height) = self.get_text_bounding_box(
             col_offset + self.font_size.1 * 0.5,
             row_offset + self.font_size.1 * 0.5,
+            layout,
             text,
         );
 
@@ -781,6 +790,7 @@ impl GraphicsContext {
             self.get_text_bounding_box(
                 col_offset + self.font_size.1 * 0.5,
                 row_offset + self.font_size.1 * 0.5,
+                layout,
                 search_string.as_bytes(),
             )
             .0,

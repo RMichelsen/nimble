@@ -4,7 +4,6 @@
 #![feature(pattern)]
 #![feature(slice_take)]
 #![feature(drain_filter)]
-#![feature(let_chains)]
 #![feature(byte_slice_trim_ascii)]
 #![feature(const_fn_floating_point_arithmetic)]
 #![feature(if_let_guard)]
@@ -32,7 +31,7 @@ mod platform_resources;
 
 use std::time::{Duration, Instant};
 
-use editor::{Editor, EditorCommand};
+use editor::Editor;
 #[cfg(target_os = "macos")]
 use objc::{msg_send, runtime::YES, sel, sel_impl};
 #[cfg(target_os = "macos")]
@@ -79,6 +78,8 @@ fn main() {
     let mut double_click_timer = Instant::now();
     let mut hover_timer = Some(Instant::now());
     event_loop.run(move |event, _, control_flow| {
+        editor.update_layouts(&window);
+
         // Handle incoming responses, re-render if necessary
         if editor.handle_lsp_responses() {
             editor.render(&window);
@@ -107,15 +108,9 @@ fn main() {
                 ..
             } => {
                 if !modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::CTRL)) {
-                    match editor.handle_char(&window, chr) {
-                        Some(EditorCommand::Quit) if editor.ready_to_quit() => {
-                            editor.shutdown();
-                            control_flow.set_exit();
-                        }
-                        Some(EditorCommand::QuitNoCheck) => {
-                            control_flow.set_exit();
-                        }
-                        _ => (),
+                    if !editor.handle_char(&window, chr) {
+                        editor.shutdown();
+                        control_flow.set_exit();
                     }
                     request_redraw(&window);
                 }
@@ -126,15 +121,9 @@ fn main() {
             } => {
                 if input.state == ElementState::Pressed {
                     if let Some(key_code) = input.virtual_keycode {
-                        match editor.handle_key(&window, key_code, modifiers) {
-                            Some(EditorCommand::Quit) if editor.ready_to_quit() => {
-                                editor.shutdown();
-                                control_flow.set_exit();
-                            }
-                            Some(EditorCommand::QuitNoCheck) => {
-                                control_flow.set_exit();
-                            }
-                            _ => (),
+                        if !editor.handle_key(&window, key_code, modifiers) {
+                            editor.shutdown();
+                            control_flow.set_exit();
                         }
                         request_redraw(&window);
                     }

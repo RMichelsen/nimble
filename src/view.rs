@@ -47,12 +47,12 @@ impl View {
 
     pub fn hover(
         &mut self,
+        layout: &RenderLayout,
         mouse_position: LogicalPosition<f64>,
         font_size: (f64, f64),
-        numbers_col_offset: usize,
     ) {
-        let (line, col) = self.get_line_col(mouse_position, font_size);
-        self.hover = Some((line, col.saturating_sub(numbers_col_offset)));
+        let (line, col) = self.get_line_col(layout, mouse_position, font_size);
+        self.hover = Some((line, col));
     }
 
     pub fn exit_hover(&mut self) {
@@ -426,12 +426,16 @@ impl View {
 
     pub fn get_line_col(
         &self,
+        layout: &RenderLayout,
         mouse_position: LogicalPosition<f64>,
         font_size: (f64, f64),
     ) -> (usize, usize) {
         let row = (mouse_position.y / font_size.1).floor() as usize;
         let col = (mouse_position.x / font_size.0).floor() as usize;
-        (row + self.line_offset, col + self.col_offset)
+        (
+            (row.saturating_sub(layout.row_offset)) + self.line_offset,
+            (col.saturating_sub(layout.col_offset)) + self.col_offset,
+        )
     }
 
     pub fn absolute_to_view_row(&self, line: usize) -> usize {

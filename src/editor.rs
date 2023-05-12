@@ -1,4 +1,10 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc, cmp::min, ffi::{OsString, OsStr}};
+use std::{
+    cell::RefCell,
+    cmp::min,
+    collections::HashMap,
+    ffi::{OsStr, OsString},
+    rc::Rc,
+};
 
 use walkdir::WalkDir;
 use winit::{
@@ -8,8 +14,14 @@ use winit::{
 };
 
 use crate::{
-    buffer::Buffer, language_server::LanguageServer, language_server_types::VoidParams,
-    language_support::language_from_path, renderer::{Renderer, RenderLayout}, tree_sitter::TreeSitter, view::View, platform_resources,
+    buffer::Buffer,
+    language_server::LanguageServer,
+    language_server_types::VoidParams,
+    language_support::language_from_path,
+    platform_resources,
+    renderer::{RenderLayout, Renderer},
+    tree_sitter::TreeSitter,
+    view::View,
 };
 
 struct Document {
@@ -23,11 +35,18 @@ pub enum EditorCommand {
     CenterView,
     CenterIfNotVisible,
     Quit,
+    QuitAll,
     QuitNoCheck,
+    QuitAllNoCheck,
+}
+
+pub struct FileIdentifier {
+    pub name: OsString,
+    pub path: OsString,
 }
 
 pub struct FileFinder {
-    pub files: Vec<OsString>,
+    pub files: Vec<FileIdentifier>,
     pub search_string: String,
     pub selection_index: usize,
     pub selection_view_offset: usize,
@@ -39,6 +58,9 @@ pub struct Editor {
     file_finder: Option<FileFinder>,
     documents: HashMap<String, Document>,
     active_document: Option<String>,
+    active_document_layout: RenderLayout,
+    numbers_layout: RenderLayout,
+    file_finder_layout: RenderLayout,
     language_servers: HashMap<&'static str, Rc<RefCell<LanguageServer>>>,
     tree_sitters: HashMap<&'static str, Rc<RefCell<TreeSitter>>>,
 }
@@ -51,13 +73,59 @@ impl Editor {
             file_finder: None,
             documents: HashMap::default(),
             active_document: None,
+            active_document_layout: RenderLayout::default(),
+            numbers_layout: RenderLayout::default(),
+            file_finder_layout: RenderLayout::default(),
             language_servers: HashMap::default(),
             tree_sitters: HashMap::default(),
         }
     }
 
+    pub fn update_layouts(&mut self, window: &Window) {
+        let window_size = (
+            window.inner_size().width as f64 / window.scale_factor(),
+            window.inner_size().height as f64 / window.scale_factor(),
+        );
+        let font_size = self.renderer.get_font_size();
+
+        if let Some(document) = &self.active_document {
+            let document = &self.documents[document];
+
+            let numbers_num_cols = (0..)
+                .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
+                .count()
+                + 2;
+
+            self.active_document_layout = RenderLayout {
+                row_offset: 0,
+                col_offset: numbers_num_cols,
+                num_rows: (window_size.1 / font_size.1).ceil() as usize,
+                num_cols: (window_size.0 / font_size.0).ceil() as usize,
+            };
+
+            self.numbers_layout = RenderLayout {
+                row_offset: 0,
+                col_offset: 1,
+                num_rows: self.active_document_layout.num_rows,
+                num_cols: numbers_num_cols.saturating_sub(2),
+            };
+        }
+
+        if let (Some(workspace), Some(file_finder)) = (&self.workspace, &self.file_finder) {
+            let num_cols = (window_size.0 / font_size.0).ceil() as usize;
+            self.file_finder_layout = RenderLayout {
+                row_offset: 0,
+                col_offset: num_cols / 2,
+                num_rows: (window_size.1 / font_size.1).ceil() as usize,
+                num_cols,
+            };
+        }
+    }
+
     pub fn open_workspace(&mut self) {
-        self.workspace = platform_resources::open_folder();
+        if let Some(folder) = platform_resources::open_folder() {
+            self.workspace = Some(folder);
+        }
     }
 
     pub fn handle_lsp_responses(&mut self) -> bool {
@@ -71,8 +139,10 @@ impl Editor {
                         match response.method {
                             "initialize" => {
                                 for document in self.documents.values() {
-                                    if *identifier == document.buffer.language.unwrap().identifier {
-                                        document.buffer.send_did_open(&mut server);
+                                    if let Some(language) = document.buffer.language {
+                                        if *identifier == language.identifier {
+                                            document.buffer.send_did_open(&mut server);
+                                        }
                                     }
                                 }
                             }
@@ -126,54 +196,26 @@ impl Editor {
     pub fn render(&mut self, window: &Window) {
         self.renderer.start_draw();
 
-        let window_size = (
-            window.inner_size().width as f64 / window.scale_factor(),
-            window.inner_size().height as f64 / window.scale_factor(),
-        );
+        let active_document_layout = self.active_document_layout;
         let font_size = self.renderer.get_font_size();
-
         if let Some(document) = &self.active_document {
             let document = &self.documents[document];
 
-            let numbers_num_cols = (0..)
-                .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
-                .count()
-                + 2;
-
-            let buffer_layout = RenderLayout {
-                row_offset: 0,
-                col_offset: numbers_num_cols,
-                num_rows: (window_size.1 / font_size.1).ceil() as usize,
-                num_cols: (window_size.0 / font_size.0).ceil() as usize,
-            };
-
-            let numbers_layout = RenderLayout {
-                row_offset: 0,
-                col_offset: 1,
-                num_rows: buffer_layout.num_rows,
-                num_cols: numbers_num_cols.saturating_sub(2),
-            };
-
             self.renderer.draw_buffer(
                 &document.buffer,
-                &buffer_layout,
+                &active_document_layout,
                 &document.view,
                 &document.buffer.language_server,
                 &document.buffer.tree_sitter,
             );
 
-            self.renderer.draw_numbers(&document.buffer, &numbers_layout, &document.view);
+            self.renderer
+                .draw_numbers(&document.buffer, &self.numbers_layout, &document.view);
         }
 
         if let (Some(workspace), Some(file_finder)) = (&self.workspace, &self.file_finder) {
-            let num_cols = (window_size.0 / font_size.0).ceil() as usize;
-            let mut file_finder_layout = RenderLayout {
-                row_offset: 0,
-                col_offset: num_cols / 2,
-                num_rows: (window_size.1 / font_size.1).ceil() as usize,
-                num_cols,
-            };
-            self.renderer.draw_file_finder(&mut file_finder_layout, workspace, file_finder);
+            self.renderer
+                .draw_file_finder(&mut self.file_finder_layout, workspace, file_finder);
         }
 
         self.renderer.end_draw();
@@ -195,17 +237,17 @@ impl Editor {
         mouse_position: LogicalPosition<f64>,
         modifiers: Option<ModifiersState>,
     ) {
+        let active_document_layout = self.active_document_layout;
         let font_size = self.renderer.get_font_size();
         if let Some(document) = self.active_document() {
-            let (line, col) = document.view.get_line_col(mouse_position, font_size);
-            let numbers_col_offset = (0..)
-                .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
-                .count()
-                + 2;
+            let (line, col) =
+                document
+                    .view
+                    .get_line_col(&active_document_layout, mouse_position, font_size);
             if modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::SHIFT)) {
-                document.buffer.insert_cursor(line, col.saturating_sub(numbers_col_offset));
+                document.buffer.insert_cursor(line, col);
             } else {
-                document.buffer.set_cursor(line, col.saturating_sub(numbers_col_offset));
+                document.buffer.set_cursor(line, col);
             }
         }
     }
@@ -219,14 +261,14 @@ impl Editor {
             return;
         }
 
+        let active_document_layout = self.active_document_layout;
         let font_size = self.renderer.get_font_size();
         if let Some(document) = self.active_document() {
-            let (line, col) = document.view.get_line_col(mouse_position, font_size);
-            let numbers_col_offset = (0..)
-                .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
-                .count()
-                + 2;
-            document.buffer.set_drag(line, col.saturating_sub(numbers_col_offset));
+            let (line, col) =
+                document
+                    .view
+                    .get_line_col(&active_document_layout, mouse_position, font_size);
+            document.buffer.set_drag(line, col);
         }
     }
 
@@ -235,16 +277,16 @@ impl Editor {
         mouse_position: LogicalPosition<f64>,
         modifiers: Option<ModifiersState>,
     ) -> bool {
+        let active_document_layout = self.active_document_layout;
         let font_size = self.renderer.get_font_size();
         if let Some(document) = self.active_document() {
-            let (line, col) = document.view.get_line_col(mouse_position, font_size);
-            let numbers_col_offset = (0..)
-                .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
-                .count()
-                + 2;
+            let (line, col) =
+                document
+                    .view
+                    .get_line_col(&active_document_layout, mouse_position, font_size);
             if modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::SHIFT)) {
-                document.buffer.insert_cursor(line, col.saturating_sub(numbers_col_offset));
-            } else if document.buffer.handle_mouse_double_click(line, col.saturating_sub(numbers_col_offset)) {
+                document.buffer.insert_cursor(line, col);
+            } else if document.buffer.handle_mouse_double_click(line, col) {
                 return true;
             }
         }
@@ -258,13 +300,12 @@ impl Editor {
     }
 
     pub fn handle_mouse_hover(&mut self, mouse_position: LogicalPosition<f64>) {
+        let active_document_layout = self.active_document_layout;
         let font_size = self.renderer.get_font_size();
         if let Some(document) = self.active_document() {
-            let numbers_col_offset = (0..)
-                .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
-                .count()
-                + 2;
-            document.view.hover(mouse_position, font_size, numbers_col_offset);
+            document
+                .view
+                .hover(&active_document_layout, mouse_position, font_size);
         }
     }
 
@@ -287,10 +328,19 @@ impl Editor {
         cached_mouse_position: LogicalPosition<f64>,
         mouse_position: LogicalPosition<f64>,
     ) -> bool {
+        let active_document_layout = self.active_document_layout;
         let font_size = self.renderer.get_font_size();
         if let Some(document) = self.active_document() {
-            let (line, col) = document.view.get_line_col(mouse_position, font_size);
-            return (line, col) != document.view.get_line_col(cached_mouse_position, font_size);
+            let (line, col) =
+                document
+                    .view
+                    .get_line_col(&active_document_layout, mouse_position, font_size);
+            return (line, col)
+                != document.view.get_line_col(
+                    &active_document_layout,
+                    cached_mouse_position,
+                    font_size,
+                );
         }
         false
     }
@@ -300,29 +350,32 @@ impl Editor {
         window: &Window,
         key_code: VirtualKeyCode,
         modifiers: Option<ModifiersState>,
-    ) -> Option<EditorCommand> {
+    ) -> bool {
         match key_code {
             VirtualKeyCode::T if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 self.renderer.cycle_theme();
-                return None;
+                return true;
             }
             VirtualKeyCode::O if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 self.open_workspace();
-                return None;
+                return true;
             }
-            VirtualKeyCode::P if self.workspace.is_some() && modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+            VirtualKeyCode::P
+                if self.workspace.is_some()
+                    && modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) =>
+            {
                 self.file_finder = Some(FileFinder::new(self.workspace.as_ref().unwrap()));
-                return None;
+                return true;
             }
             VirtualKeyCode::J if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 if let Some(file_finder) = &mut self.file_finder {
-                    file_finder.selection_index = min(
-                        file_finder.selection_index + 1,
-                        100
-                        );
-                    if file_finder.selection_index >= file_finder.selection_view_offset + MAX_SHOWN_FILE_FINDER_ITEMS {
+                    file_finder.selection_index = min(file_finder.selection_index + 1, 100);
+                    if file_finder.selection_index
+                        >= file_finder.selection_view_offset + MAX_SHOWN_FILE_FINDER_ITEMS
+                    {
                         file_finder.selection_view_offset += 1;
                     }
+                    return true;
                 }
             }
             VirtualKeyCode::K if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
@@ -331,120 +384,194 @@ impl Editor {
                     if file_finder.selection_index < file_finder.selection_view_offset {
                         file_finder.selection_view_offset -= 1;
                     }
+                    return true;
                 }
             }
             VirtualKeyCode::Back if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 if let Some(file_finder) = &mut self.file_finder {
                     file_finder.search_string.clear();
+                    return true;
                 }
             }
             VirtualKeyCode::Back => {
                 if let Some(file_finder) = &mut self.file_finder {
                     file_finder.search_string.pop();
+                    return true;
                 }
             }
             VirtualKeyCode::Return => {
                 if let Some(file_finder) = &mut self.file_finder {
-                    file_finder.search_string.pop();
+                    if let Some(path) = file_finder.files[file_finder.selection_index]
+                        .path
+                        .clone()
+                        .to_str()
+                    {
+                        self.open_file(path, window);
+                    }
+
+                    self.file_finder = None;
+                    return true;
                 }
             }
+            VirtualKeyCode::Escape => {
+                if let Some(file_finder) = &mut self.file_finder {
+                    self.file_finder = None;
+                    return true;
+                }
+            }
+            _ if self.file_finder.is_some() => return true,
             _ => (),
         }
 
+        let active_document_layout = self.active_document_layout;
         let font_size = self.renderer.get_font_size();
+        let mut delayed_command = None;
         if let Some(document) = self.active_document() {
-            let window_size = (
-                window.inner_size().width as f64 / window.scale_factor(),
-                window.inner_size().height as f64 / window.scale_factor(),
-            );
-
-            let numbers_num_cols = (0..)
-                .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
-                .count()
-                + 2;
-
-            let buffer_layout = RenderLayout {
-                row_offset: 0,
-                col_offset: numbers_num_cols,
-                num_rows: (window_size.1 / font_size.1).ceil() as usize,
-                num_cols: (window_size.0 / font_size.0).ceil() as usize,
-            };
-
-            if let Some(editor_command) =
-                document
-                    .buffer
-                    .handle_key(key_code, modifiers, &document.view, buffer_layout.num_rows, buffer_layout.num_cols)
-            {
+            if let Some(editor_command) = document.buffer.handle_key(
+                key_code,
+                modifiers,
+                &document.view,
+                active_document_layout.num_rows,
+                active_document_layout.num_cols,
+            ) {
                 match editor_command {
-                    EditorCommand::CenterView => {
-                        document.view.center(&document.buffer, &buffer_layout)
-                    }
-                    EditorCommand::CenterIfNotVisible => {
-                        document
-                            .view
-                            .center_if_not_visible(&document.buffer, &buffer_layout)
-                    }
-                    EditorCommand::Quit => {
-                        return Some(EditorCommand::Quit);
-                    }
-                    EditorCommand::QuitNoCheck => {
-                        return Some(EditorCommand::QuitNoCheck);
-                    }
+                    EditorCommand::CenterView => document
+                        .view
+                        .center(&document.buffer, &active_document_layout),
+                    EditorCommand::CenterIfNotVisible => document
+                        .view
+                        .center_if_not_visible(&document.buffer, &active_document_layout),
+                    x => delayed_command = Some(x),
                 }
-                document.view.adjust(&document.buffer, &buffer_layout)
+                document
+                    .view
+                    .adjust(&document.buffer, &active_document_layout)
             }
         }
-        None
+
+        if let Some(command) = delayed_command {
+            match command {
+                EditorCommand::Quit => {
+                    let ready_to_quit = self
+                        .active_document()
+                        .is_some_and(|document| document.buffer.ready_to_quit());
+
+                    if ready_to_quit {
+                        self.documents
+                            .remove(self.active_document.as_ref().unwrap().as_str());
+                        self.active_document = self
+                            .documents
+                            .iter()
+                            .last()
+                            .map(|document| document.0.clone());
+                    }
+
+                    return !self.documents.is_empty();
+                }
+                EditorCommand::QuitNoCheck => {
+                    self.documents
+                        .remove(self.active_document.as_ref().unwrap().as_str());
+                    self.active_document = self
+                        .documents
+                        .iter()
+                        .last()
+                        .map(|document| document.0.clone());
+
+                    return !self.documents.is_empty();
+                }
+                EditorCommand::QuitAll => {
+                    let ready_to_quit = self.ready_to_quit();
+                    self.documents.clear();
+                    self.active_document = None;
+                    return false;
+                }
+                EditorCommand::QuitAllNoCheck => {
+                    self.documents.clear();
+                    self.active_document = None;
+                    return false;
+                }
+                _ => (),
+            }
+        }
+
+        true
     }
 
-    pub fn handle_char(&mut self, window: &Window, c: char) -> Option<EditorCommand> {
+    pub fn handle_char(&mut self, window: &Window, c: char) -> bool {
         if let Some(file_finder) = &mut self.file_finder {
             if c as u8 >= 0x20 && c as u8 <= 0x7E {
                 file_finder.search_string.push(c);
             }
-            return None;
+            return true;
         }
 
+        let active_document_layout = self.active_document_layout;
         let font_size = self.renderer.get_font_size();
+
+        let mut delayed_command = None;
         if let Some(document) = self.active_document() {
-            let window_size = (
-                window.inner_size().width as f64 / window.scale_factor(),
-                window.inner_size().height as f64 / window.scale_factor(),
-            );
-
-            let numbers_num_cols = (0..)
-                .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
-                .count()
-                + 2;
-
-            let buffer_layout = RenderLayout {
-                row_offset: 0,
-                col_offset: numbers_num_cols,
-                num_rows: (window_size.1 / font_size.1).ceil() as usize,
-                num_cols: (window_size.0 / font_size.0).ceil() as usize,
-            };
-
             if let Some(editor_command) = document.buffer.handle_char(c) {
                 match editor_command {
-                    EditorCommand::CenterView => {
-                        document.view.center(&document.buffer, &buffer_layout)
-                    }
-                    EditorCommand::CenterIfNotVisible => {
-                        document
-                            .view
-                            .center_if_not_visible(&document.buffer, &buffer_layout)
-                    }
-                    EditorCommand::Quit => {
-                        return Some(EditorCommand::Quit);
-                    }
-                    EditorCommand::QuitNoCheck => {
-                        return Some(EditorCommand::QuitNoCheck);
-                    }
+                    EditorCommand::CenterView => document
+                        .view
+                        .center(&document.buffer, &active_document_layout),
+                    EditorCommand::CenterIfNotVisible => document
+                        .view
+                        .center_if_not_visible(&document.buffer, &active_document_layout),
+                    x => delayed_command = Some(x),
                 }
             }
-            document.view.adjust(&document.buffer, &buffer_layout)
+            document
+                .view
+                .adjust(&document.buffer, &active_document_layout)
+        }
+
+        if let Some(command) = delayed_command {
+            match command {
+                EditorCommand::Quit => {
+                    let ready_to_quit = self
+                        .active_document()
+                        .is_some_and(|document| document.buffer.ready_to_quit());
+
+                    if ready_to_quit {
+                        self.documents
+                            .remove(self.active_document.as_ref().unwrap().as_str());
+                        self.active_document = self
+                            .documents
+                            .iter()
+                            .last()
+                            .map(|document| document.0.clone());
+                    }
+
+                    return !self.documents.is_empty();
+                }
+                EditorCommand::QuitNoCheck => {
+                    self.documents
+                        .remove(self.active_document.as_ref().unwrap().as_str());
+                    self.active_document = self
+                        .documents
+                        .iter()
+                        .last()
+                        .map(|document| document.0.clone());
+
+                    return !self.documents.is_empty();
+                }
+                EditorCommand::QuitAll => {
+                    let ready_to_quit = self.ready_to_quit();
+                    self.documents.clear();
+                    self.active_document = None;
+                    return false;
+                }
+                EditorCommand::QuitAllNoCheck => {
+                    self.documents.clear();
+                    self.active_document = None;
+                    return false;
+                }
+                _ => (),
             }
-        None
+        }
+
+        true
     }
 
     pub fn ready_to_quit(&mut self) -> bool {
@@ -454,21 +581,15 @@ impl Editor {
     }
 
     pub fn open_file(&mut self, path: &str, window: &Window) {
-        let language_server = {
-            if let Some(language) = language_from_path(path) &&
-                let Some(server) = LanguageServer::new(language) &&
-                !self.language_servers.contains_key(language.identifier) 
-                    {
-                        self.language_servers
-                            .insert(language.identifier, Rc::new(RefCell::new(server)));
-                        Some(Rc::clone(
-                            self.language_servers.get(language.identifier).unwrap(),
-                        ))
-                    }
-            else {
-                None
-            }
-        };
+        let language_server = language_from_path(path).and_then(|language| {
+            LanguageServer::new(language).map(|server| {
+                if !self.language_servers.contains_key(language.identifier) {
+                    self.language_servers
+                        .insert(language.identifier, Rc::new(RefCell::new(server)));
+                }
+                Rc::clone(self.language_servers.get(language.identifier).unwrap())
+            })
+        });
 
         let tree_sitter = {
             if let Some(language) = language_from_path(path) {
@@ -511,17 +632,20 @@ impl Editor {
 
 impl FileFinder {
     pub fn new(path: &str) -> Self {
-        Self { 
+        Self {
             files: WalkDir::new(path)
                 .into_iter()
                 .filter_entry(|e| e.file_name() != OsStr::new(".git"))
                 .flatten()
                 .filter(|e| e.file_type().is_file())
-                .map(|e| e.file_name().to_os_string())
+                .map(|e| FileIdentifier {
+                    name: e.file_name().to_os_string(),
+                    path: e.path().as_os_str().to_os_string(),
+                })
                 .collect(),
-            search_string: String::default(), 
-            selection_index: 0, 
-            selection_view_offset: 0 
+            search_string: String::default(),
+            selection_index: 0,
+            selection_view_offset: 0,
         }
     }
 }

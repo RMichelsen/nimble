@@ -729,11 +729,17 @@ impl Buffer {
                 self.piece_table.save_to(&self.path);
                 return Some(EditorCommand::Quit);
             }
-            ":q" | ":qa" => {
+            ":q" => {
                 return Some(EditorCommand::Quit);
             }
-            ":q!" | ":qa!" => {
+            ":q!" => {
                 return Some(EditorCommand::QuitNoCheck);
+            }
+            ":qa" => {
+                return Some(EditorCommand::QuitAll);
+            }
+            ":qa!" => {
+                return Some(EditorCommand::QuitAllNoCheck);
             }
             _ => ()
         }
@@ -1711,7 +1717,8 @@ fn lsp_complete(
         let is_trigger_character =
             character.is_some_and(|c| server.borrow().trigger_characters.contains(&c));
 
-        if let Some(ref mut request) = cursor.completion_request && !is_trigger_character {
+        if cursor.completion_request.is_some() && !is_trigger_character {
+            let request = &mut cursor.completion_request.unwrap();
             if server
                 .borrow()
                 .saved_completions
@@ -1726,8 +1733,7 @@ fn lsp_complete(
                     request.next_position = Some(position);
                 }
             }
-        } else if character.is_none() || is_trigger_character
-        {
+        } else if character.is_none() || is_trigger_character {
             if let Some(id) = server
                 .borrow_mut()
                 .send_request("textDocument/completion", completion_params)

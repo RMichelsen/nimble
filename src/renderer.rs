@@ -95,8 +95,8 @@ impl Renderer {
         let mut longest_string = file_finder
             .files
             .iter()
-            .max_by(|x, y| x.len().cmp(&y.len()))
-            .map(|x| x.len() + 1)
+            .max_by(|x, y| x.name.len().cmp(&y.name.len()))
+            .map(|x| x.name.len() + 1)
             .unwrap_or(0);
         longest_string = max(longest_string, file_finder.search_string.len());
 
@@ -115,7 +115,7 @@ impl Renderer {
                 selected_item_start_position = completion_string.len();
             }
 
-            completion_string.push_str(item.as_os_str().to_str().unwrap());
+            completion_string.push_str(item.name.as_os_str().to_str().unwrap());
             completion_string.push('\n');
         }
 
@@ -128,7 +128,7 @@ impl Renderer {
             TextEffect {
                 kind: TextEffectKind::ForegroundColor(self.theme.background_color),
                 start: selected_item_start_position,
-                length: file_finder.files[file_finder.selection_index].len(),
+                length: file_finder.files[file_finder.selection_index].name.len(),
             },
         ];
 
@@ -501,6 +501,17 @@ impl Color {
             r: r as f32 / 255.0,
             g: g as f32 / 255.0,
             b: b as f32 / 255.0,
+        }
+    }
+}
+
+impl RenderLayout {
+    pub fn default() -> Self {
+        Self {
+            row_offset: 0,
+            col_offset: 0,
+            num_rows: 0,
+            num_cols: 0,
         }
     }
 }

@@ -1,6 +1,7 @@
 use std::{ffi::CStr, ptr::copy_nonoverlapping};
 
 use windows::{
+    core::{HSTRING, PCWSTR},
     w,
     Win32::{
         Foundation::{HANDLE, HGLOBAL, HWND},
@@ -94,11 +95,15 @@ impl PlatformResources {
     }
 
     pub fn confirm_quit(&self, path: &str) -> Option<bool> {
+        let prompt = HSTRING::from(format!(
+            "Do you want to save changes to {} before quitting?",
+            path
+        ));
         unsafe {
             match MessageBoxW(
                 self.hwnd,
+                PCWSTR::from_raw(prompt.as_wide().as_ptr()),
                 w!("Save changes?"),
-                w!("Do you want to save changes before quitting?"),
                 MB_YESNOCANCEL,
             ) {
                 IDYES => Some(true),
