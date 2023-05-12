@@ -16,6 +16,7 @@ pub struct Theme {
     pub search_background_color: Color,
     pub active_search_background_color: Color,
     pub active_parameter_color: Color,
+    pub status_line_background_color: Color,
 
     // "keyword",
     // "type.builtin",
@@ -42,6 +43,7 @@ pub const EVERFOREST_DARK: Theme = Theme {
     search_background_color: Color::from_rgb(167, 192, 128),
     active_search_background_color: Color::from_rgb(230, 127, 128),
     active_parameter_color: Color::from_rgb(167, 192, 128),
+    status_line_background_color: Color::from_rgb(18, 25, 37),
 
     tree_sitter_colors: [
         Color::from_rgb(230, 152, 117),
@@ -69,6 +71,7 @@ pub const EVERFOREST_LIGHT: Theme = Theme {
     search_background_color: Color::from_rgb(141, 161, 1),
     active_search_background_color: Color::from_rgb(248, 85, 82),
     active_parameter_color: Color::from_rgb(141, 161, 1),
+    status_line_background_color: Color::from_rgb(253, 253, 252),
 
     tree_sitter_colors: [
         Color::from_rgb(245, 125, 38),

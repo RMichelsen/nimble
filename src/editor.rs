@@ -61,6 +61,7 @@ pub struct Editor {
     active_document_layout: RenderLayout,
     numbers_layout: RenderLayout,
     file_finder_layout: RenderLayout,
+    status_line_layout: RenderLayout,
     language_servers: HashMap<&'static str, Rc<RefCell<LanguageServer>>>,
     tree_sitters: HashMap<&'static str, Rc<RefCell<TreeSitter>>>,
 }
@@ -76,6 +77,7 @@ impl Editor {
             active_document_layout: RenderLayout::default(),
             numbers_layout: RenderLayout::default(),
             file_finder_layout: RenderLayout::default(),
+            status_line_layout: RenderLayout::default(),
             language_servers: HashMap::default(),
             tree_sitters: HashMap::default(),
         }
@@ -110,6 +112,13 @@ impl Editor {
                 num_cols: numbers_num_cols.saturating_sub(2),
             };
         }
+
+        self.status_line_layout = RenderLayout {
+            row_offset: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(2),
+            col_offset: 0,
+            num_rows: 2,
+            num_cols: (window_size.0 / font_size.0).ceil() as usize,
+        };
 
         if let (Some(workspace), Some(file_finder)) = (&self.workspace, &self.file_finder) {
             let num_cols = (window_size.0 / font_size.0).ceil() as usize;
@@ -217,6 +226,9 @@ impl Editor {
             self.renderer
                 .draw_file_finder(&mut self.file_finder_layout, workspace, file_finder);
         }
+
+        self.renderer
+            .draw_status_line(&self.workspace, &self.status_line_layout);
 
         self.renderer.end_draw();
     }

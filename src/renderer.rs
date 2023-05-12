@@ -146,6 +146,20 @@ impl Renderer {
         );
     }
 
+    pub fn draw_status_line(&mut self, workspace: &Option<String>, layout: &RenderLayout) {
+        if let Some(workspace) = workspace {
+            self.context.fill_cells(
+                0,
+                0,
+                layout,
+                (layout.num_cols, 2),
+                self.theme.status_line_background_color,
+            );
+            self.context
+                .draw_text(0, 0, layout, workspace.as_bytes(), &[], &self.theme, false);
+        }
+    }
+
     pub fn draw_buffer(
         &mut self,
         buffer: &Buffer,
