@@ -91,6 +91,10 @@ impl Renderer {
         workspace: &str,
         file_finder: &FileFinder,
     ) {
+        if file_finder.files.is_empty() {
+            return;
+        }
+
         let selected_item = file_finder.selection_index - file_finder.selection_view_offset;
 
         let mut longest_string = file_finder
@@ -101,7 +105,9 @@ impl Renderer {
             .unwrap_or(0);
         longest_string = max(longest_string, file_finder.search_string.len());
 
-        layout.col_offset -= longest_string / 2;
+        layout.col_offset = layout.col_offset.saturating_sub(longest_string / 2);
+
+        let num_shown_file_finder_items = min(file_finder.files.len(), MAX_SHOWN_FILE_FINDER_ITEMS);
 
         let mut selected_item_start_position = 0;
         let mut completion_string = String::default();
@@ -110,7 +116,7 @@ impl Renderer {
             .iter()
             .enumerate()
             .skip(file_finder.selection_view_offset)
-            .take(MAX_SHOWN_FILE_FINDER_ITEMS)
+            .take(num_shown_file_finder_items)
         {
             if i - file_finder.selection_view_offset == selected_item {
                 selected_item_start_position = completion_string.len();

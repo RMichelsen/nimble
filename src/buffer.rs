@@ -75,7 +75,7 @@ impl Buffer {
         language_server: Option<Rc<RefCell<LanguageServer>>>,
         tree_sitter: Option<Rc<RefCell<TreeSitter>>>,
     ) -> Self {
-        let uri = "file:///".to_string() + path;
+        let uri = "file:///".to_string() + &path.replace("\\", "/");
         let language = language_from_path(path);
         let piece_table = PieceTable::from_file(path);
 

@@ -18,7 +18,10 @@ use crate::{
     buffer::Buffer,
     language_server::LanguageServer,
     language_server_types::VoidParams,
-    language_support::language_from_path,
+    language_support::{
+        language_from_path, CPP_FILE_EXTENSIONS, CPP_LANGUAGE, PYTHON_FILE_EXTENSIONS,
+        RUST_FILE_EXTENSIONS,
+    },
     platform_resources,
     renderer::{RenderLayout, Renderer},
     tree_sitter::TreeSitter,
@@ -393,9 +396,14 @@ impl Editor {
             }
             VirtualKeyCode::J if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 if let Some(file_finder) = &mut self.file_finder {
-                    file_finder.selection_index = min(file_finder.selection_index + 1, 100);
+                    let num_shown_file_finder_items =
+                        min(file_finder.files.len(), MAX_SHOWN_FILE_FINDER_ITEMS);
+                    file_finder.selection_index = min(
+                        file_finder.selection_index + 1,
+                        file_finder.files.len().saturating_sub(1),
+                    );
                     if file_finder.selection_index
-                        >= file_finder.selection_view_offset + MAX_SHOWN_FILE_FINDER_ITEMS
+                        >= file_finder.selection_view_offset + num_shown_file_finder_items
                     {
                         file_finder.selection_view_offset += 1;
                     }
@@ -663,13 +671,28 @@ impl FileFinder {
         Self {
             files: WalkDir::new(path)
                 .into_iter()
-                .filter_entry(|e| e.file_name() != OsStr::new(".git"))
+                .filter_entry(|e| {
+                    e.file_name() != OsStr::new(".git")
+                        && e.file_name() != OsStr::new("target")
+                        && e.file_name() != OsStr::new("bin")
+                        && e.file_name() != OsStr::new("build")
+                })
                 .flatten()
-                .filter(|e| e.file_type().is_file())
+                .filter(|e| {
+                    e.file_type().is_file()
+                        && e.path().extension().is_some_and(|extension| {
+                            let extension = extension.to_str().unwrap();
+                            CPP_FILE_EXTENSIONS.contains(&extension)
+                                || RUST_FILE_EXTENSIONS.contains(&extension)
+                                || PYTHON_FILE_EXTENSIONS.contains(&extension)
+                                || extension == "txt"
+                        })
+                })
                 .map(|e| FileIdentifier {
                     name: e.file_name().to_os_string(),
                     path: e.path().as_os_str().to_os_string(),
                 })
+                .take(1000)
                 .collect(),
             search_string: String::default(),
             selection_index: 0,
