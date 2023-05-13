@@ -2,6 +2,7 @@ use std::{
     cell::RefCell,
     cmp::{max, min},
     rc::Rc,
+    str::pattern::Pattern,
 };
 
 use winit::window::Window;
@@ -160,17 +161,35 @@ impl Renderer {
             self.theme.status_line_background_color,
         );
 
-        let status_line = format!(
-            " Workspace: {}, Editing: {}",
-            workspace.as_ref().unwrap_or(&String::from("None")),
-            opened_file.as_ref().unwrap_or(&String::from("None"))
-        );
+        let (status_line, effects) = if let Some(opened_file) = opened_file {
+            let mut effects = vec![];
+            if let Some(workspace) = workspace {
+                if workspace.is_prefix_of(opened_file) {
+                    effects.push(TextEffect {
+                        kind: TextEffectKind::ForegroundColor(self.theme.tree_sitter_colors[3]),
+                        start: 1,
+                        length: workspace.len(),
+                    });
+                }
+            }
+            (format!(" {}", opened_file), effects)
+        } else {
+            (
+                format!(
+                    " {}",
+                    workspace
+                        .as_ref()
+                        .unwrap_or(&String::from("No workspace open"))
+                ),
+                vec![],
+            )
+        };
         self.context.draw_text(
             0,
             0,
             layout,
             status_line.as_bytes(),
-            &[],
+            &effects,
             &self.theme,
             false,
         );

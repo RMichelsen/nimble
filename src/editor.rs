@@ -103,7 +103,7 @@ impl Editor {
             self.active_document_layout = RenderLayout {
                 row_offset: 0,
                 col_offset: numbers_num_cols,
-                num_rows: (window_size.1 / font_size.1).ceil() as usize,
+                num_rows: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(1),
                 num_cols: (window_size.0 / font_size.0).ceil() as usize,
             };
 
@@ -238,7 +238,7 @@ impl Editor {
         self.renderer.end_draw();
     }
 
-    pub fn shutdown(&mut self) {
+    pub fn lsp_shutdown(&mut self) {
         for (identifier, server) in &mut self.language_servers {
             let mut server = server.borrow_mut();
             // According to the spec clients should wait for LSP response,
@@ -374,7 +374,14 @@ impl Editor {
                 return true;
             }
             VirtualKeyCode::O if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
-                self.open_workspace();
+                if self.ready_to_quit() {
+                    self.documents.clear();
+                    self.active_document = None;
+                    self.lsp_shutdown();
+                    self.language_servers.clear();
+                    self.open_workspace();
+                }
+
                 return true;
             }
             VirtualKeyCode::P
@@ -499,9 +506,11 @@ impl Editor {
                 }
                 EditorCommand::QuitAll => {
                     let ready_to_quit = self.ready_to_quit();
-                    self.documents.clear();
-                    self.active_document = None;
-                    return false;
+                    if ready_to_quit {
+                        self.documents.clear();
+                        self.active_document = None;
+                        return false;
+                    }
                 }
                 EditorCommand::QuitAllNoCheck => {
                     self.documents.clear();

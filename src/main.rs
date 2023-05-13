@@ -96,7 +96,7 @@ fn main() {
             } => {
                 if !modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::CTRL)) {
                     if !editor.handle_char(&window, chr) {
-                        editor.shutdown();
+                        editor.lsp_shutdown();
                         control_flow.set_exit();
                     }
                     request_redraw(&window);
@@ -109,7 +109,7 @@ fn main() {
                 if input.state == ElementState::Pressed {
                     if let Some(key_code) = input.virtual_keycode {
                         if !editor.handle_key(&window, key_code, modifiers) {
-                            editor.shutdown();
+                            editor.lsp_shutdown();
                             control_flow.set_exit();
                         }
                         request_redraw(&window);
@@ -186,7 +186,7 @@ fn main() {
                 ..
             } => {
                 if editor.ready_to_quit() {
-                    editor.shutdown();
+                    editor.lsp_shutdown();
                     control_flow.set_exit();
                 }
             }
