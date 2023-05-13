@@ -3,6 +3,8 @@ use std::{
     cmp::min,
     collections::HashMap,
     ffi::{OsStr, OsString},
+    fs::File,
+    io::{BufRead, BufReader},
     rc::Rc,
 };
 
@@ -56,9 +58,14 @@ pub struct FileFinder {
     pub selection_view_offset: usize,
 }
 
+pub struct Workspace {
+    pub path: String,
+    pub gitignore_paths: Vec<String>,
+}
+
 pub struct Editor {
     renderer: Renderer,
-    workspace: Option<String>,
+    workspace: Option<Workspace>,
     file_finder: Option<FileFinder>,
     documents: HashMap<String, Document>,
     active_document: Option<String>,
@@ -136,8 +143,8 @@ impl Editor {
     }
 
     pub fn open_workspace(&mut self) {
-        if let Some(folder) = platform_resources::open_folder() {
-            self.workspace = Some(folder);
+        if let Some(path) = platform_resources::open_folder() {
+            self.workspace = Some(Workspace::new(&path));
         }
     }
 
@@ -227,8 +234,11 @@ impl Editor {
         }
 
         if let (Some(workspace), Some(file_finder)) = (&self.workspace, &self.file_finder) {
-            self.renderer
-                .draw_file_finder(&mut self.file_finder_layout, workspace, file_finder);
+            self.renderer.draw_file_finder(
+                &mut self.file_finder_layout,
+                &workspace.path,
+                file_finder,
+            );
         }
 
         self.renderer.draw_status_line(
@@ -665,16 +675,37 @@ impl Editor {
     }
 }
 
-impl FileFinder {
+impl Workspace {
     pub fn new(path: &str) -> Self {
+        let gitignore_paths = if let Ok(gitignore) = File::open(path.to_string() + "/.gitignore") {
+            BufReader::new(gitignore)
+                .lines()
+                .flatten()
+                .map(|entry| entry.trim_start_matches('/').to_string())
+                .map(|entry| entry.trim_start_matches('\\').to_string())
+                .collect()
+        } else {
+            vec![]
+        };
+
         Self {
-            files: WalkDir::new(path)
+            path: path.to_string(),
+            gitignore_paths,
+        }
+    }
+}
+
+impl FileFinder {
+    pub fn new(workspace: &Workspace) -> Self {
+        Self {
+            files: WalkDir::new(&workspace.path)
                 .into_iter()
                 .filter_entry(|e| {
                     e.file_name() != OsStr::new(".git")
-                        && e.file_name() != OsStr::new("target")
-                        && e.file_name() != OsStr::new("bin")
-                        && e.file_name() != OsStr::new("build")
+                        && !workspace
+                            .gitignore_paths
+                            .iter()
+                            .any(|entry| entry == e.file_name().to_str().unwrap())
                 })
                 .flatten()
                 .filter(|e| {

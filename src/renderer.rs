@@ -9,7 +9,7 @@ use winit::window::Window;
 
 use crate::{
     buffer::{Buffer, BufferMode},
-    editor::{FileFinder, MAX_SHOWN_FILE_FINDER_ITEMS},
+    editor::{FileFinder, Workspace, MAX_SHOWN_FILE_FINDER_ITEMS},
     graphics_context::GraphicsContext,
     language_server::LanguageServer,
     language_server_types::ParameterLabelType,
@@ -88,7 +88,7 @@ impl Renderer {
     pub fn draw_file_finder(
         &mut self,
         layout: &mut RenderLayout,
-        workspace: &str,
+        workspace_path: &str,
         file_finder: &FileFinder,
     ) {
         if file_finder.files.is_empty() {
@@ -155,7 +155,7 @@ impl Renderer {
 
     pub fn draw_status_line(
         &mut self,
-        workspace: &Option<String>,
+        workspace: &Option<Workspace>,
         opened_file: &Option<String>,
         layout: &RenderLayout,
     ) {
@@ -170,11 +170,11 @@ impl Renderer {
         let (status_line, effects) = if let Some(opened_file) = opened_file {
             let mut effects = vec![];
             if let Some(workspace) = workspace {
-                if workspace.is_prefix_of(opened_file) {
+                if workspace.path.is_prefix_of(opened_file) {
                     effects.push(TextEffect {
                         kind: TextEffectKind::ForegroundColor(self.theme.tree_sitter_colors[3]),
                         start: 1,
-                        length: workspace.len(),
+                        length: workspace.path.len(),
                     });
                 }
             }
@@ -183,9 +183,11 @@ impl Renderer {
             (
                 format!(
                     " {}",
-                    workspace
-                        .as_ref()
-                        .unwrap_or(&String::from("No workspace open"))
+                    if workspace.is_some() {
+                        &workspace.as_ref().unwrap().path
+                    } else {
+                        "No workspace open"
+                    }
                 ),
                 vec![],
             )
