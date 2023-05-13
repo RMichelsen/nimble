@@ -19,8 +19,7 @@ use crate::{
     language_server::LanguageServer,
     language_server_types::VoidParams,
     language_support::{
-        language_from_path, CPP_FILE_EXTENSIONS, CPP_LANGUAGE, PYTHON_FILE_EXTENSIONS,
-        RUST_FILE_EXTENSIONS,
+        language_from_path, CPP_FILE_EXTENSIONS, PYTHON_FILE_EXTENSIONS, RUST_FILE_EXTENSIONS,
     },
     platform_resources,
     renderer::{RenderLayout, Renderer},

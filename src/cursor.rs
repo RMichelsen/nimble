@@ -182,7 +182,7 @@ impl Cursor {
 
     pub fn move_forward(&mut self, piece_table: &PieceTable, count: usize) {
         let c = piece_table.char_at(self.position);
-        if c.is_none() || c.is_some_and(|c| c == b'\n') {
+        if c.is_none() || c == Some(b'\n') {
             return;
         }
 
@@ -466,7 +466,7 @@ impl Cursor {
             if match_text
                 .iter()
                 .enumerate()
-                .all(|(i, x)| text.get(i).is_some_and(|y| x == y))
+                .all(|(i, x)| text.get(i) == Some(x))
             {
                 if match_text.len() == text.len() {
                     self.position += inclusive_offset + offset - text.len();
@@ -489,7 +489,7 @@ impl Cursor {
             if match_text
                 .iter()
                 .enumerate()
-                .all(|(i, x)| text.get(i).is_some_and(|y| x == y))
+                .all(|(i, x)| text.get(i) == Some(x))
             {
                 if match_text.len() == text.len() {
                     self.position = 1 + i - text.len();
@@ -510,10 +510,12 @@ impl Cursor {
             match_text.insert(0, c);
             offset += 1;
 
-            if match_text.iter().rev().enumerate().all(|(i, x)| {
-                text.get(text.len().saturating_sub(i + 1))
-                    .is_some_and(|y| x == y)
-            }) {
+            if match_text
+                .iter()
+                .rev()
+                .enumerate()
+                .all(|(i, x)| text.get(text.len().saturating_sub(i + 1)) == Some(x))
+            {
                 if match_text.len() == text.len() {
                     self.position -= offset;
                     self.anchor = self.position;
@@ -533,10 +535,12 @@ impl Cursor {
         {
             match_text.insert(0, c);
 
-            if match_text.iter().rev().enumerate().all(|(i, x)| {
-                text.get(text.len().saturating_sub(i + 1))
-                    .is_some_and(|y| x == y)
-            }) {
+            if match_text
+                .iter()
+                .rev()
+                .enumerate()
+                .all(|(i, x)| text.get(text.len().saturating_sub(i + 1)) == Some(x))
+            {
                 if match_text.len() == text.len() {
                     self.position = num_chars.saturating_sub(i + 1);
                     self.anchor = self.position;

@@ -250,7 +250,7 @@ impl Buffer {
             (Insert, Delete) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 self.command(DeleteWordFront);
             }
-            (Insert, Delete) => self.command(CutSelection),
+            (Insert, Delete) => self.command(CutSingleSelection),
 
             (Normal, R) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 self.command(Redo);
@@ -712,7 +712,7 @@ impl Buffer {
     fn handle_input_command(&mut self) -> Option<EditorCommand> {
         let input = self.input.clone();
         match input.as_str() {
-            input if input.as_bytes().first().is_some_and(|c| *c == b'/') => {
+            input if input.as_bytes().first() == Some(&b'/') => {
                 self.motion(SeekSelfInclusive(input[1..].as_bytes()));
                 self.search_string = input[1..].to_string();
                 return Some(EditorCommand::CenterIfNotVisible);
@@ -821,7 +821,7 @@ impl Buffer {
                 }
             }
             ReplaceChar(c) => {
-                self.command(CutSelection);
+                self.command(CutSingleSelection);
                 self.command(InsertChar(c));
                 self.motion(Backward(1));
             }
@@ -838,7 +838,34 @@ impl Buffer {
                         let start = self.cursors[i].anchor;
                         let end = min(self.cursors[i].position + 1, num_chars);
                         content_changes.push(self.delete_chars(start, end));
-                        self.cursors[i].position = start;
+                        self.cursors[i].position =
+                            min(start, self.piece_table.num_chars().saturating_sub(1));
+                    }
+                }
+
+                self.lsp_change(content_changes);
+            }
+            CutSingleSelection => {
+                let mut content_changes = vec![];
+
+                let num_chars = self.piece_table.num_chars();
+                for i in 0..self.cursors.len() {
+                    debug_assert!(self.cursors[i].anchor == self.cursors[i].position);
+                    if self.cursors[i].position == num_chars.saturating_sub(1)
+                        && self.piece_table.char_at(self.cursors[i].position) == Some(b'\n')
+                    {
+                        continue;
+                    } else {
+                        content_changes.push(
+                            self.delete_chars(
+                                self.cursors[i].position,
+                                self.cursors[i].position + 1,
+                            ),
+                        );
+                        self.cursors[i].position = min(
+                            self.cursors[i].position,
+                            self.piece_table.num_chars().saturating_sub(1),
+                        );
                     }
                 }
 
@@ -850,12 +877,7 @@ impl Buffer {
 
                     // Special case for moving over end brackets
                     match c {
-                        b')' | b'}' | b']' | b'>'
-                            if self
-                                .piece_table
-                                .char_at(start)
-                                .is_some_and(|char_after| char_after == c) =>
-                        {
+                        b')' | b'}' | b']' | b'>' if self.piece_table.char_at(start) == Some(c) => {
                             self.motion(Forward(1));
                             continue;
                         }
@@ -1092,7 +1114,7 @@ impl Buffer {
                 let mut content_changes = vec![];
 
                 for i in 0..self.cursors.len() {
-                    // Special case for deleting bracket pairs
+                    // Special case for deleting bracket pairs (and if at end of file)
                     match (
                         self.piece_table
                             .char_at(self.cursors[i].position.saturating_sub(1)),
@@ -1888,6 +1910,7 @@ enum BufferCommand {
     InsertCursorBelow,
     ReplaceChar(u8),
     CutSelection,
+    CutSingleSelection,
     InsertChar(u8),
     InsertNewLine,
     IndentLine,

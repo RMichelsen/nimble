@@ -248,7 +248,7 @@ impl Renderer {
             }
         }
 
-        if buffer.input.as_bytes().first().is_some_and(|c| *c == b'/') {
+        if buffer.input.as_bytes().first() == Some(&b'/') {
             let mut first_result_found = false;
             for (start, length) in search_highlights(&text, &buffer.input[1..]) {
                 let (row, col) = (
