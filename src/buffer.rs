@@ -729,10 +729,10 @@ impl Buffer {
                 self.piece_table.save_to(&self.path);
                 return Some(EditorCommand::Quit);
             }
-            ":q" => {
+            ":q" | ":bd" => {
                 return Some(EditorCommand::Quit);
             }
-            ":q!" => {
+            ":q!" | "bd!" => {
                 return Some(EditorCommand::QuitNoCheck);
             }
             ":qa" => {

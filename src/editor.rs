@@ -112,7 +112,7 @@ impl Editor {
 
             self.numbers_layout = RenderLayout {
                 row_offset: 0,
-                col_offset: 1,
+                col_offset: 0,
                 num_rows: self.active_document_layout.num_rows,
                 num_cols: numbers_num_cols.saturating_sub(2),
             };

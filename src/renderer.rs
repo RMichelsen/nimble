@@ -530,13 +530,19 @@ impl Renderer {
         let num_lines = buffer.piece_table.num_lines();
         for line in view.line_offset + 1..=min(view.line_offset + 1 + layout.num_rows, num_lines) {
             numbers.push_str(line.to_string().as_str());
-            numbers.push(b' ' as char);
             numbers.push(b'\n' as char);
         }
 
+        self.context.fill_cells(
+            0,
+            0,
+            layout,
+            (layout.num_cols + 2, layout.num_rows),
+            self.theme.background_color,
+        );
         self.context.draw_text(
             0,
-            0,
+            1,
             layout,
             numbers.as_bytes(),
             &[TextEffect {
