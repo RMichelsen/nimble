@@ -15,16 +15,15 @@ use crate::{
     language_server_types::ParameterLabelType,
     text_utils::{comment_highlights, search_highlights},
     theme::{Theme, THEMES},
-    tree_sitter::TreeSitter,
     view::View,
 };
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum TextEffectKind {
     ForegroundColor(Color),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct TextEffect {
     pub kind: TextEffectKind,
     pub start: usize,
@@ -36,6 +35,9 @@ pub struct Color {
     pub r: f32,
     pub g: f32,
     pub b: f32,
+    pub r_u8: u8,
+    pub g_u8: u8,
+    pub b_u8: u8,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -172,7 +174,7 @@ impl Renderer {
             if let Some(workspace) = workspace {
                 if workspace.path.is_prefix_of(opened_file) {
                     effects.push(TextEffect {
-                        kind: TextEffectKind::ForegroundColor(self.theme.tree_sitter_colors[3]),
+                        kind: TextEffectKind::ForegroundColor(self.theme.comment_color),
                         start: 1,
                         length: workspace.path.len(),
                     });
@@ -209,7 +211,6 @@ impl Renderer {
         layout: &RenderLayout,
         view: &View,
         language_server: &Option<Rc<RefCell<LanguageServer>>>,
-        tree_sitter: &Option<Rc<RefCell<TreeSitter>>>,
     ) {
         use TextEffectKind::*;
 
@@ -222,12 +223,12 @@ impl Renderer {
             length: text.len(),
         }];
 
-        if let Some(tree_sitter) = &tree_sitter {
-            effects.extend(
-                tree_sitter
-                    .borrow_mut()
-                    .highlight_text(&text, text.len(), &self.theme),
-            );
+        if let Some(syntect) = &buffer.syntect {
+            effects.extend(syntect.highlight_lines(
+                &buffer.piece_table,
+                view.line_offset,
+                view.line_offset + layout.num_rows,
+            ))
         }
 
         if let Some(language) = buffer.language {
@@ -564,6 +565,9 @@ impl Color {
             r: r as f32 / 255.0,
             g: g as f32 / 255.0,
             b: b as f32 / 255.0,
+            r_u8: r,
+            g_u8: g,
+            b_u8: b,
         }
     }
 }

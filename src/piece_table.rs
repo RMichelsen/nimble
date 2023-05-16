@@ -147,6 +147,59 @@ impl PieceTable {
         self.dirty = false;
     }
 
+    pub fn iter_lines<F>(&self, start: usize, end: usize, mut f: F)
+    where
+        F: FnMut(&[u8]),
+    {
+        let mut i = 0;
+        let mut end_of_last_line = String::default();
+        for piece in &self.pieces {
+            let buffer = if piece.file == PieceFile::Original {
+                &self.original
+            } else {
+                &self.add
+            };
+
+            let mut offset = piece.start;
+            for linebreak in &piece.linebreaks {
+                if !end_of_last_line.is_empty() {
+                    end_of_last_line.push_str(unsafe {
+                        std::str::from_utf8_unchecked(&buffer[offset..=offset + linebreak])
+                    });
+
+                    if (start..end).contains(&i) {
+                        f(end_of_last_line.as_bytes());
+                    }
+                    end_of_last_line.clear();
+
+                    i += 1;
+                    if i >= end {
+                        return;
+                    }
+                } else {
+                    if (start..end).contains(&i) {
+                        f(&buffer[offset..=piece.start + linebreak]);
+                    }
+
+                    i += 1;
+                    if i >= end {
+                        return;
+                    }
+                }
+
+                offset = piece.start + linebreak + 1;
+            }
+
+            end_of_last_line.push_str(unsafe {
+                std::str::from_utf8_unchecked(&buffer[offset..piece.start + piece.length])
+            });
+        }
+
+        if !end_of_last_line.is_empty() {
+            f(end_of_last_line.as_bytes());
+        }
+    }
+
     pub fn iter_chars(&self) -> PieceTableCharIterator {
         PieceTableCharIterator {
             piece_table: self,

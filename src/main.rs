@@ -16,9 +16,9 @@ mod language_server_types;
 mod language_support;
 mod piece_table;
 mod renderer;
+mod syntect;
 mod text_utils;
 mod theme;
-mod tree_sitter;
 mod view;
 
 #[cfg_attr(target_os = "windows", path = "graphics_context_windows.rs")]
@@ -70,6 +70,10 @@ fn main() {
         // Handle incoming responses, re-render if necessary
         if editor.handle_lsp_responses() {
             editor.render(&window);
+        }
+
+        if editor.update_highlights() {
+            request_redraw(&window);
         }
 
         match event {

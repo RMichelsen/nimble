@@ -1,6 +1,7 @@
 use std::{
     cell::{RefCell, RefMut},
     cmp::{max, min},
+    collections::VecDeque,
     rc::Rc,
     str::pattern::Pattern,
 };
@@ -30,8 +31,9 @@ use crate::{
     language_support::{language_from_path, Language},
     piece_table::{Piece, PieceTable},
     platform_resources::PlatformResources,
+    syntect::Syntect,
     text_utils,
-    tree_sitter::TreeSitter,
+    theme::EVERFOREST_DARK,
     view::View,
 };
 
@@ -59,8 +61,9 @@ pub struct Buffer {
     pub redo_stack: Vec<BufferState>,
     pub mode: BufferMode,
     pub language_server: Option<Rc<RefCell<LanguageServer>>>,
-    pub tree_sitter: Option<Rc<RefCell<TreeSitter>>>,
+    pub syntect: Option<Syntect>,
     pub input: String,
+    highlight_queue: VecDeque<usize>,
     search_string: String,
     search_anchor: usize,
     version: i32,
@@ -73,11 +76,17 @@ impl Buffer {
         window: &Window,
         path: &str,
         language_server: Option<Rc<RefCell<LanguageServer>>>,
-        tree_sitter: Option<Rc<RefCell<TreeSitter>>>,
     ) -> Self {
-        let uri = "file:///".to_string() + &path.replace("\\", "/");
+        let uri = "file:///".to_string() + &path.replace('\\', "/");
         let language = language_from_path(path);
         let piece_table = PieceTable::from_file(path);
+
+        let mut highlight_queue = VecDeque::new();
+        let mut i = 0;
+        while i < piece_table.num_lines() {
+            highlight_queue.push_back(i);
+            i += 100;
+        }
 
         Self {
             path: path.to_string(),
@@ -89,8 +98,9 @@ impl Buffer {
             redo_stack: vec![],
             mode: BufferMode::Normal,
             language_server,
+            syntect: Syntect::new(path, &EVERFOREST_DARK),
             input: String::new(),
-            tree_sitter,
+            highlight_queue,
             search_string: String::new(),
             search_anchor: 0,
             version: 1,
@@ -648,6 +658,28 @@ impl Buffer {
         self.input.clear();
         self.merge_cursors();
         None
+    }
+
+    pub fn update_highlights(&mut self) -> bool {
+        if let Some(syntect) = &mut self.syntect {
+            if let Some(line) = self.highlight_queue.pop_front() {
+                syntect
+                    .queue
+                    .lock()
+                    .unwrap()
+                    .push_back((line, self.piece_table.text_between_lines(line, line + 99)));
+            }
+
+            {
+                use std::borrow::BorrowMut;
+                let mut cache_updated = syntect.cache_updated.borrow_mut().lock().unwrap();
+                if *cache_updated {
+                    *cache_updated = false;
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     pub fn update_completions(&mut self, server: &mut RefMut<LanguageServer>) {
@@ -1242,6 +1274,7 @@ impl Buffer {
                     self.piece_table.pieces = state.pieces;
                     self.cursors = state.cursors;
                 }
+                self.update_syntect(0);
                 self.lsp_reload();
             }
             Redo => {
@@ -1254,6 +1287,7 @@ impl Buffer {
                     self.piece_table.pieces = state.pieces;
                     self.cursors = state.cursors;
                 }
+                self.update_syntect(0);
                 self.lsp_reload();
             }
             StartCompletion => {
@@ -1448,6 +1482,7 @@ impl Buffer {
         );
         self.piece_table.delete(start, end);
         self.delete_rebalance(start, end, &old_diagnostic_positions);
+        self.update_syntect(line1);
         TextDocumentChangeEvent {
             range: Some(Range {
                 start: Position {
@@ -1471,6 +1506,7 @@ impl Buffer {
             self.piece_table.col_index(start),
         );
         self.insert_rebalance(start, text.len(), &old_diagnostic_positions);
+        self.update_syntect(line);
         TextDocumentChangeEvent {
             range: Some(Range {
                 start: Position {
@@ -1595,6 +1631,7 @@ impl Buffer {
         old_diagnostic_positions: &Option<Vec<(usize, usize)>>,
     ) {
         cursors_insert_rebalance(&mut self.cursors, position, count);
+        self.syntect_insert_rebalance(position, count);
         if let Some(positions) = old_diagnostic_positions {
             self.diagnostics_insert_rebalance(position, count, positions);
         }
@@ -1607,8 +1644,33 @@ impl Buffer {
         old_diagnostic_positions: &Option<Vec<(usize, usize)>>,
     ) {
         cursors_delete_rebalance(&mut self.cursors, position, end);
+        self.syntect_delete_rebalance(position, end);
         if let Some(positions) = old_diagnostic_positions {
             self.diagnostics_delete_rebalance(position, end, positions);
+        }
+    }
+
+    fn syntect_delete_rebalance(&mut self, position: usize, end: usize) {
+        if let Some(syntect) = &mut self.syntect {
+            syntect.delete_rebalance(&self.piece_table, position, end);
+        }
+    }
+
+    fn syntect_insert_rebalance(&mut self, position: usize, count: usize) {
+        if let Some(syntect) = &mut self.syntect {
+            syntect.insert_rebalance(&self.piece_table, position, count);
+        }
+    }
+
+    fn update_syntect(&mut self, line: usize) {
+        if let Some(syntect) = &mut self.syntect {
+            syntect.queue.lock().unwrap().clear();
+            self.highlight_queue.clear();
+            let mut i = (line / 100) * 100 - 100;
+            while i < self.piece_table.num_lines() {
+                self.highlight_queue.push_back(i);
+                i += 100;
+            }
         }
     }
 

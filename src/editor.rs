@@ -25,7 +25,6 @@ use crate::{
     },
     platform_resources,
     renderer::{RenderLayout, Renderer},
-    tree_sitter::TreeSitter,
     view::View,
 };
 
@@ -74,7 +73,6 @@ pub struct Editor {
     file_finder_layout: RenderLayout,
     status_line_layout: RenderLayout,
     language_servers: HashMap<&'static str, Rc<RefCell<LanguageServer>>>,
-    tree_sitters: HashMap<&'static str, Rc<RefCell<TreeSitter>>>,
 }
 
 impl Editor {
@@ -90,8 +88,16 @@ impl Editor {
             file_finder_layout: RenderLayout::default(),
             status_line_layout: RenderLayout::default(),
             language_servers: HashMap::default(),
-            tree_sitters: HashMap::default(),
         }
+    }
+
+    pub fn update_highlights(&mut self) -> bool {
+        if let Some(document) = &mut self.active_document {
+            if let Some(document) = self.documents.get_mut(document) {
+                return document.buffer.update_highlights();
+            }
+        }
+        false
     }
 
     pub fn update_layouts(&mut self, window: &Window) {
@@ -142,10 +148,12 @@ impl Editor {
         }
     }
 
-    pub fn open_workspace(&mut self) {
+    pub fn open_workspace(&mut self) -> bool {
         if let Some(path) = platform_resources::open_folder() {
             self.workspace = Some(Workspace::new(&path));
+            return true;
         }
+        false
     }
 
     pub fn handle_lsp_responses(&mut self) -> bool {
@@ -226,7 +234,6 @@ impl Editor {
                 &active_document_layout,
                 &document.view,
                 &document.buffer.language_server,
-                &document.buffer.tree_sitter,
             );
 
             self.renderer
@@ -386,12 +393,11 @@ impl Editor {
                 return true;
             }
             VirtualKeyCode::O if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
-                if self.ready_to_quit() {
+                if self.ready_to_quit() && self.open_workspace() {
                     self.documents.clear();
                     self.active_document = None;
                     self.lsp_shutdown();
                     self.language_servers.clear();
-                    self.open_workspace();
                 }
 
                 return true;
@@ -636,29 +642,13 @@ impl Editor {
             })
         });
 
-        let tree_sitter = {
-            if let Some(language) = language_from_path(path) {
-                if !self.tree_sitters.contains_key(language.identifier) {
-                    self.tree_sitters.insert(
-                        language.identifier,
-                        Rc::new(RefCell::new(TreeSitter::new(language).unwrap())),
-                    );
-                }
-                Some(Rc::clone(
-                    self.tree_sitters.get(language.identifier).unwrap(),
-                ))
-            } else {
-                None
-            }
-        };
-
         if self.documents.contains_key(path) {
             self.active_document = Some(path.to_string());
         } else {
             self.documents.insert(
                 path.to_string(),
                 Document {
-                    buffer: Buffer::new(window, path, language_server, tree_sitter),
+                    buffer: Buffer::new(window, path, language_server),
                     view: View::new(),
                 },
             );
