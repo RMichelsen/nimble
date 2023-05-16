@@ -1666,7 +1666,7 @@ impl Buffer {
         if let Some(syntect) = &mut self.syntect {
             syntect.queue.lock().unwrap().clear();
             self.highlight_queue.clear();
-            let mut i = (line / 100) * 100 - 100;
+            let mut i = (line / 100) * 100;
             while i < self.piece_table.num_lines() {
                 self.highlight_queue.push_back(i);
                 i += 100;

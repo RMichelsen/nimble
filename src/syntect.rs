@@ -69,7 +69,7 @@ fn convert_theme(theme: &crate::theme::Theme) -> Theme {
                 },
             },
             ThemeItem {
-                scope: ScopeSelectors::from_str("entity.name.function").unwrap(),
+                scope: ScopeSelectors::from_str("entity.name.function, variable.function").unwrap(),
                 style: StyleModifier {
                     foreground: Some(Color::from(theme.function_color)),
                     background: None,
@@ -88,6 +88,14 @@ fn convert_theme(theme: &crate::theme::Theme) -> Theme {
                 scope: ScopeSelectors::from_str("string").unwrap(),
                 style: StyleModifier {
                     foreground: Some(Color::from(theme.string_color)),
+                    background: None,
+                    font_style: None,
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str("types-any").unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.type_color)),
                     background: None,
                     font_style: None,
                 },

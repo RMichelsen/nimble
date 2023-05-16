@@ -1,8 +1,4 @@
-use std::str::pattern::Pattern;
-
 use bstr::ByteSlice;
-
-use crate::piece_table::PieceTableCharReverseIterator;
 
 pub fn search_highlights(text: &[u8], match_text: &str) -> Vec<(usize, usize)> {
     if match_text.is_empty() {
@@ -21,77 +17,6 @@ pub fn search_highlights(text: &[u8], match_text: &str) -> Vec<(usize, usize)> {
         search_index += match_text.len();
 
         current_text = &text[search_index..];
-    }
-
-    matches
-}
-
-pub fn leading_multi_line_comment_end(
-    text: &[u8],
-    multi_line_comment_token_pair: Option<[&str; 2]>,
-) -> Option<usize> {
-    multi_line_comment_token_pair.and_then(|[t1, t2]| {
-        text.find(t2).and_then(|i| {
-            if i < text.find(t1).unwrap_or(usize::MAX) {
-                Some(i)
-            } else {
-                None
-            }
-        })
-    })
-}
-
-pub fn comment_highlights(
-    text: &[u8],
-    line_comment_token: Option<&str>,
-    multi_line_comment_token_pair: Option<[&str; 2]>,
-    start_iterator_rev: PieceTableCharReverseIterator,
-) -> Vec<(usize, usize)> {
-    let mut matches = vec![];
-
-    if let Some([t1, t2]) = multi_line_comment_token_pair {
-        if let Some(leading_multi_line_comment_end) =
-            leading_multi_line_comment_end(text, multi_line_comment_token_pair)
-        {
-            let mut match_t1 = String::default();
-            let mut match_t2 = String::default();
-            for c in start_iterator_rev {
-                match_t1.insert(0, c as char);
-                match_t2.insert(0, c as char);
-                if match_t1 == t1 {
-                    matches.push((0, leading_multi_line_comment_end + t2.len()));
-                    break;
-                }
-
-                if match_t2 == t2 {
-                    break;
-                }
-
-                if !match_t1.is_suffix_of(t1) {
-                    match_t1.clear();
-                }
-
-                if !match_t2.is_suffix_of(t2) {
-                    match_t2.clear();
-                }
-            }
-        }
-
-        let mut slice = text;
-        let mut offset = 0;
-        while let Some(start) = slice.find(t1) {
-            let text_start = offset + start;
-            offset += start + t1.len();
-            slice.take(..start + t1.len()).unwrap();
-            if let Some(end) = slice.find(t2) {
-                offset += end + t2.len();
-                slice.take(..end + t2.len()).unwrap();
-                matches.push((text_start, end + t2.len() + 2));
-            } else {
-                matches.push((text_start, text.len() - text_start));
-                break;
-            }
-        }
     }
 
     matches

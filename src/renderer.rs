@@ -13,7 +13,7 @@ use crate::{
     graphics_context::GraphicsContext,
     language_server::LanguageServer,
     language_server_types::ParameterLabelType,
-    text_utils::{comment_highlights, search_highlights},
+    text_utils::search_highlights,
     theme::{Theme, THEMES},
     view::View,
 };
@@ -229,26 +229,6 @@ impl Renderer {
                 view.line_offset,
                 view.line_offset + layout.num_rows,
             ))
-        }
-
-        if let Some(language) = buffer.language {
-            for (start, length) in comment_highlights(
-                &text,
-                language.line_comment_token,
-                language.multi_line_comment_token_pair,
-                buffer.piece_table.iter_chars_at_rev(
-                    buffer
-                        .piece_table
-                        .char_index_from_line_col(view.line_offset, 0)
-                        .unwrap_or(0),
-                ),
-            ) {
-                effects.push(TextEffect {
-                    kind: ForegroundColor(self.theme.comment_color),
-                    start,
-                    length,
-                })
-            }
         }
 
         if buffer.input.as_bytes().first() == Some(&b'/') {

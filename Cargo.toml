@@ -8,7 +8,7 @@ bstr = "1.4.0"
 fuzzy-matcher = "0.3.7"
 serde = { version = "1.0.159", features = ["derive"] }
 serde_json = "1.0.95"
-syntect = "5.0.0"
+syntect = { version = "5.0.0", default-features = false, features = ["default-syntaxes", "parsing", "regex-onig"]}
 walkdir = "2.3.3"
 winit = "0.28.3"
 
