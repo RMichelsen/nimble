@@ -150,8 +150,8 @@ impl Editor {
         }
     }
 
-    pub fn open_workspace(&mut self) -> bool {
-        if let Some(path) = platform_resources::open_folder() {
+    pub fn open_workspace(&mut self, window: &Window) -> bool {
+        if let Some(path) = platform_resources::open_folder(window) {
             self.workspace = Some(Workspace::new(&path));
             return true;
         }
@@ -395,7 +395,7 @@ impl Editor {
                 return true;
             }
             VirtualKeyCode::O if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
-                if self.ready_to_quit() && self.open_workspace() {
+                if self.ready_to_quit() && self.open_workspace(window) {
                     self.documents.clear();
                     self.active_document = None;
                     self.lsp_shutdown();

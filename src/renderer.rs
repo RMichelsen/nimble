@@ -243,29 +243,28 @@ impl Renderer {
                     view.absolute_to_view_col(buffer.piece_table.col_index(text_offset + start)),
                 );
 
-                let (foreground_color, background_color) = if !first_result_found
-                    && buffer.cursors.last().is_some_and(|cursor| {
-                        let ahead_of_cursor = text_offset + start >= cursor.position;
-                        first_result_found = ahead_of_cursor;
-                        ahead_of_cursor
-                    }) {
-                    (
-                        self.theme.active_search_foreground_color,
-                        self.theme.active_search_background_color,
-                    )
-                } else {
-                    (
-                        self.theme.search_foreground_color,
-                        self.theme.search_background_color,
-                    )
-                };
+                let (mut foreground_color, mut background_color) = (
+                    self.theme.search_foreground_color,
+                    self.theme.search_background_color,
+                );
+
+                if !first_result_found
+                    && buffer
+                        .cursors
+                        .last()
+                        .is_some_and(|cursor| text_offset + start >= cursor.position)
+                {
+                    foreground_color = self.theme.active_search_foreground_color;
+                    background_color = self.theme.active_search_background_color;
+                    first_result_found = true;
+                }
 
                 self.context
                     .fill_cells(row, col, layout, (length, 1), background_color);
                 self.context
                     .fill_cells(row, col, layout, (1, 1), self.theme.cursor_color);
                 effects.push(TextEffect {
-                    kind: ForegroundColor(self.theme.background_color),
+                    kind: ForegroundColor(foreground_color),
                     start,
                     length,
                 });

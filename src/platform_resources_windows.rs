@@ -13,6 +13,7 @@ use windows::{
             Memory::{GlobalAlloc, GlobalFree, GlobalLock, GlobalUnlock, GMEM_ZEROINIT},
         },
         UI::{
+            Input::KeyboardAndMouse::SetFocus,
             Shell::{FileOpenDialog, IFileOpenDialog, FOS_PICKFOLDERS, SIGDN_FILESYSPATH},
             WindowsAndMessaging::{MessageBoxW, IDNO, IDYES, MB_YESNOCANCEL},
         },
@@ -20,7 +21,7 @@ use windows::{
 };
 use winit::{platform::windows::WindowExtWindows, window::Window};
 
-pub fn open_folder() -> Option<String> {
+pub fn open_folder(window: &Window) -> Option<String> {
     unsafe {
         let file_dialog: IFileOpenDialog =
             CoCreateInstance(&FileOpenDialog, None, CLSCTX_ALL).ok()?;
@@ -29,6 +30,7 @@ pub fn open_folder() -> Option<String> {
         file_dialog.Show(None).ok()?;
 
         if let Ok(result) = file_dialog.GetResult() {
+            SetFocus(HWND(window.hwnd()));
             return result
                 .GetDisplayName(SIGDN_FILESYSPATH)
                 .unwrap()

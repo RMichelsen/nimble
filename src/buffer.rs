@@ -32,7 +32,7 @@ use crate::{
     piece_table::{Piece, PieceTable},
     platform_resources::PlatformResources,
     renderer::RenderLayout,
-    syntect::Syntect,
+    syntect::{IndexedLine, Syntect},
     text_utils,
     theme::EVERFOREST_DARK,
     view::View,
@@ -662,11 +662,10 @@ impl Buffer {
     pub fn update_highlights(&mut self) -> bool {
         if let Some(syntect) = &mut self.syntect {
             if let Some(line) = self.highlight_queue.pop_front() {
-                syntect
-                    .queue
-                    .lock()
-                    .unwrap()
-                    .push_back((line, self.piece_table.text_between_lines(line, line + 99)));
+                syntect.queue.lock().unwrap().push_back(IndexedLine {
+                    index: line,
+                    text: self.piece_table.text_between_lines(line, line + 99),
+                });
             }
 
             {
