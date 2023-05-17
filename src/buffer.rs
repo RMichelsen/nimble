@@ -199,6 +199,12 @@ impl Buffer {
             (_, Right) => self.motion(Forward(1)),
             (_, Left) => self.motion(Backward(1)),
 
+            (Normal, Escape) if self.input.as_bytes().first() == Some(&b'/') => {
+                self.input.clear();
+                self.cursors[0].position = self.search_anchor;
+                self.cursors[0].anchor = self.search_anchor;
+                return Some(EditorCommand::CenterIfNotVisible);
+            }
             (Normal, Escape) => {
                 self.cursors.truncate(1);
                 self.input.clear();
@@ -358,16 +364,20 @@ impl Buffer {
             return None;
         }
 
-        if self
-            .input
-            .as_bytes()
-            .first()
-            .is_some_and(|c| *c == b':' || *c == b'/')
-        {
+        if self.input.as_bytes().first() == Some(&b':') {
             if c as u8 >= 0x20 && c as u8 <= 0x7E {
                 self.input.push(c);
             }
             return None;
+        }
+
+        if self.input.as_bytes().first() == Some(&b'/') {
+            if c as u8 >= 0x20 && c as u8 <= 0x7E {
+                self.input.push(c);
+            }
+            let partial_search = self.input[1..].to_string();
+            self.motion(SeekSelfInclusive(partial_search.as_bytes()));
+            return Some(EditorCommand::CenterIfNotVisible);
         }
 
         self.input.push(c);
