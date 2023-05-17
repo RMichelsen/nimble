@@ -131,6 +131,17 @@ impl GraphicsContext {
         }
     }
 
+    pub fn ensure_size(&mut self, window: &Window) {
+        unsafe {
+            self.render_target
+                .Resize(&D2D_SIZE_U {
+                    width: window.inner_size().width,
+                    height: window.inner_size().height,
+                })
+                .unwrap();
+        }
+    }
+
     pub fn begin_draw(&self) {
         unsafe {
             self.render_target.BeginDraw();

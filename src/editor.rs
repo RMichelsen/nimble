@@ -101,6 +101,8 @@ impl Editor {
     }
 
     pub fn update_layouts(&mut self, window: &Window) {
+        self.renderer.ensure_size(window);
+
         let window_size = (
             window.inner_size().width as f64 / window.scale_factor(),
             window.inner_size().height as f64 / window.scale_factor(),

@@ -63,6 +63,10 @@ impl Renderer {
         }
     }
 
+    pub fn ensure_size(&mut self, window: &Window) {
+        self.context.ensure_size(window);
+    }
+
     pub fn cycle_theme(&mut self) {
         let i = THEMES
             .iter()
