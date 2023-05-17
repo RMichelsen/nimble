@@ -174,7 +174,7 @@ impl Renderer {
             if let Some(workspace) = workspace {
                 if workspace.path.is_prefix_of(opened_file) {
                     effects.push(TextEffect {
-                        kind: TextEffectKind::ForegroundColor(self.theme.comment_color),
+                        kind: TextEffectKind::ForegroundColor(self.theme.palette.bg2),
                         start: 1,
                         length: workspace.path.len(),
                     });

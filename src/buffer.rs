@@ -1265,6 +1265,13 @@ impl Buffer {
                 self.lsp_change(content_changes);
             }
             Undo => {
+                let first_position = self
+                    .cursors
+                    .iter()
+                    .min_by(|x, y| x.position.cmp(&y.position))
+                    .map(|cursor| cursor.position)
+                    .unwrap_or(0);
+
                 self.clear_diagnostics();
                 if let Some(state) = self.undo_stack.pop() {
                     self.redo_stack.push(BufferState {
@@ -1274,10 +1281,28 @@ impl Buffer {
                     self.piece_table.pieces = state.pieces;
                     self.cursors = state.cursors;
                 }
-                self.update_syntect(0);
+
+                let second_position = self
+                    .cursors
+                    .iter()
+                    .min_by(|x, y| x.position.cmp(&y.position))
+                    .map(|cursor| cursor.position)
+                    .unwrap_or(0);
+
+                self.update_syntect(min(
+                    self.piece_table.line_index(first_position),
+                    self.piece_table.line_index(second_position),
+                ));
                 self.lsp_reload();
             }
             Redo => {
+                let first_position = self
+                    .cursors
+                    .iter()
+                    .min_by(|x, y| x.position.cmp(&y.position))
+                    .map(|cursor| cursor.position)
+                    .unwrap_or(0);
+
                 self.clear_diagnostics();
                 if let Some(state) = self.redo_stack.pop() {
                     self.undo_stack.push(BufferState {
@@ -1287,7 +1312,18 @@ impl Buffer {
                     self.piece_table.pieces = state.pieces;
                     self.cursors = state.cursors;
                 }
-                self.update_syntect(0);
+
+                let second_position = self
+                    .cursors
+                    .iter()
+                    .min_by(|x, y| x.position.cmp(&y.position))
+                    .map(|cursor| cursor.position)
+                    .unwrap_or(0);
+
+                self.update_syntect(min(
+                    self.piece_table.line_index(first_position),
+                    self.piece_table.line_index(second_position),
+                ));
                 self.lsp_reload();
             }
             StartCompletion => {

@@ -7,6 +7,7 @@ use std::{
 };
 
 use syntect::{
+    dumps::from_uncompressed_data,
     highlighting::{
         Color, HighlightState, Highlighter, RangedHighlightIterator, ScopeSelectors, StyleModifier,
         Theme, ThemeItem,
@@ -37,7 +38,7 @@ pub struct Syntect {
 }
 
 fn convert_theme(theme: &crate::theme::Theme) -> Theme {
-    syntect::highlighting::Theme {
+    Theme {
         name: None,
         author: None,
         settings: syntect::highlighting::ThemeSettings {
@@ -50,36 +51,9 @@ fn convert_theme(theme: &crate::theme::Theme) -> Theme {
         },
         scopes: vec![
             ThemeItem {
-                scope: ScopeSelectors::from_str(
-                    "keyword - keyword.operator, storage.type, storage.modifier",
-                )
-                .unwrap(),
+                scope: ScopeSelectors::from_str("comment, punctuation.definition.comment").unwrap(),
                 style: StyleModifier {
-                    foreground: Some(Color::from(theme.keyword_color)),
-                    background: None,
-                    font_style: None,
-                },
-            },
-            ThemeItem {
-                scope: ScopeSelectors::from_str("comment").unwrap(),
-                style: StyleModifier {
-                    foreground: Some(Color::from(theme.comment_color)),
-                    background: None,
-                    font_style: None,
-                },
-            },
-            ThemeItem {
-                scope: ScopeSelectors::from_str("entity.name.function, variable.function").unwrap(),
-                style: StyleModifier {
-                    foreground: Some(Color::from(theme.function_color)),
-                    background: None,
-                    font_style: None,
-                },
-            },
-            ThemeItem {
-                scope: ScopeSelectors::from_str("constant - constant.numeric").unwrap(),
-                style: StyleModifier {
-                    foreground: Some(Color::from(theme.constant_color)),
+                    foreground: Some(Color::from(theme.palette.blue)),
                     background: None,
                     font_style: None,
                 },
@@ -87,17 +61,167 @@ fn convert_theme(theme: &crate::theme::Theme) -> Theme {
             ThemeItem {
                 scope: ScopeSelectors::from_str("string").unwrap(),
                 style: StyleModifier {
-                    foreground: Some(Color::from(theme.string_color)),
+                    foreground: Some(Color::from(theme.palette.green)),
                     background: None,
                     font_style: None,
                 },
             },
             ThemeItem {
-                scope: ScopeSelectors::from_str("types-any").unwrap(),
+                scope: ScopeSelectors::from_str("constant.numeric").unwrap(),
                 style: StyleModifier {
-                    foreground: Some(Color::from(theme.type_color)),
+                    foreground: Some(Color::from(theme.palette.orange)),
                     background: None,
                     font_style: None,
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str("storage.type.numeric").unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.pink)),
+                    background: None,
+                    font_style: None, // Italic
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str("constant.language").unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.red)),
+                    background: None,
+                    font_style: None,
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str("constant.character, constant.other").unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.pink)),
+                    background: None,
+                    font_style: None,
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str("variable.member").unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.red)),
+                    background: None,
+                    font_style: None,
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str(
+                    "keyword - keyword.operator, keyword.operator.word",
+                )
+                .unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.pink)),
+                    background: None,
+                    font_style: None,
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str("storage").unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.red)),
+                    background: None,
+                    font_style: None,
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str("storage.type").unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.pink)),
+                    background: None,
+                    font_style: None, // Italic
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str("entity.name.function").unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.blue)),
+                    background: None,
+                    font_style: None,
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str(
+                    "entity.name - (entity.name.section | entity.name.tag | entity.name.label)",
+                )
+                .unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.orange)),
+                    background: None,
+                    font_style: None,
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str("entity.other.inherited-class").unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.blue)),
+                    background: None,
+                    font_style: None, // Italic
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str("variable.parameter").unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.orange)),
+                    background: None,
+                    font_style: None,
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str("variable.language").unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.red)),
+                    background: None,
+                    font_style: None, // Italic
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str("entity.name.tag").unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.red)),
+                    background: None,
+                    font_style: None,
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str("entity.other.attribute-name").unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.pink)),
+                    background: None,
+                    font_style: None,
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str("variable.function, variable.annotation").unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.blue)),
+                    background: None,
+                    font_style: None,
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str("support.function, support.macro").unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.blue)),
+                    background: None,
+                    font_style: None, // Italic
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str("support.constant").unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.pink)),
+                    background: None,
+                    font_style: None, // Italic
+                },
+            },
+            ThemeItem {
+                scope: ScopeSelectors::from_str("support.type, support.class").unwrap(),
+                style: StyleModifier {
+                    foreground: Some(Color::from(theme.palette.blue)),
+                    background: None,
+                    font_style: None, // Italic
                 },
             },
         ],
@@ -222,7 +346,9 @@ fn start_highlight_thread(
 
     thread::spawn(move || {
         let mut internal_cache = HashMap::new();
-        let syntax_set = SyntaxSet::load_defaults_newlines();
+        let syntax_set: SyntaxSet =
+            from_uncompressed_data(include_bytes!("../resources/syntax_definitions.packdump"))
+                .unwrap();
         let highlighter = Highlighter::new(&theme);
         let syntax_reference = syntax_set.find_syntax_by_extension(&extension);
         if syntax_reference.is_none() {
