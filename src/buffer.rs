@@ -31,6 +31,7 @@ use crate::{
     language_support::{language_from_path, Language},
     piece_table::{Piece, PieceTable},
     platform_resources::PlatformResources,
+    renderer::RenderLayout,
     syntect::Syntect,
     text_utils,
     theme::EVERFOREST_DARK,
@@ -184,8 +185,7 @@ impl Buffer {
         key_code: VirtualKeyCode,
         modifiers: Option<ModifiersState>,
         view: &View,
-        num_rows: usize,
-        num_cols: usize,
+        layout: &RenderLayout,
     ) -> Option<EditorCommand> {
         match (self.mode, key_code) {
             (_, VirtualKeyCode::Down) => self.motion(Down(1)),
@@ -284,8 +284,7 @@ impl Buffer {
                                     &self.piece_table,
                                     &filtered_completions,
                                     request.position,
-                                    num_rows,
-                                    num_cols,
+                                    layout,
                                 ) {
                                     request.selection_index = min(
                                         request.selection_index + 1,

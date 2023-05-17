@@ -79,7 +79,7 @@ fn convert_theme(theme: &crate::theme::Theme) -> Theme {
                 style: StyleModifier {
                     foreground: Some(Color::from(theme.palette.pink)),
                     background: None,
-                    font_style: None, // Italic
+                    font_style: None,
                 },
             },
             ThemeItem {
@@ -130,7 +130,7 @@ fn convert_theme(theme: &crate::theme::Theme) -> Theme {
                 style: StyleModifier {
                     foreground: Some(Color::from(theme.palette.pink)),
                     background: None,
-                    font_style: None, // Italic
+                    font_style: None,
                 },
             },
             ThemeItem {
@@ -157,7 +157,7 @@ fn convert_theme(theme: &crate::theme::Theme) -> Theme {
                 style: StyleModifier {
                     foreground: Some(Color::from(theme.palette.blue)),
                     background: None,
-                    font_style: None, // Italic
+                    font_style: None,
                 },
             },
             ThemeItem {
@@ -173,7 +173,7 @@ fn convert_theme(theme: &crate::theme::Theme) -> Theme {
                 style: StyleModifier {
                     foreground: Some(Color::from(theme.palette.red)),
                     background: None,
-                    font_style: None, // Italic
+                    font_style: None,
                 },
             },
             ThemeItem {
@@ -205,7 +205,7 @@ fn convert_theme(theme: &crate::theme::Theme) -> Theme {
                 style: StyleModifier {
                     foreground: Some(Color::from(theme.palette.blue)),
                     background: None,
-                    font_style: None, // Italic
+                    font_style: None,
                 },
             },
             ThemeItem {
@@ -213,7 +213,7 @@ fn convert_theme(theme: &crate::theme::Theme) -> Theme {
                 style: StyleModifier {
                     foreground: Some(Color::from(theme.palette.pink)),
                     background: None,
-                    font_style: None, // Italic
+                    font_style: None,
                 },
             },
             ThemeItem {
@@ -221,7 +221,7 @@ fn convert_theme(theme: &crate::theme::Theme) -> Theme {
                 style: StyleModifier {
                     foreground: Some(Color::from(theme.palette.blue)),
                     background: None,
-                    font_style: None, // Italic
+                    font_style: None,
                 },
             },
         ],

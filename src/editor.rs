@@ -119,7 +119,7 @@ impl Editor {
                 row_offset: 0,
                 col_offset: numbers_num_cols,
                 num_rows: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(1),
-                num_cols: (window_size.0 / font_size.0).ceil() as usize,
+                num_cols: (window_size.0 / font_size.0).ceil() as usize - numbers_num_cols,
             };
 
             self.numbers_layout = RenderLayout {
@@ -479,8 +479,7 @@ impl Editor {
                 key_code,
                 modifiers,
                 &document.view,
-                active_document_layout.num_rows,
-                active_document_layout.num_cols,
+                &active_document_layout,
             ) {
                 match editor_command {
                     EditorCommand::CenterView => document

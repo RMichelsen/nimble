@@ -71,14 +71,7 @@ impl View {
                     let start = 0;
                     let end = buffer.piece_table.line_at_index(line).unwrap().length;
                     let num = (start..=end)
-                        .filter(|col| {
-                            self.pos_in_render_visible_range(
-                                line,
-                                *col,
-                                layout.num_rows,
-                                layout.num_cols,
-                            )
-                        })
+                        .filter(|col| self.pos_in_render_visible_range(line, *col, layout))
                         .count();
                     f(
                         self.absolute_to_view_row(line),
@@ -91,14 +84,7 @@ impl View {
             for cursor in buffer.cursors.iter() {
                 for range in cursor.get_selection_ranges(&buffer.piece_table) {
                     let num = (range.start..=range.end)
-                        .filter(|col| {
-                            self.pos_in_render_visible_range(
-                                range.line,
-                                *col,
-                                layout.num_rows,
-                                layout.num_cols,
-                            )
-                        })
+                        .filter(|col| self.pos_in_render_visible_range(range.line, *col, layout))
                         .count();
                     f(
                         self.absolute_to_view_row(range.line),
@@ -116,7 +102,7 @@ impl View {
     {
         for cursor in buffer.cursors.iter() {
             let (line, col) = cursor.get_line_col(&buffer.piece_table);
-            if self.pos_in_render_visible_range(line, col, layout.num_rows, layout.num_cols) {
+            if self.pos_in_render_visible_range(line, col, layout) {
                 f(
                     self.absolute_to_view_row(line),
                     self.absolute_to_view_col(col),
@@ -165,8 +151,7 @@ impl View {
                             &buffer.piece_table,
                             &filtered_completions,
                             request_position,
-                            layout.num_rows,
-                            layout.num_cols,
+                            layout,
                         ) {
                             f(&filtered_completions, &completion_view, &request);
                         }
@@ -190,8 +175,7 @@ impl View {
                             &buffer.piece_table,
                             signature_help,
                             request.position,
-                            layout.num_rows,
-                            layout.num_cols,
+                            layout,
                         ) {
                             f(signature_help, &signature_help_view);
                         }
@@ -246,17 +230,8 @@ impl View {
                         (start_line..=end_line)
                             .contains(&buffer.piece_table.line_index(cursor.position))
                     }))
-                    || (!self.pos_in_render_visible_range(
-                        start_line,
-                        start_col,
-                        layout.num_rows,
-                        layout.num_cols,
-                    ) && !self.pos_in_render_visible_range(
-                        end_line,
-                        end_col,
-                        layout.num_rows,
-                        layout.num_cols,
-                    ))
+                    || (!self.pos_in_render_visible_range(start_line, start_col, layout)
+                        && !self.pos_in_render_visible_range(end_line, end_col, layout))
                 {
                     continue;
                 }
@@ -296,7 +271,7 @@ impl View {
     pub fn adjust(&mut self, buffer: &Buffer, layout: &RenderLayout) {
         if let Some(last_cursor) = buffer.cursors.last() {
             let (line, col) = last_cursor.get_line_col(&buffer.piece_table);
-            if !self.pos_in_edit_visible_range(line, col, layout.num_rows, layout.num_cols) {
+            if !self.pos_in_edit_visible_range(line, col, layout) {
                 if line < self.line_offset {
                     self.line_offset = line;
                 } else if line > (self.line_offset + (layout.num_rows - 2)) {
@@ -322,7 +297,7 @@ impl View {
     pub fn center_if_not_visible(&mut self, buffer: &Buffer, layout: &RenderLayout) {
         if let Some(last_cursor) = buffer.cursors.last() {
             let (line, col) = last_cursor.get_line_col(&buffer.piece_table);
-            if !self.pos_in_edit_visible_range(line, col, layout.num_rows, layout.num_cols) {
+            if !self.pos_in_edit_visible_range(line, col, layout) {
                 self.line_offset = line.saturating_sub(layout.num_rows / 2);
             }
         }
@@ -333,14 +308,13 @@ impl View {
         piece_table: &PieceTable,
         signature_help: &SignatureHelp,
         position: usize,
-        num_rows: usize,
-        num_cols: usize,
+        layout: &RenderLayout,
     ) -> Option<SignatureHelpView> {
         let line = piece_table.line_index(position);
         let col = piece_table.col_index(position);
 
         if signature_help.signatures.is_empty()
-            || !self.pos_in_render_visible_range(line, col, num_rows, num_cols)
+            || !self.pos_in_render_visible_range(line, col, layout)
         {
             return None;
         }
@@ -353,7 +327,7 @@ impl View {
             .label
             .len();
 
-        let available_rows_right = num_cols.saturating_sub(col + 1);
+        let available_rows_right = layout.num_cols.saturating_sub(col + 1);
         let move_left = available_rows_right < content_length;
         let col = if move_left {
             col.saturating_sub(content_length)
@@ -369,13 +343,12 @@ impl View {
         piece_table: &PieceTable,
         completions: &[CompletionItem],
         position: usize,
-        num_rows: usize,
-        num_cols: usize,
+        layout: &RenderLayout,
     ) -> Option<CompletionView> {
         let line = piece_table.line_index(position);
         let col = piece_table.col_index(position);
 
-        if !self.pos_in_render_visible_range(line, col, num_rows, num_cols) {
+        if !self.pos_in_render_visible_range(line, col, layout) {
             return None;
         }
 
@@ -397,7 +370,7 @@ impl View {
         let col = self.absolute_to_view_col(col);
 
         let available_rows_above = row.saturating_sub(1);
-        let available_rows_below = num_rows.saturating_sub(row + 2);
+        let available_rows_below = layout.num_rows.saturating_sub(row + 2);
 
         let grow_up = available_rows_below < 5 && available_rows_above > available_rows_below;
         let row = if grow_up {
@@ -408,7 +381,7 @@ impl View {
             row + 1
         };
 
-        let available_rows_right = num_cols.saturating_sub(col + 1);
+        let available_rows_right = layout.num_cols.saturating_sub(col + 1);
         let move_left = available_rows_right < longest_string;
         let col = if move_left {
             col.saturating_sub(longest_string)
@@ -460,25 +433,13 @@ impl View {
         }
     }
 
-    fn pos_in_edit_visible_range(
-        &self,
-        line: usize,
-        col: usize,
-        num_rows: usize,
-        num_cols: usize,
-    ) -> bool {
-        (self.line_offset..self.line_offset + num_rows.saturating_sub(1)).contains(&line)
-            && (self.col_offset..self.col_offset + num_cols.saturating_sub(1)).contains(&col)
+    fn pos_in_edit_visible_range(&self, line: usize, col: usize, layout: &RenderLayout) -> bool {
+        (self.line_offset..self.line_offset + layout.num_rows.saturating_sub(1)).contains(&line)
+            && (self.col_offset..self.col_offset + layout.num_cols.saturating_sub(1)).contains(&col)
     }
 
-    fn pos_in_render_visible_range(
-        &self,
-        line: usize,
-        col: usize,
-        num_rows: usize,
-        num_cols: usize,
-    ) -> bool {
-        (self.line_offset..self.line_offset + num_rows).contains(&line)
-            && (self.col_offset..self.col_offset + num_cols).contains(&col)
+    fn pos_in_render_visible_range(&self, line: usize, col: usize, layout: &RenderLayout) -> bool {
+        (self.line_offset..self.line_offset + layout.num_rows).contains(&line)
+            && (self.col_offset..self.col_offset + layout.num_cols).contains(&col)
     }
 }
