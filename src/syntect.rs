@@ -31,6 +31,8 @@ impl From<crate::renderer::Color> for Color {
     }
 }
 
+pub const SYNTECT_CACHE_FREQUENCY: usize = 50;
+
 pub struct IndexedLine {
     pub index: usize,
     pub text: Vec<u8>,
@@ -66,9 +68,9 @@ impl Syntect {
     }
 
     pub fn delete_rebalance(&mut self, piece_table: &PieceTable, position: usize, end: usize) {
-        let start_index = piece_table.line_index(position) / 100;
+        let start_index = piece_table.line_index(position) / SYNTECT_CACHE_FREQUENCY;
         let start_cache_offset = piece_table
-            .char_index_from_line_col(start_index * 100, 0)
+            .char_index_from_line_col(start_index * SYNTECT_CACHE_FREQUENCY, 0)
             .unwrap();
         let start_effects_offset = position - start_cache_offset;
         if let Ok(ref mut cache) = self.cache.as_ref().write() {
@@ -83,9 +85,9 @@ impl Syntect {
     }
 
     pub fn insert_rebalance(&mut self, piece_table: &PieceTable, position: usize, count: usize) {
-        let start_index = piece_table.line_index(position) / 100;
+        let start_index = piece_table.line_index(position) / SYNTECT_CACHE_FREQUENCY;
         let start_cache_offset = piece_table
-            .char_index_from_line_col(start_index * 100, 0)
+            .char_index_from_line_col(start_index * SYNTECT_CACHE_FREQUENCY, 0)
             .unwrap();
         let start_effects_offset = position - start_cache_offset;
         if let Ok(ref mut cache) = self.cache.as_ref().write() {
@@ -105,9 +107,9 @@ impl Syntect {
         start: usize,
         end: usize,
     ) -> Vec<TextEffect> {
-        let start_index = start / 100;
+        let start_index = start / SYNTECT_CACHE_FREQUENCY;
         let start_cache_offset = piece_table
-            .char_index_from_line_col(start_index * 100, 0)
+            .char_index_from_line_col(start_index * SYNTECT_CACHE_FREQUENCY, 0)
             .unwrap();
         let start_text_offset = piece_table.char_index_from_line_col(start, 0).unwrap();
         let start_effects_offset = start_text_offset - start_cache_offset;
@@ -123,10 +125,10 @@ impl Syntect {
             effect.start -= start_effects_offset;
         }
 
-        let end_index = end / 100;
+        let end_index = end / SYNTECT_CACHE_FREQUENCY;
         if end_index != start_index {
             let end_cache_offset = piece_table
-                .char_index_from_line_col(end_index * 100, 0)
+                .char_index_from_line_col(end_index * SYNTECT_CACHE_FREQUENCY, 0)
                 .unwrap_or(piece_table.num_chars());
             let end_text_offset = piece_table
                 .char_index_from_line_col(end, 0)
@@ -176,7 +178,7 @@ fn start_highlight_thread(
                 continue;
             };
 
-            let index = start / 100;
+            let index = start / SYNTECT_CACHE_FREQUENCY;
 
             let (mut parse_state, mut highlight_state) = if index > 0 {
                 internal_cache.get(&(index - 1)).cloned().unwrap_or((

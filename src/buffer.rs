@@ -32,7 +32,7 @@ use crate::{
     piece_table::{Piece, PieceTable},
     platform_resources::PlatformResources,
     renderer::RenderLayout,
-    syntect::{IndexedLine, Syntect},
+    syntect::{IndexedLine, Syntect, SYNTECT_CACHE_FREQUENCY},
     text_utils,
     theme::EVERFOREST_DARK,
     view::View,
@@ -86,7 +86,7 @@ impl Buffer {
         let mut i = 0;
         while i < piece_table.num_lines() {
             highlight_queue.push_back(i);
-            i += 100;
+            i += SYNTECT_CACHE_FREQUENCY;
         }
 
         Self {
@@ -674,7 +674,7 @@ impl Buffer {
             if let Some(line) = self.highlight_queue.pop_front() {
                 syntect.queue.lock().unwrap().push_back(IndexedLine {
                     index: line,
-                    text: self.piece_table.text_between_lines(line, line + 99),
+                    text: self.piece_table.text_between_lines(line, line + SYNTECT_CACHE_FREQUENCY.saturating_sub(1)),
                 });
             }
 
@@ -1710,10 +1710,10 @@ impl Buffer {
         if let Some(syntect) = &mut self.syntect {
             syntect.queue.lock().unwrap().clear();
             self.highlight_queue.clear();
-            let mut i = (line / 100) * 100;
+            let mut i = (line / SYNTECT_CACHE_FREQUENCY) * SYNTECT_CACHE_FREQUENCY;
             while i < self.piece_table.num_lines() {
                 self.highlight_queue.push_back(i);
-                i += 100;
+                i += SYNTECT_CACHE_FREQUENCY;
             }
         }
     }

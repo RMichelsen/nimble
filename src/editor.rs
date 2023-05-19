@@ -38,6 +38,7 @@ pub const MAX_SHOWN_FILE_FINDER_ITEMS: usize = 10;
 pub enum EditorCommand {
     CenterView,
     CenterIfNotVisible,
+    ToggleSplitView,
     Quit,
     QuitAll,
     QuitNoCheck,
@@ -45,22 +46,27 @@ pub enum EditorCommand {
 }
 
 #[derive(Debug)]
-pub struct FileIdentifier {
+struct FileIdentifier {
     pub name: OsString,
     pub path: OsString,
 }
 
-pub struct FileFinder {
+struct FileFinder {
     pub files: Vec<FileIdentifier>,
     pub search_string: String,
     pub selection_index: usize,
     pub selection_view_offset: usize,
 }
 
-pub struct Workspace {
+struct Workspace {
     pub path: String,
     pub gitignore_paths: Vec<String>,
 }
+
+struct VisibleDocument {
+    pub layout: RenderLayout,
+    pub numbers_layout: RenderLayout,
+};
 
 pub struct Editor {
     renderer: Renderer,
@@ -68,8 +74,9 @@ pub struct Editor {
     file_finder: Option<FileFinder>,
     documents: HashMap<String, Document>,
     active_document: Option<String>,
-    active_document_layout: RenderLayout,
-    numbers_layout: RenderLayout,
+    visible_documents: (Option<String>, Option<String>),
+    visible_documents_layouts: (RenderLayout, RenderLayout),
+    visible_documents_numbers_layouts: (RenderLayout, RenderLayout),
     file_finder_layout: RenderLayout,
     status_line_layout: RenderLayout,
     language_servers: HashMap<&'static str, Rc<RefCell<LanguageServer>>>,
@@ -83,8 +90,9 @@ impl Editor {
             file_finder: None,
             documents: HashMap::default(),
             active_document: None,
-            active_document_layout: RenderLayout::default(),
-            numbers_layout: RenderLayout::default(),
+            visible_documents: (None, None),
+            visible_documents_layouts: (RenderLayout::default(), RenderLayout::default()),
+            visible_documents_numbers_layouts: (RenderLayout::default(), RenderLayout::default()),
             file_finder_layout: RenderLayout::default(),
             status_line_layout: RenderLayout::default(),
             language_servers: HashMap::default(),
