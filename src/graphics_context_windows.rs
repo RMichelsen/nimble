@@ -140,6 +140,11 @@ impl GraphicsContext {
                 })
                 .unwrap();
         }
+
+        self.window_size = (
+            window.inner_size().width as f32 / window.scale_factor() as f32,
+            window.inner_size().height as f32 / window.scale_factor() as f32,
+        );
     }
 
     pub fn begin_draw(&self) {

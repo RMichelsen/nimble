@@ -18,10 +18,12 @@ use core_text::{
 };
 use objc::{class, msg_send, runtime::Object, sel, sel_impl};
 use winit::window::Window;
+use std::cmp::min;
 
 use crate::{
-    renderer::{Color, TextEffect, TextEffectKind},
+    renderer::{Color, RenderLayout, TextEffect, TextEffectKind},
     view::View,
+    theme::Theme,
 };
 
 extern "C" {
@@ -104,6 +106,13 @@ impl GraphicsContext {
         }
     }
 
+    pub fn ensure_size(&mut self, window: &Window) {
+        self.window_size = (
+            window.inner_size().width as f64 / window.scale_factor(),
+            window.inner_size().height as f64 / window.scale_factor(),
+        );
+    }
+
     pub fn begin_draw(&self) {}
 
     pub fn end_draw(&self) {}
@@ -119,10 +128,14 @@ impl GraphicsContext {
         context.fill_rect(unsafe { CGRectInfinite });
     }
 
-    pub fn fill_cells(&self, row: usize, col: usize, size: (usize, usize), color: Color) {
+    pub fn fill_cells(&self, row: usize, col: usize, layout: &RenderLayout, size: (usize, usize), color: Color) {
         let context = get_current_context();
-        let (row_offset, col_offset) =
-            (row as f64 * self.font_size.1, col as f64 * self.font_size.0);
+
+        let (row_offset, col_offset) = (
+            (row + layout.row_offset) as f64 * self.font_size.1,
+            (col + layout.col_offset) as f64 * self.font_size.0,
+        );
+
         context.set_fill_color(&CGColor::rgb(
             color.r as f64,
             color.g as f64,
@@ -142,10 +155,14 @@ impl GraphicsContext {
         ));
     }
 
-    pub fn fill_cell_slim_line(&self, row: usize, col: usize, color: Color) {
+    pub fn fill_cell_slim_line(&self, row: usize, col: usize, layout: &RenderLayout, color: Color) {
         let context = get_current_context();
-        let (row_offset, col_offset) =
-            (row as f64 * self.font_size.1, col as f64 * self.font_size.0);
+
+        let (row_offset, col_offset) = (
+            (row + layout.row_offset) as f64 * self.font_size.1,
+            (col + layout.col_offset) as f64 * self.font_size.0,
+        );
+
         context.set_fill_color(&CGColor::rgb(
             color.r as f64,
             color.g as f64,
@@ -162,10 +179,14 @@ impl GraphicsContext {
         ));
     }
 
-    pub fn underline_cells(&self, row: usize, col: usize, count: usize, color: Color) {
+    pub fn underline_cells(&self, row: usize, col: usize, layout: &RenderLayout, count: usize, color: Color) {
         let context = get_current_context();
-        let (row_offset, col_offset) =
-            (row as f64 * self.font_size.1, col as f64 * self.font_size.0);
+
+        let (row_offset, col_offset) = (
+            (row + layout.row_offset) as f64 * self.font_size.1,
+            (col + layout.col_offset) as f64 * self.font_size.0,
+        );
+
         context.set_fill_color(&CGColor::rgb(
             color.r as f64,
             color.g as f64,
@@ -176,11 +197,11 @@ impl GraphicsContext {
         context.fill_rect(CGRect::new(
             &CGPoint::new(
                 col_offset,
-                self.window_size.1 - (self.font_size.1 * size.1 as f64) - row_offset,
+                self.window_size.1 - self.font_size.1 - row_offset,
             ),
             &CGSize::new(
                 self.font_size.0 * count as f64,
-                self.font_size.1 * size.1 * 0.1 as f64,
+                self.font_size.1 * 0.1 as f64,
             ),
         ));
     }
@@ -189,13 +210,18 @@ impl GraphicsContext {
         &self,
         row: usize,
         col: usize,
+        layout: &RenderLayout,
         text: &[u8],
         effects: &[TextEffect],
+        theme: &Theme,
         col_offset: usize,
+        align_right: bool,
     ) {
+        let utf8_str = unsafe { std::str::from_utf8_unchecked(text) };
         let string = CFAttributedString::new(
-            &CFString::from_str(unsafe { std::str::from_utf8_unchecked(text) }).unwrap(),
+            &CFString::from_str(utf8_str).unwrap(),
         );
+        let string_len = utf8_str.len();
 
         for effect in effects {
             match &effect.kind {
@@ -205,7 +231,7 @@ impl GraphicsContext {
                     unsafe {
                         CFAttributedStringSetAttribute(
                             string.to_void() as *const _,
-                            CFRange::init(effect.start as isize, effect.length as isize),
+                            CFRange::init(effect.start as isize, min(string_len.saturating_sub(effect.start), effect.length) as isize),
                             core_text::string_attributes::kCTForegroundColorAttributeName,
                             text_color.to_void() as *const _,
                         );
@@ -235,12 +261,12 @@ impl GraphicsContext {
         let bounding_rect = CGPath::from_rect(
             CGRect {
                 origin: CGPoint {
-                    x: -self.font_size.0 * col_offset as f64 + self.font_size.0 * col as f64,
-                    y: -self.font_size.1 * row as f64,
+                    x: -self.font_size.0 * col_offset as f64 + self.font_size.0 * (col + layout.col_offset) as f64,
+                    y: self.window_size.1 - (self.font_size.1 * layout.num_rows as f64) - self.font_size.1 * (row + layout.row_offset) as f64,
                 },
                 size: CGSize {
-                    width: self.window_size.0 + self.font_size.0 * col_offset as f64,
-                    height: self.window_size.1,
+                    width: self.font_size.0 * layout.num_cols as f64,
+                    height: self.font_size.1 * layout.num_rows as f64,
                 },
             },
             None,
@@ -251,12 +277,57 @@ impl GraphicsContext {
         frame.draw(&context);
     }
 
-    pub fn draw_text(&self, row: usize, col: usize, text: &[u8], effects: &[TextEffect]) {
-        self.draw_text_with_col_offset(row, col, text, effects, 0)
+    pub fn draw_text(&self, row: usize, col: usize, layout: &RenderLayout, text: &[u8], effects: &[TextEffect], theme: &Theme,
+        align_right: bool) {
+        self.draw_text_with_col_offset(row, col, layout, text, effects, theme, 0, align_right)
     }
 
-    pub fn draw_text_fit_view(&self, view: &View, text: &[u8], effects: &[TextEffect]) {
-        self.draw_text_with_col_offset(0, 0, text, effects, view.col_offset)
+    pub fn draw_text_fit_view(&self, view: &View, layout: &RenderLayout, text: &[u8], effects: &[TextEffect], theme: &Theme) {
+        self.draw_text_with_col_offset(0, 0, layout, text, effects, theme, view.col_offset, false)
+    }
+
+    pub fn set_word_wrapping(&self, wrap: bool) {
+    }
+
+    pub fn draw_popup_below(
+        &self,
+        row: usize,
+        col: usize,
+        layout: &RenderLayout,
+        text: &[u8],
+        outer_color: Color,
+        inner_color: Color,
+        effects: Option<&[TextEffect]>,
+        theme: &Theme,
+    ) {
+    }
+
+    pub fn draw_popup_above(
+        &self,
+        row: usize,
+        col: usize,
+        layout: &RenderLayout,
+        text: &[u8],
+        outer_color: Color,
+        inner_color: Color,
+        effects: Option<&[TextEffect]>,
+        theme: &Theme,
+    ) {
+    }
+
+    pub fn draw_completion_popup(
+        &self,
+        row: usize,
+        col: usize,
+        layout: &RenderLayout,
+        search_string: &str,
+        selection_view_index: usize,
+        text: &[u8],
+        outer_color: Color,
+        inner_color: Color,
+        effects: Option<&[TextEffect]>,
+        theme: &Theme,
+    ) {
     }
 }
 

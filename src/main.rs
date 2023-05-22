@@ -65,6 +65,8 @@ fn main() {
     let mut double_click_timer = Instant::now();
     let mut hover_timer = Some(Instant::now());
     event_loop.run(move |event, _, control_flow| {
+        control_flow.set_wait();
+
         editor.update_layouts(&window);
 
         // Handle incoming responses, re-render if necessary

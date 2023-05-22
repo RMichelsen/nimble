@@ -28,11 +28,6 @@ use crate::{
     view::View,
 };
 
-struct Document {
-    buffer: Buffer,
-    view: View,
-}
-
 pub const MAX_SHOWN_FILE_FINDER_ITEMS: usize = 10;
 
 pub enum EditorCommand {
@@ -45,38 +40,44 @@ pub enum EditorCommand {
     QuitAllNoCheck,
 }
 
+struct Document {
+    path: String,
+    buffer: Buffer,
+    view: View,
+}
+
 #[derive(Debug)]
-struct FileIdentifier {
+pub struct FileIdentifier {
     pub name: OsString,
     pub path: OsString,
 }
 
-struct FileFinder {
+pub struct FileFinder {
     pub files: Vec<FileIdentifier>,
     pub search_string: String,
     pub selection_index: usize,
     pub selection_view_offset: usize,
 }
 
-struct Workspace {
+pub struct Workspace {
     pub path: String,
     pub gitignore_paths: Vec<String>,
 }
 
-struct VisibleDocument {
+#[derive(Default)]
+struct DocumentLayout {
     pub layout: RenderLayout,
     pub numbers_layout: RenderLayout,
-};
+}
 
 pub struct Editor {
     renderer: Renderer,
     workspace: Option<Workspace>,
     file_finder: Option<FileFinder>,
-    documents: HashMap<String, Document>,
-    active_document: Option<String>,
-    visible_documents: (Option<String>, Option<String>),
-    visible_documents_layouts: (RenderLayout, RenderLayout),
-    visible_documents_numbers_layouts: (RenderLayout, RenderLayout),
+    open_documents: Vec<Document>,
+    active_view: usize,
+    visible_documents: [Option<usize>; 2],
+    visible_documents_layouts: [DocumentLayout; 2],
     file_finder_layout: RenderLayout,
     status_line_layout: RenderLayout,
     language_servers: HashMap<&'static str, Rc<RefCell<LanguageServer>>>,
@@ -86,13 +87,12 @@ impl Editor {
     pub fn new(window: &Window) -> Self {
         Self {
             renderer: Renderer::new(window),
-            workspace: None,
+            workspace: Some(Workspace { path: "/Users/rmichelsen/".to_string(), gitignore_paths: vec![]}),
             file_finder: None,
-            documents: HashMap::default(),
-            active_document: None,
-            visible_documents: (None, None),
-            visible_documents_layouts: (RenderLayout::default(), RenderLayout::default()),
-            visible_documents_numbers_layouts: (RenderLayout::default(), RenderLayout::default()),
+            open_documents: vec![],
+            active_view: 0,
+            visible_documents: [None, None],
+            visible_documents_layouts: [DocumentLayout::default(), DocumentLayout::default()],
             file_finder_layout: RenderLayout::default(),
             status_line_layout: RenderLayout::default(),
             language_servers: HashMap::default(),
@@ -100,10 +100,8 @@ impl Editor {
     }
 
     pub fn update_highlights(&mut self) -> bool {
-        if let Some(document) = &mut self.active_document {
-            if let Some(document) = self.documents.get_mut(document) {
-                return document.buffer.update_highlights();
-            }
+        if let Some(i) = self.visible_documents[self.active_view] {
+            return self.open_documents[i].buffer.update_highlights();
         }
         false
     }
@@ -117,28 +115,36 @@ impl Editor {
         );
         let font_size = self.renderer.get_font_size();
 
-        if let Some(document) = &self.active_document {
-            let document = &self.documents[document];
+        self.visible_documents_layouts = match self.visible_documents {
+            [Some(i), None] => {
+                let document = &mut self.open_documents[i];
+                    let numbers_num_cols = (0..)
+                        .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
+                        .count()
+                        + 2;
 
-            let numbers_num_cols = (0..)
-                .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
-                .count()
-                + 2;
+                    let layout = RenderLayout {
+                        row_offset: 0,
+                        col_offset: numbers_num_cols,
+                        num_rows: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(1),
+                        num_cols: (window_size.0 / font_size.0).ceil() as usize - numbers_num_cols,
+                    };
 
-            self.active_document_layout = RenderLayout {
-                row_offset: 0,
-                col_offset: numbers_num_cols,
-                num_rows: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(1),
-                num_cols: (window_size.0 / font_size.0).ceil() as usize - numbers_num_cols,
-            };
-
-            self.numbers_layout = RenderLayout {
-                row_offset: 0,
-                col_offset: 0,
-                num_rows: self.active_document_layout.num_rows,
-                num_cols: numbers_num_cols.saturating_sub(2),
-            };
-        }
+                    let numbers_layout = RenderLayout {
+                        row_offset: 0,
+                        col_offset: 0,
+                        num_rows: layout.num_rows,
+                        num_cols: numbers_num_cols.saturating_sub(2),
+                    };
+                    [DocumentLayout {
+                        layout,
+                        numbers_layout
+                    }, DocumentLayout::default()]
+                }
+            [Some(i), Some(j)] => [DocumentLayout::default(), DocumentLayout::default()],
+            [None, None] => [DocumentLayout::default(), DocumentLayout::default()],
+            _ => panic!("Impossible view configuration"),
+        };
 
         self.status_line_layout = RenderLayout {
             row_offset: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(2),
@@ -176,7 +182,7 @@ impl Editor {
                     for response in responses {
                         match response.method {
                             "initialize" => {
-                                for document in self.documents.values() {
+                                for document in &self.open_documents {
                                     if let Some(language) = document.buffer.language {
                                         if *identifier == language.identifier {
                                             document.buffer.send_did_open(&mut server);
@@ -188,10 +194,8 @@ impl Editor {
                                 if let Some(value) = response.value {
                                     server.save_completions(response.id, value);
                                 }
-                                if let Some(document) = &self.active_document {
-                                    self.documents
-                                        .get_mut(document)
-                                        .unwrap()
+                                if let Some(i) = self.visible_documents[self.active_view] {
+                                    self.open_documents[i]
                                         .buffer
                                         .update_completions(&mut server);
                                 }
@@ -201,10 +205,8 @@ impl Editor {
                                 if let Some(value) = response.value {
                                     server.save_signature_help(response.id, value);
                                 }
-                                if let Some(document) = &self.active_document {
-                                    self.documents
-                                        .get_mut(document)
-                                        .unwrap()
+                                if let Some(i) = self.visible_documents[self.active_view] {
+                                    self.open_documents[i]
                                         .buffer
                                         .update_signature_helps(&mut server);
                                 }
@@ -234,20 +236,20 @@ impl Editor {
     pub fn render(&mut self, window: &Window) {
         self.renderer.start_draw();
 
-        let active_document_layout = self.active_document_layout;
         let font_size = self.renderer.get_font_size();
-        if let Some(document) = &self.active_document {
-            let document = &self.documents[document];
 
+        for i in self.visible_documents.iter().flatten() {
             self.renderer.draw_buffer(
-                &document.buffer,
-                &active_document_layout,
-                &document.view,
-                &document.buffer.language_server,
+                &self.open_documents[*i].buffer,
+                &self.visible_documents_layouts[*i].layout,
+                &self.open_documents[*i].view,
+                &self.open_documents[*i].buffer.language_server,
             );
 
             self.renderer
-                .draw_numbers(&document.buffer, &self.numbers_layout, &document.view);
+                .draw_numbers(&self.open_documents[*i].buffer, &self.visible_documents_layouts[*i].numbers_layout, 
+                &self.open_documents[*i].view);
+
         }
 
         if let (Some(workspace), Some(file_finder)) = (&self.workspace, &self.file_finder) {
@@ -260,7 +262,7 @@ impl Editor {
 
         self.renderer.draw_status_line(
             &self.workspace,
-            &self.active_document,
+            self.visible_documents[self.active_view].map(|i| self.open_documents[i].path.clone()),
             &self.status_line_layout,
         );
 
@@ -283,17 +285,16 @@ impl Editor {
         mouse_position: LogicalPosition<f64>,
         modifiers: Option<ModifiersState>,
     ) {
-        let active_document_layout = self.active_document_layout;
+        let active_document_layout = &self.visible_documents_layouts[self.active_view];
         let font_size = self.renderer.get_font_size();
-        if let Some(document) = self.active_document() {
+        if let Some(i) = self.visible_documents[self.active_view] {
             let (line, col) =
-                document
-                    .view
-                    .get_line_col(&active_document_layout, mouse_position, font_size);
+                self.open_documents[i].view
+                    .get_line_col(&active_document_layout.layout, mouse_position, font_size);
             if modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::SHIFT)) {
-                document.buffer.insert_cursor(line, col);
+                self.open_documents[i].buffer.insert_cursor(line, col);
             } else {
-                document.buffer.set_cursor(line, col);
+                self.open_documents[i].buffer.set_cursor(line, col);
             }
         }
     }
@@ -307,14 +308,14 @@ impl Editor {
             return;
         }
 
-        let active_document_layout = self.active_document_layout;
+        let active_document_layout = &self.visible_documents_layouts[self.active_view];
         let font_size = self.renderer.get_font_size();
-        if let Some(document) = self.active_document() {
+        if let Some(i) = self.visible_documents[self.active_view] {
             let (line, col) =
-                document
-                    .view
-                    .get_line_col(&active_document_layout, mouse_position, font_size);
-            document.buffer.set_drag(line, col);
+                self.open_documents[i].view
+                    .get_line_col(&active_document_layout.layout, mouse_position, font_size);
+            self.open_documents[i].buffer.set_drag(line, col);
+
         }
     }
 
@@ -323,16 +324,16 @@ impl Editor {
         mouse_position: LogicalPosition<f64>,
         modifiers: Option<ModifiersState>,
     ) -> bool {
-        let active_document_layout = self.active_document_layout;
+        let active_document_layout = &self.visible_documents_layouts[self.active_view];
         let font_size = self.renderer.get_font_size();
-        if let Some(document) = self.active_document() {
+        if let Some(i) = self.visible_documents[self.active_view] {
             let (line, col) =
-                document
+                self.open_documents[i]
                     .view
-                    .get_line_col(&active_document_layout, mouse_position, font_size);
+                    .get_line_col(&active_document_layout.layout, mouse_position, font_size);
             if modifiers.is_some_and(|modifiers| modifiers.contains(ModifiersState::SHIFT)) {
-                document.buffer.insert_cursor(line, col);
-            } else if document.buffer.handle_mouse_double_click(line, col) {
+                self.open_documents[i].buffer.insert_cursor(line, col);
+            } else if self.open_documents[i].buffer.handle_mouse_double_click(line, col) {
                 return true;
             }
         }
@@ -340,31 +341,33 @@ impl Editor {
     }
 
     pub fn handle_scroll(&mut self, sign: isize) {
-        if let Some(document) = self.active_document() {
+        if let Some(i) = self.visible_documents[self.active_view] {
+            let document = &mut self.open_documents[i];
             document.view.handle_scroll(&document.buffer, sign);
         }
     }
 
     pub fn handle_mouse_hover(&mut self, mouse_position: LogicalPosition<f64>) {
-        let active_document_layout = self.active_document_layout;
+        let active_document_layout = &self.visible_documents_layouts[self.active_view];
         let font_size = self.renderer.get_font_size();
-        if let Some(document) = self.active_document() {
-            document
+        if let Some(i) = self.visible_documents[self.active_view] {
+            let document = &mut self.open_documents[i];
+                document
                 .view
-                .hover(&active_document_layout, mouse_position, font_size);
+                .hover(&active_document_layout.layout, mouse_position, font_size);
         }
     }
 
     pub fn handle_mouse_exit_hover(&mut self) {
         let font_size = self.renderer.get_font_size();
-        if let Some(document) = self.active_document() {
-            document.view.exit_hover();
+        if let Some(i) = self.visible_documents[self.active_view] {
+            self.open_documents[i].view.exit_hover();
         }
     }
 
     pub fn hovering(&mut self) -> bool {
-        if let Some(document) = self.active_document() {
-            return document.view.hover.is_some();
+        if let Some(i) = self.visible_documents[self.active_view] {
+            return self.open_documents[i].view.hover.is_some();
         }
         false
     }
@@ -374,16 +377,16 @@ impl Editor {
         cached_mouse_position: LogicalPosition<f64>,
         mouse_position: LogicalPosition<f64>,
     ) -> bool {
-        let active_document_layout = self.active_document_layout;
+        let active_document_layout = &self.visible_documents_layouts[self.active_view];
         let font_size = self.renderer.get_font_size();
-        if let Some(document) = self.active_document() {
+        if let Some(i) = self.visible_documents[self.active_view] {
             let (line, col) =
-                document
+                self.open_documents[i]
                     .view
-                    .get_line_col(&active_document_layout, mouse_position, font_size);
+                    .get_line_col(&active_document_layout.layout, mouse_position, font_size);
             return (line, col)
-                != document.view.get_line_col(
-                    &active_document_layout,
+                != self.open_documents[i].view.get_line_col(
+                    &active_document_layout.layout,
                     cached_mouse_position,
                     font_size,
                 );
@@ -404,8 +407,9 @@ impl Editor {
             }
             VirtualKeyCode::O if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 if self.ready_to_quit() && self.open_workspace(window) {
-                    self.documents.clear();
-                    self.active_document = None;
+                    self.open_documents.clear();
+                    self.active_view = 0;
+                    self.visible_documents = [None, None];
                     self.lsp_shutdown();
                     self.language_servers.clear();
                 }
@@ -481,72 +485,70 @@ impl Editor {
             _ => (),
         }
 
-        let active_document_layout = self.active_document_layout;
+        let active_document_layout = &self.visible_documents_layouts[self.active_view];
         let font_size = self.renderer.get_font_size();
         let mut delayed_command = None;
-        if let Some(document) = self.active_document() {
+        if let Some(i) = self.visible_documents[self.active_view] {
+            let document = &mut self.open_documents[i];
+
             if let Some(editor_command) = document.buffer.handle_key(
                 key_code,
                 modifiers,
                 &document.view,
-                &active_document_layout,
+                &active_document_layout.layout,
             ) {
                 match editor_command {
                     EditorCommand::CenterView => document
                         .view
-                        .center(&document.buffer, &active_document_layout),
+                        .center(&document.buffer, &active_document_layout.layout),
                     EditorCommand::CenterIfNotVisible => document
                         .view
-                        .center_if_not_visible(&document.buffer, &active_document_layout),
+                        .center_if_not_visible(&document.buffer, &active_document_layout.layout),
                     x => delayed_command = Some(x),
                 }
                 document
                     .view
-                    .adjust(&document.buffer, &active_document_layout)
+                    .adjust(&document.buffer, &active_document_layout.layout)
             }
         }
 
         if let Some(command) = delayed_command {
             match command {
                 EditorCommand::Quit => {
-                    let ready_to_quit = self
-                        .active_document()
-                        .is_some_and(|document| document.buffer.ready_to_quit());
+                    let ready_to_quit = 
+                        self.visible_documents[self.active_view]
+                        .is_some_and(|i| self.open_documents[i].buffer.ready_to_quit());
 
                     if ready_to_quit {
-                        self.documents
-                            .remove(self.active_document.as_ref().unwrap().as_str());
-                        self.active_document = self
-                            .documents
-                            .iter()
-                            .last()
-                            .map(|document| document.0.clone());
+                        self.open_documents.remove(self.visible_documents[self.active_view].unwrap());
+                        if !self.open_documents.is_empty() {
+                            self.visible_documents[self.active_view] = Some(self.open_documents.len().saturating_sub(1));
+                        }
                     }
 
-                    return !self.documents.is_empty();
+                    return !self.open_documents.is_empty();
                 }
                 EditorCommand::QuitNoCheck => {
-                    self.documents
-                        .remove(self.active_document.as_ref().unwrap().as_str());
-                    self.active_document = self
-                        .documents
-                        .iter()
-                        .last()
-                        .map(|document| document.0.clone());
+                    self.open_documents.remove(self.visible_documents[self.active_view].unwrap());
+                    if !self.open_documents.is_empty() {
+                        self.visible_documents[self.active_view] = Some(self.open_documents.len().saturating_sub(1));
+                    }
 
-                    return !self.documents.is_empty();
+                    return !self.open_documents.is_empty();
                 }
                 EditorCommand::QuitAll => {
                     let ready_to_quit = self.ready_to_quit();
                     if ready_to_quit {
-                        self.documents.clear();
-                        self.active_document = None;
+                        self.open_documents.clear();
+                        self.active_view = 0;
+                        self.visible_documents = [None, None];
                         return false;
                     }
                 }
                 EditorCommand::QuitAllNoCheck => {
-                    self.documents.clear();
-                    self.active_document = None;
+                    self.open_documents.clear();
+                    self.active_view = 0;
+                    self.visible_documents = [None, None];
                     return false;
                 }
                 _ => (),
@@ -565,66 +567,64 @@ impl Editor {
             return true;
         }
 
-        let active_document_layout = self.active_document_layout;
+        let active_document_layout = &self.visible_documents_layouts[self.active_view];
         let font_size = self.renderer.get_font_size();
 
         let mut delayed_command = None;
-        if let Some(document) = self.active_document() {
+        if let Some(i) = self.visible_documents[self.active_view] {
+            let document = &mut self.open_documents[i];
+
             if let Some(editor_command) = document.buffer.handle_char(c) {
                 match editor_command {
                     EditorCommand::CenterView => document
                         .view
-                        .center(&document.buffer, &active_document_layout),
+                        .center(&document.buffer, &active_document_layout.layout),
                     EditorCommand::CenterIfNotVisible => document
                         .view
-                        .center_if_not_visible(&document.buffer, &active_document_layout),
+                        .center_if_not_visible(&document.buffer, &active_document_layout.layout),
                     x => delayed_command = Some(x),
                 }
             }
             document
                 .view
-                .adjust(&document.buffer, &active_document_layout)
+                .adjust(&document.buffer, &active_document_layout.layout)
         }
 
         if let Some(command) = delayed_command {
             match command {
                 EditorCommand::Quit => {
-                    let ready_to_quit = self
-                        .active_document()
-                        .is_some_and(|document| document.buffer.ready_to_quit());
+                    let ready_to_quit =
+                        self.visible_documents[self.active_view]
+                        .is_some_and(|i| self.open_documents[i].buffer.ready_to_quit());
 
                     if ready_to_quit {
-                        self.documents
-                            .remove(self.active_document.as_ref().unwrap().as_str());
-                        self.active_document = self
-                            .documents
-                            .iter()
-                            .last()
-                            .map(|document| document.0.clone());
+                        self.open_documents.remove(self.visible_documents[self.active_view].unwrap());
+                        if !self.open_documents.is_empty() {
+                            self.visible_documents[self.active_view] = Some(self.open_documents.len().saturating_sub(1));
+                        }
                     }
 
-                    return !self.documents.is_empty();
+                    return !self.open_documents.is_empty();
                 }
                 EditorCommand::QuitNoCheck => {
-                    self.documents
-                        .remove(self.active_document.as_ref().unwrap().as_str());
-                    self.active_document = self
-                        .documents
-                        .iter()
-                        .last()
-                        .map(|document| document.0.clone());
+                    self.open_documents.remove(self.visible_documents[self.active_view].unwrap());
+                    if !self.open_documents.is_empty() {
+                        self.visible_documents[self.active_view] = Some(self.open_documents.len().saturating_sub(1));
+                    }
 
-                    return !self.documents.is_empty();
+                    return !self.open_documents.is_empty();
                 }
                 EditorCommand::QuitAll => {
                     let ready_to_quit = self.ready_to_quit();
-                    self.documents.clear();
-                    self.active_document = None;
+                    self.open_documents.clear();
+                    self.active_view = 0;
+                    self.visible_documents = [None, None];
                     return false;
                 }
                 EditorCommand::QuitAllNoCheck => {
-                    self.documents.clear();
-                    self.active_document = None;
+                    self.open_documents.clear();
+                    self.active_view = 0;
+                    self.visible_documents = [None, None];
                     return false;
                 }
                 _ => (),
@@ -635,9 +635,9 @@ impl Editor {
     }
 
     pub fn ready_to_quit(&mut self) -> bool {
-        self.documents
+        self.open_documents
             .iter_mut()
-            .all(|(_, document)| document.buffer.ready_to_quit())
+            .all(|document| document.buffer.ready_to_quit())
     }
 
     pub fn open_file(&mut self, path: &str, window: &Window) {
@@ -651,26 +651,22 @@ impl Editor {
             })
         });
 
-        if self.documents.contains_key(path) {
-            self.active_document = Some(path.to_string());
+        if let Some(i) = self.open_documents.iter().position(|document| document.path == path) {
+            self.visible_documents[self.active_view] = Some(i);
         } else {
-            self.documents.insert(
-                path.to_string(),
+            self.open_documents.push(
                 Document {
+                    path: path.to_string(),
                     buffer: Buffer::new(window, path, language_server),
                     view: View::new(),
                 },
             );
-            self.active_document = Some(path.to_string());
+            self.visible_documents[self.active_view] = Some(self.open_documents.len().saturating_sub(1));
         }
     }
 
-    fn active_document(&mut self) -> Option<&mut Document> {
-        if let Some(document) = &self.active_document {
-            self.documents.get_mut(document)
-        } else {
-            None
-        }
+    fn active_document_layout(&self) -> &DocumentLayout {
+        &self.visible_documents_layouts[self.active_view]
     }
 }
 

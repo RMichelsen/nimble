@@ -40,7 +40,7 @@ pub struct Color {
     pub b_u8: u8,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct RenderLayout {
     pub row_offset: usize,
     pub col_offset: usize,
@@ -162,7 +162,7 @@ impl Renderer {
     pub fn draw_status_line(
         &mut self,
         workspace: &Option<Workspace>,
-        opened_file: &Option<String>,
+        opened_file: Option<String>,
         layout: &RenderLayout,
     ) {
         self.context.fill_cells(
@@ -173,10 +173,10 @@ impl Renderer {
             self.theme.status_line_background_color,
         );
 
-        let (status_line, effects) = if let Some(opened_file) = opened_file {
+        let (status_line, mut effects) = if let Some(opened_file) = opened_file {
             let mut effects = vec![];
             if let Some(workspace) = workspace {
-                if workspace.path.is_prefix_of(opened_file) {
+                if workspace.path.is_prefix_of(&opened_file) {
                     effects.push(TextEffect {
                         kind: TextEffectKind::ForegroundColor(self.theme.palette.bg2),
                         start: 1,
@@ -198,6 +198,13 @@ impl Renderer {
                 vec![],
             )
         };
+    
+        effects.insert(0, TextEffect { 
+            kind: TextEffectKind::ForegroundColor(self.theme.palette.fg0),
+            start: 0,
+            length: status_line.len(),
+        });
+
         self.context.draw_text(
             0,
             0,
@@ -551,17 +558,6 @@ impl Color {
             r_u8: r,
             g_u8: g,
             b_u8: b,
-        }
-    }
-}
-
-impl RenderLayout {
-    pub fn default() -> Self {
-        Self {
-            row_offset: 0,
-            col_offset: 0,
-            num_rows: 0,
-            num_cols: 0,
         }
     }
 }
