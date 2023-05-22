@@ -10,7 +10,7 @@ use core_graphics::{
     context::CGContext,
     display::CGRectInfinite,
     geometry::{CGPoint, CGRect, CGSize},
-    path::CGPath,
+    path::CGPath, base::CGFloat,
 };
 use core_text::{
     framesetter::CTFramesetter,
@@ -206,6 +206,112 @@ impl GraphicsContext {
         ));
     }
 
+    fn get_text_size(
+        &self,
+        x: f64,
+        y: f64,
+        layout: &RenderLayout,
+        text: &[u8]
+    ) -> CGSize {
+        let utf8_str = unsafe { std::str::from_utf8_unchecked(text) };
+        let string = CFAttributedString::new(
+            &CFString::from_str(utf8_str).unwrap(),
+        );
+
+        unsafe {
+            CFAttributedStringSetAttribute(
+                string.to_void() as *const _,
+                CFRange::init(0, string.char_len()),
+                kCTFontAttributeName,
+                self.font,
+            );
+        };
+
+        let framesetter = CTFramesetter::new_with_attributed_string(string.to_void() as *const _);
+        let size = framesetter.suggest_frame_size_with_constraints(
+            CFRange::init(0, string.char_len()), null(), CGSize { 
+                width: (self.font_size.0 * layout.num_cols as f64 - x).clamp(0.0, f64::MAX),
+                height: (self.font_size.1 * layout.num_rows as f64 - y).clamp(0.0, f64::MAX)
+            });
+
+        size.0
+    }
+
+    fn draw_text_with_offset(
+        &self,
+        x: f64,
+        y: f64,
+        layout: &RenderLayout,
+        text: &[u8],
+        effects: &[TextEffect],
+        theme: &Theme,
+    ) {
+        let utf8_str = unsafe { std::str::from_utf8_unchecked(text) };
+        let string = CFAttributedString::new(
+            &CFString::from_str(utf8_str).unwrap(),
+        );
+        let string_len = utf8_str.len();
+
+        unsafe {
+            let text_color =
+                CGColor::rgb(theme.foreground_color.r as f64,
+                    theme.foreground_color.g as f64,
+                    theme.foreground_color.b as f64,
+                    1.0);
+            CFAttributedStringSetAttribute(
+                string.to_void() as *const _,
+                CFRange::init(0, string.char_len()),
+                core_text::string_attributes::kCTForegroundColorAttributeName,
+                text_color.to_void() as *const _,
+            );
+        }
+
+        for effect in effects {
+            match &effect.kind {
+                TextEffectKind::ForegroundColor(color) => {
+                    let text_color =
+                        CGColor::rgb(color.r as f64, color.g as f64, color.b as f64, 1.0);
+                    unsafe {
+                        CFAttributedStringSetAttribute(
+                            string.to_void() as *const _,
+                            CFRange::init(effect.start as isize, min(string_len.saturating_sub(effect.start), effect.length) as isize),
+                            core_text::string_attributes::kCTForegroundColorAttributeName,
+                            text_color.to_void() as *const _,
+                        );
+                    };
+                }
+            }
+        }
+
+        unsafe {
+            CFAttributedStringSetAttribute(
+                string.to_void() as *const _,
+                CFRange::init(0, string.char_len()),
+                kCTFontAttributeName,
+                self.font,
+            );
+        };
+
+        let context = get_current_context();
+
+        let size = self.get_text_size(x, y, layout, text);
+        use bstr::ByteSlice;
+        println!("font: {}, size: {:?}, text: {}", self.font_size.0, size, text.as_bstr());
+
+        let framesetter = CTFramesetter::new_with_attributed_string(string.to_void() as *const _);
+
+        let bounding_rect = CGPath::from_rect(
+            CGRect {
+                origin: CGPoint { x, y: self.window_size.1 - size.height - y },
+                size,
+            },
+            None,
+        );
+
+        let frame = framesetter.create_frame(CFRange::init(0, string.char_len()), &bounding_rect);
+        frame.draw(&context);
+    }
+
     pub fn draw_text_with_col_offset(
         &self,
         row: usize,
@@ -300,6 +406,19 @@ impl GraphicsContext {
         effects: Option<&[TextEffect]>,
         theme: &Theme,
     ) {
+        let (mut row_offset, col_offset) = (
+            (row + layout.row_offset) as f64 * self.font_size.1,
+            (col + layout.col_offset) as f64 * self.font_size.0,
+        );
+
+        self.draw_text_with_offset(
+            col_offset + self.font_size.1 * 0.5,
+            row_offset - self.font_size.1 * 0.5,
+            layout,
+            text,
+            effects.unwrap_or(&[]),
+            theme,
+        );
     }
 
     pub fn draw_popup_above(
@@ -313,6 +432,108 @@ impl GraphicsContext {
         effects: Option<&[TextEffect]>,
         theme: &Theme,
     ) {
+        // self.set_word_wrapping(true);
+
+        let (mut row_offset, col_offset) = (
+            (row + layout.row_offset) as f64 * self.font_size.1,
+            (col + layout.col_offset) as f64 * self.font_size.0,
+        );
+
+        // let (width, height) = self.get_text_bounding_box(
+        //     col_offset + self.font_size.1 * 0.5,
+        //     row_offset + self.font_size.1 * 0.5,
+        //     layout,
+        //     text,
+        // );
+
+        // if row_offset - height as f32 > 0.0 {
+        //     row_offset -= height as f32 + self.font_size.1 + self.font_size.1;
+        // }
+
+        // let (width, height) = (
+        //     (width / self.font_size.0 as f64).round() as usize,
+        //     (height / self.font_size.1 as f64).round() as usize,
+        // );
+
+        unsafe {
+            // let outer_brush = self
+            //     .render_target
+            //     .CreateSolidColorBrush(
+            //         &D2D1_COLOR_F {
+            //             r: outer_color.r,
+            //             g: outer_color.g,
+            //             b: outer_color.b,
+            //             a: 1.0,
+            //         },
+            //         Some(&DEFAULT_BRUSH_PROPERTIES),
+            //     )
+            //     .unwrap();
+
+            // self.render_target.FillRectangle(
+            //     &D2D_RECT_F {
+            //         left: col_offset - 0.5,
+            //         top: row_offset - 0.5,
+            //         right: col_offset + self.font_size.0 * width as f32 + self.font_size.1 + 0.5,
+            //         bottom: row_offset + self.font_size.1 * height as f32 + self.font_size.1 + 0.5,
+            //     },
+            //     &outer_brush,
+            // );
+
+            // context.fill_rect(CGRect::new(
+            //     &CGPoint::new(
+            //         col_offset,
+            //         self.window_size.1 - (self.font_size.1 * height) - row_offset,
+            //     ),
+            //     &CGSize::new(
+            //         self.font_size.0 * count as f64,
+            //         self.font_size.1 * 0.1 as f64,
+            //     ),
+            // ));
+
+            // let inner_brush = self
+            //     .render_target
+            //     .CreateSolidColorBrush(
+            //         &D2D1_COLOR_F {
+            //             r: inner_color.r,
+            //             g: inner_color.g,
+            //             b: inner_color.b,
+            //             a: 1.0,
+            //         },
+            //         Some(&DEFAULT_BRUSH_PROPERTIES),
+            //     )
+            //     .unwrap();
+
+            // self.render_target.FillRoundedRectangle(
+            //     &D2D1_ROUNDED_RECT {
+            //         rect: D2D_RECT_F {
+            //             left: col_offset - 0.5 + self.font_size.1 * 0.25,
+            //             top: row_offset - 0.5 + self.font_size.1 * 0.25,
+            //             right: col_offset
+            //                 + self.font_size.0 * width as f32
+            //                 + self.font_size.1 * 0.75
+            //                 + 0.5,
+            //             bottom: row_offset
+            //                 + self.font_size.1 * height as f32
+            //                 + self.font_size.1 * 0.75
+            //                 + 0.5,
+            //         },
+            //         radiusX: 1.5,
+            //         radiusY: 1.5,
+            //     },
+            //     &inner_brush,
+            // );
+        }
+
+        self.draw_text_with_offset(
+            col_offset + self.font_size.1 * 0.5,
+            row_offset + self.font_size.1 * 0.5,
+            layout,
+            text,
+            effects.unwrap_or(&[]),
+            theme,
+        );
+
+        // self.set_word_wrapping(false);
     }
 
     pub fn draw_completion_popup(
@@ -328,6 +549,90 @@ impl GraphicsContext {
         effects: Option<&[TextEffect]>,
         theme: &Theme,
     ) {
+        let (mut row_offset, col_offset) = (
+            (row + layout.row_offset) as f64 * self.font_size.1,
+            (col + layout.col_offset) as f64 * self.font_size.0,
+        );
+
+        let size = self.get_text_size(
+            col_offset + self.font_size.1 * 0.5,
+            row_offset - self.font_size.1 * 0.5,
+            layout,
+            text,
+        );
+
+        let width = size.width.max(
+            self.get_text_size(
+                col_offset + self.font_size.1 * 0.5,
+                row_offset - self.font_size.1 * 0.5,
+                layout,
+                search_string.as_bytes(),
+            )
+            .width,
+        );
+
+        let (width, height) = (
+            (width / self.font_size.0 as f64).round() as usize,
+            (size.height / self.font_size.1 as f64).round() as usize,
+        );
+
+
+        let context = get_current_context();
+        context.set_fill_color(&CGColor::rgb(
+            outer_color.r as f64,
+            outer_color.g as f64,
+            outer_color.b as f64,
+            1.0,
+        ));
+        context.fill_rect(
+            CGRect { 
+                origin: CGPoint { x: col_offset, y: self.window_size.1 - self.font_size.1 * (height + 1) as f64 - row_offset },
+                size: CGSize { 
+                    width: self.font_size.0 * width as f64 + self.font_size.1,
+                    height: self.font_size.1 * (height + 1) as f64
+                }
+            }
+        );
+
+        context.set_fill_color(&CGColor::rgb(
+            theme.foreground_color.r as f64,
+            theme.foreground_color.g as f64,
+            theme.foreground_color.b as f64,
+            1.0,
+        ));
+        context.fill_rect(
+            CGRect { 
+                origin: CGPoint { x: col_offset + self.font_size.1 * 0.25, y: self.window_size.1 - self.font_size.1 * 1.5 - row_offset},
+                size: CGSize { 
+                    width: self.font_size.0 * width as f64 + self.font_size.1 * 0.5,
+                    height: self.font_size.1 * 1.25,
+                }
+            }
+        );
+
+        self.draw_text_with_offset(
+            col_offset + self.font_size.1 * 0.5,
+            row_offset - self.font_size.1 * 0.25,
+            layout,
+            search_string.as_bytes(),
+            &[TextEffect {
+                kind: TextEffectKind::ForegroundColor(theme.background_color),
+                start: 0,
+                length: search_string.len(),
+            }],
+            theme,
+        );
+
+        row_offset += self.font_size.1;
+
+        self.draw_text_with_offset(
+            col_offset + self.font_size.1 * 0.5,
+            row_offset - self.font_size.1 * 0.5,
+            layout,
+            text,
+            effects.unwrap_or(&[]),
+            theme,
+        );
     }
 }
 

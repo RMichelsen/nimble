@@ -286,7 +286,7 @@ impl GraphicsContext {
         }
     }
 
-    pub fn get_text_bounding_box(
+    fn get_text_width_height(
         &self,
         x: f32,
         y: f32,
@@ -585,7 +585,7 @@ impl GraphicsContext {
             (col + layout.col_offset) as f32 * self.font_size.0,
         );
 
-        let (width, height) = self.get_text_bounding_box(
+        let (width, height) = self.get_text_width_height(
             col_offset + self.font_size.1 * 0.5,
             row_offset + self.font_size.1 * 0.5,
             layout,
@@ -689,7 +689,7 @@ impl GraphicsContext {
             (col + layout.col_offset) as f32 * self.font_size.0,
         );
 
-        let (width, height) = self.get_text_bounding_box(
+        let (width, height) = self.get_text_width_height(
             col_offset + self.font_size.1 * 0.5,
             row_offset + self.font_size.1 * 0.5,
             layout,
@@ -795,7 +795,7 @@ impl GraphicsContext {
             (col + layout.col_offset) as f32 * self.font_size.0,
         );
 
-        let (width, height) = self.get_text_bounding_box(
+        let (width, height) = self.get_text_width_height(
             col_offset + self.font_size.1 * 0.5,
             row_offset + self.font_size.1 * 0.5,
             layout,
@@ -803,7 +803,7 @@ impl GraphicsContext {
         );
 
         let width = width.max(
-            self.get_text_bounding_box(
+            self.get_text_width_height(
                 col_offset + self.font_size.1 * 0.5,
                 row_offset + self.font_size.1 * 0.5,
                 layout,
