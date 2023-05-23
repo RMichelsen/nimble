@@ -787,6 +787,9 @@ impl Buffer {
             ":qa!" => {
                 return Some(EditorCommand::QuitAllNoCheck);
             }
+            ":split" => {
+                return Some(EditorCommand::ToggleSplitView);
+            }
             _ => ()
         }
         None

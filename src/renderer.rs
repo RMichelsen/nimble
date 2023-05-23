@@ -91,6 +91,16 @@ impl Renderer {
         self.context.end_draw();
     }
 
+    pub fn clear_layout_contents(&self, layout: &RenderLayout) {
+        self.context.fill_cells(
+            0,
+            0,
+            layout,
+            (layout.num_cols, layout.num_rows),
+            self.theme.background_color,
+        );
+    }
+
     pub fn draw_file_finder(
         &mut self,
         layout: &mut RenderLayout,

@@ -60,7 +60,6 @@ impl PlatformResources {
         }
     }
     pub fn confirm_quit(&self, path: &str) -> Option<bool> {
-        println!("Confirming Quit!");
         unsafe {
             let panel: *mut Object = msg_send![class!(NSAlert), new];
 

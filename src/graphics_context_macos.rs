@@ -306,14 +306,6 @@ impl GraphicsContext {
         let context = get_current_context();
 
         let size = self.get_text_size(x, y, layout, text);
-        use bstr::ByteSlice;
-        println!(
-            "font: {}, size: {:?}, text: {}",
-            self.font_size.0,
-            size,
-            text.as_bstr()
-        );
-
         let framesetter = CTFramesetter::new_with_attributed_string(string.to_void() as *const _);
 
         let bounding_rect = CGPath::from_rect(

@@ -86,10 +86,22 @@ fn main() {
             } => {
                 match delta {
                     MouseScrollDelta::LineDelta(_, lines) => {
-                        editor.handle_scroll((lines as isize).signum());
+                        if let Some(position) = mouse_position {
+                            editor.handle_scroll(
+                                position.to_logical(window.scale_factor()),
+                                (lines as isize).signum(),
+                                &window,
+                            );
+                        };
                     }
                     MouseScrollDelta::PixelDelta(pos) => {
-                        editor.handle_scroll((pos.y as isize).signum());
+                        if let Some(position) = mouse_position {
+                            editor.handle_scroll(
+                                position.to_logical(window.scale_factor()),
+                                (pos.y as isize).signum(),
+                                &window,
+                            );
+                        }
                     }
                 }
                 request_redraw(&window);
@@ -132,6 +144,7 @@ fn main() {
                                 if editor.handle_mouse_double_click(
                                     position.to_logical(window.scale_factor()),
                                     modifiers,
+                                    &window,
                                 ) {
                                     double_click_timer = Instant::now();
                                 }
@@ -139,6 +152,7 @@ fn main() {
                                 editor.handle_mouse_pressed(
                                     position.to_logical(window.scale_factor()),
                                     modifiers,
+                                    &window,
                                 );
                             }
                         }
@@ -200,7 +214,10 @@ fn main() {
         if let Some(mouse_position) = mouse_position {
             if let Some(timer) = hover_timer {
                 if timer.elapsed() > Duration::from_millis(300) {
-                    editor.handle_mouse_hover(mouse_position.to_logical(window.scale_factor()));
+                    editor.handle_mouse_hover(
+                        mouse_position.to_logical(window.scale_factor()),
+                        &window,
+                    );
                     hover_timer = None;
                     request_redraw(&window);
                 }
