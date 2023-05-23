@@ -446,6 +446,7 @@ impl Editor {
                 &self.visible_documents_layouts[0].layout,
                 &self.open_documents[*left_document].view,
                 &self.open_documents[*left_document].buffer.language_server,
+                self.active_view == 0,
             );
 
             self.renderer.draw_numbers(
@@ -458,6 +459,7 @@ impl Editor {
                 &self.workspace,
                 Some(self.open_documents[*left_document].path.clone()),
                 &self.visible_documents_layouts[0].status_line_layout,
+                self.active_view == 0,
             );
         }
 
@@ -471,6 +473,7 @@ impl Editor {
                 &self.visible_documents_layouts[1].layout,
                 &self.open_documents[*right_document].view,
                 &self.open_documents[*right_document].buffer.language_server,
+                self.active_view == 1,
             );
 
             self.renderer.draw_numbers(
@@ -483,6 +486,7 @@ impl Editor {
                 &self.workspace,
                 Some(self.open_documents[*right_document].path.clone()),
                 &self.visible_documents_layouts[1].status_line_layout,
+                self.active_view == 1,
             );
         } else if self.split_view {
             self.renderer
@@ -495,6 +499,7 @@ impl Editor {
                     &self.workspace,
                     None,
                     &self.visible_documents_layouts[0].status_line_layout,
+                    self.active_view == 0,
                 );
             }
             if self.visible_documents[1].is_none() {
@@ -502,6 +507,7 @@ impl Editor {
                     &self.workspace,
                     None,
                     &self.visible_documents_layouts[1].status_line_layout,
+                    self.active_view == 1,
                 );
             }
             self.renderer.draw_split(window);
@@ -515,6 +521,7 @@ impl Editor {
                     num_rows: 2,
                     num_cols: (window_size.0 / font_size.0).ceil() as usize,
                 },
+                true,
             );
         }
 
@@ -664,14 +671,6 @@ impl Editor {
             window.inner_size().width as f64 / window.scale_factor(),
             window.inner_size().height as f64 / window.scale_factor(),
         );
-
-        if self.split_view {
-            self.active_view = if mouse_position.x < window_size.0 / 2.0 {
-                0
-            } else {
-                1
-            }
-        }
 
         let active_document_layout = &self.visible_documents_layouts[self.active_view];
         let font_size = self.renderer.get_font_size();

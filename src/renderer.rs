@@ -174,6 +174,7 @@ impl Renderer {
         workspace: &Option<Workspace>,
         opened_file: Option<String>,
         layout: &RenderLayout,
+        active: bool,
     ) {
         self.context.fill_cells(
             0,
@@ -183,12 +184,18 @@ impl Renderer {
             self.theme.status_line_background_color,
         );
 
+        let color = if active {
+            self.theme.palette.fg0
+        } else {
+            self.theme.palette.bg2
+        };
+
         let (status_line, mut effects) = if let Some(opened_file) = opened_file {
             let mut effects = vec![];
             if let Some(workspace) = workspace {
                 if workspace.path.is_prefix_of(&opened_file) {
                     effects.push(TextEffect {
-                        kind: TextEffectKind::ForegroundColor(self.theme.palette.bg2),
+                        kind: TextEffectKind::ForegroundColor(color),
                         start: 1,
                         length: workspace.path.len(),
                     });
@@ -212,7 +219,7 @@ impl Renderer {
         effects.insert(
             0,
             TextEffect {
-                kind: TextEffectKind::ForegroundColor(self.theme.palette.fg0),
+                kind: TextEffectKind::ForegroundColor(color),
                 start: 0,
                 length: status_line.len(),
             },
@@ -235,6 +242,7 @@ impl Renderer {
         layout: &RenderLayout,
         view: &View,
         language_server: &Option<Rc<RefCell<LanguageServer>>>,
+        active: bool,
     ) {
         use TextEffectKind::*;
 
@@ -289,7 +297,7 @@ impl Renderer {
                     length,
                 });
             }
-        } else {
+        } else if active {
             if buffer.mode != BufferMode::Insert {
                 view.visible_cursors_iter(layout, buffer, |row, col, num| {
                     self.context.fill_cells(
