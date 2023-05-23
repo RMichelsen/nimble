@@ -586,10 +586,10 @@ impl GraphicsContext {
         ));
         context.fill_rect(
             CGRect { 
-                origin: CGPoint { x: col_offset, y: self.window_size.1 - self.font_size.1 * (height + 1) as f64 - row_offset },
+                origin: CGPoint { x: col_offset, y: self.window_size.1 - self.font_size.1 * (height + 2) as f64 - row_offset },
                 size: CGSize { 
                     width: self.font_size.0 * width as f64 + self.font_size.1,
-                    height: self.font_size.1 * (height + 1) as f64
+                    height: self.font_size.1 * (height + 2) as f64
                 }
             }
         );
@@ -610,9 +610,42 @@ impl GraphicsContext {
             }
         );
 
+        context.set_fill_color(&CGColor::rgb(
+           inner_color.r as f64,
+           inner_color.g as f64,
+           inner_color.b as f64,
+            1.0,
+        ));
+        context.fill_rect(
+            CGRect { 
+                origin: CGPoint { x: col_offset + self.font_size.1 * 0.25, y: self.window_size.1 - self.font_size.1 * (height + 1) as f64 - self.font_size.1 * 0.75 - row_offset},
+                size: CGSize { 
+                    width: self.font_size.0 * width as f64 + self.font_size.1 * 0.5,
+                    height: self.font_size.1 * height as f64
+                    + self.font_size.1 * 0.25
+                }
+            }
+        );
+
+        context.set_fill_color(&CGColor::rgb(
+            theme.active_search_background_color.r as f64,
+            theme.active_search_background_color.g as f64,
+            theme.active_search_background_color.b as f64,
+            1.0,
+        ));
+        context.fill_rect(
+            CGRect { 
+                origin: CGPoint { x: col_offset + self.font_size.1 * 0.25, y: self.window_size.1 - self.font_size.1 * 0.75 - self.font_size.1 * (selection_view_index + 2) as f64 - row_offset},
+                size: CGSize { 
+                    width: self.font_size.0 * width as f64 + self.font_size.1 * 0.5,
+                    height: self.font_size.1
+                }
+            }
+        );
+
         self.draw_text_with_offset(
             col_offset + self.font_size.1 * 0.5,
-            row_offset - self.font_size.1 * 0.25,
+            row_offset + self.font_size.1 * 0.5,
             layout,
             search_string.as_bytes(),
             &[TextEffect {
@@ -627,7 +660,7 @@ impl GraphicsContext {
 
         self.draw_text_with_offset(
             col_offset + self.font_size.1 * 0.5,
-            row_offset - self.font_size.1 * 0.5,
+            row_offset + self.font_size.1 * 0.75,
             layout,
             text,
             effects.unwrap_or(&[]),
