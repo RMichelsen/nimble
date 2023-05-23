@@ -857,6 +857,8 @@ impl Editor {
                         if !self.open_documents.is_empty() {
                             self.visible_documents[self.active_view] =
                                 Some(self.open_documents.len().saturating_sub(1));
+                        } else {
+                            self.visible_documents = [None, None];
                         }
                     }
 
@@ -868,6 +870,8 @@ impl Editor {
                     if !self.open_documents.is_empty() {
                         self.visible_documents[self.active_view] =
                             Some(self.open_documents.len().saturating_sub(1));
+                    } else {
+                        self.visible_documents = [None, None];
                     }
 
                     return !self.open_documents.is_empty();
@@ -941,6 +945,8 @@ impl Editor {
                         if !self.open_documents.is_empty() {
                             self.visible_documents[self.active_view] =
                                 Some(self.open_documents.len().saturating_sub(1));
+                        } else {
+                            self.visible_documents = [None, None];
                         }
                     }
 
@@ -952,8 +958,9 @@ impl Editor {
                     if !self.open_documents.is_empty() {
                         self.visible_documents[self.active_view] =
                             Some(self.open_documents.len().saturating_sub(1));
+                    } else {
+                        self.visible_documents = [None, None];
                     }
-
                     return !self.open_documents.is_empty();
                 }
                 EditorCommand::QuitAll => {
