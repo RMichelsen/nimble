@@ -244,7 +244,7 @@ fn convert_theme(theme: &crate::theme::Theme) -> Theme {
             ThemeItem {
                 scope: ScopeSelectors::from_str("comment, punctuation.definition.comment").unwrap(),
                 style: StyleModifier {
-                    foreground: Some(Color::from(theme.palette.blue)),
+                    foreground: Some(Color::from(theme.numbers_color)),
                     background: None,
                     font_style: None,
                 },
@@ -327,7 +327,7 @@ fn convert_theme(theme: &crate::theme::Theme) -> Theme {
             ThemeItem {
                 scope: ScopeSelectors::from_str("entity.name.function").unwrap(),
                 style: StyleModifier {
-                    foreground: Some(Color::from(theme.palette.blue)),
+                    foreground: Some(Color::from(theme.palette.aqua)),
                     background: None,
                     font_style: None,
                 },

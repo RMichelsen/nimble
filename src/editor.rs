@@ -786,6 +786,8 @@ impl Editor {
             VirtualKeyCode::Back if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 if let Some(file_finder) = &mut self.file_finder {
                     file_finder.search_string.clear();
+                    file_finder.selection_index = 0;
+                    file_finder.selection_view_offset = 0;
                     return true;
                 }
             }
@@ -793,6 +795,8 @@ impl Editor {
                 if let Some(file_finder) = &mut self.file_finder {
                     file_finder.search_string.pop();
                     file_finder.filter_files();
+                    file_finder.selection_index = 0;
+                    file_finder.selection_view_offset = 0;
                     return true;
                 }
             }
@@ -922,6 +926,8 @@ impl Editor {
             if c as u8 >= 0x20 && c as u8 <= 0x7E {
                 file_finder.search_string.push(c);
                 file_finder.filter_files();
+                file_finder.selection_index = 0;
+                file_finder.selection_view_offset = 0;
             }
             return true;
         }
