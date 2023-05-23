@@ -460,14 +460,14 @@ impl Buffer {
             (Visual, "p") => {
                 self.push_undo_state();
                 self.command(CutSelection);
-                self.motion(Backward(1));
+                self.motion(BackwardOnceWrapping);
                 self.command(PasteSelection);
                 self.switch_to_normal_mode();
             }
             (Visual, "P") => {
                 self.push_undo_state();
                 self.command(CutSelection);
-                self.motion(Backward(1));
+                self.motion(BackwardOnceWrapping);
                 self.command(PasteCursorSelection);
                 self.switch_to_normal_mode();
             }
@@ -476,7 +476,7 @@ impl Buffer {
                 self.push_undo_state();
                 self.motion(ExtendSelection);
                 self.command(CutSelection);
-                self.motion(Backward(1));
+                self.motion(BackwardOnceWrapping);
                 self.command(PasteSelection);
                 self.switch_to_normal_mode();
             }
@@ -484,7 +484,7 @@ impl Buffer {
                 self.push_undo_state();
                 self.motion(ExtendSelection);
                 self.command(CutSelection);
-                self.motion(Backward(1));
+                self.motion(BackwardOnceWrapping);
                 self.command(PasteCursorSelection);
                 self.switch_to_normal_mode();
             }
@@ -810,6 +810,7 @@ impl Buffer {
             match motion {
                 Forward(count) => cursor.move_forward(&self.piece_table, count),
                 Backward(count) => cursor.move_backward(&self.piece_table, count),
+                BackwardOnceWrapping => cursor.move_backward_once_wrapping(&self.piece_table),
                 Up(count) => cursor.move_up(&self.piece_table, count),
                 Down(count) => cursor.move_down(&self.piece_table, count),
                 ForwardByWord => cursor.move_forward_by_word(&self.piece_table),
@@ -2007,6 +2008,7 @@ const VISUAL_MODE_COMMANDS: [&str; 21] = [
 enum CursorMotion<'a> {
     Forward(usize),
     Backward(usize),
+    BackwardOnceWrapping,
     Up(usize),
     Down(usize),
     ForwardByWord,

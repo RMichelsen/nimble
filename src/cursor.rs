@@ -193,8 +193,8 @@ impl Cursor {
         }
     }
 
-    pub fn move_forward_once_wrapping(&mut self, piece_table: &PieceTable) {
-        self.position = min(self.position + 1, piece_table.num_chars().saturating_sub(1));
+    pub fn move_backward_once_wrapping(&mut self, piece_table: &PieceTable) {
+        self.position = self.position.saturating_sub(1);
     }
 
     pub fn move_backward(&mut self, piece_table: &PieceTable, count: usize) {
