@@ -198,12 +198,15 @@ impl Renderer {
                 vec![],
             )
         };
-    
-        effects.insert(0, TextEffect { 
-            kind: TextEffectKind::ForegroundColor(self.theme.palette.fg0),
-            start: 0,
-            length: status_line.len(),
-        });
+
+        effects.insert(
+            0,
+            TextEffect {
+                kind: TextEffectKind::ForegroundColor(self.theme.palette.fg0),
+                start: 0,
+                length: status_line.len(),
+            },
+        );
 
         self.context.draw_text(
             0,

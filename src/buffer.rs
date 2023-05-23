@@ -78,7 +78,11 @@ impl Buffer {
         path: &str,
         language_server: Option<Rc<RefCell<LanguageServer>>>,
     ) -> Self {
-        let uri = "file:///".to_string() + &path.replace('\\', "/");
+        let uri = if path.starts_with('/') {
+            "file://".to_string()
+        } else {
+            "file:///".to_string()
+        } + &path.replace('\\', "/");
         let language = language_from_path(path);
         let piece_table = PieceTable::from_file(path);
 
@@ -674,7 +678,9 @@ impl Buffer {
             if let Some(line) = self.highlight_queue.pop_front() {
                 syntect.queue.lock().unwrap().push_back(IndexedLine {
                     index: line,
-                    text: self.piece_table.text_between_lines(line, line + SYNTECT_CACHE_FREQUENCY.saturating_sub(1)),
+                    text: self
+                        .piece_table
+                        .text_between_lines(line, line + SYNTECT_CACHE_FREQUENCY.saturating_sub(1)),
                 });
             }
 
