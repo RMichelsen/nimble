@@ -274,14 +274,15 @@ impl View {
             if !self.pos_in_edit_visible_range(line, col, layout) {
                 if line < self.line_offset {
                     self.line_offset = line;
-                } else if line > (self.line_offset + (layout.num_rows - 2)) {
-                    self.line_offset += line - (self.line_offset + (layout.num_rows - 2))
+                } else if line > (self.line_offset + (layout.num_rows.saturating_sub(2))) {
+                    self.line_offset +=
+                        line - (self.line_offset + (layout.num_rows.saturating_sub(2)))
                 }
 
                 if col < self.col_offset {
                     self.col_offset = col;
-                } else if col > (self.col_offset + (layout.num_cols - 2)) {
-                    self.col_offset += col - (self.col_offset + (layout.num_cols - 2))
+                } else if col > (self.col_offset + (layout.num_cols.saturating_sub(2))) {
+                    self.col_offset += col - (self.col_offset + (layout.num_cols.saturating_sub(2)))
                 }
             }
         }

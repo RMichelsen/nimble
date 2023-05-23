@@ -518,7 +518,7 @@ impl Renderer {
             .first()
             .is_some_and(|c| *c == b':' || *c == b'/')
         {
-            self.context.draw_popup_below(
+            self.context.draw_popup_above(
                 layout.num_rows,
                 0,
                 layout,

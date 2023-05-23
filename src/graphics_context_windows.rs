@@ -303,8 +303,10 @@ impl GraphicsContext {
                 .CreateTextLayout(
                     &wide_text,
                     &self.text_format,
-                    (self.font_size.0 * layout.num_cols as f32 - x).clamp(0.0, f32::MAX),
-                    (self.font_size.1 * layout.num_rows as f32 - y).clamp(0.0, f32::MAX),
+                    (self.font_size.0 * (layout.col_offset + layout.num_cols) as f32 - x)
+                        .clamp(0.0, f32::MAX),
+                    (self.font_size.1 * (layout.row_offset + layout.num_rows) as f32 - y)
+                        .clamp(0.0, f32::MAX),
                 )
                 .unwrap()
         };
@@ -350,8 +352,10 @@ impl GraphicsContext {
                 .CreateTextLayout(
                     &wide_text,
                     &self.text_format,
-                    (self.font_size.0 * layout.num_cols as f32 - x).clamp(0.0, f32::MAX),
-                    (self.font_size.1 * layout.num_rows as f32 - y).clamp(0.0, f32::MAX),
+                    (self.font_size.0 * (layout.col_offset + layout.num_cols) as f32 - x)
+                        .clamp(0.0, f32::MAX),
+                    (self.font_size.1 * (layout.row_offset + layout.num_rows) as f32 - y)
+                        .clamp(0.0, f32::MAX),
                 )
                 .unwrap()
         };

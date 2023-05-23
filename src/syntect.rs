@@ -4,6 +4,7 @@ use std::{
     str::FromStr,
     sync::{Arc, Mutex, RwLock},
     thread,
+    time::Duration,
 };
 
 use syntect::{
@@ -172,6 +173,7 @@ fn start_highlight_thread(
         }
 
         loop {
+            thread::sleep(Duration::from_millis(16));
             let (start, text) = if let Some(indexed_line) = queue.lock().unwrap().pop_front() {
                 (indexed_line.index, indexed_line.text)
             } else {
@@ -222,6 +224,7 @@ fn start_highlight_thread(
             internal_cache.insert(index, (parse_state, highlight_state));
         }
     });
+
     Some(())
 }
 

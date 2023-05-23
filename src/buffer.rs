@@ -34,7 +34,7 @@ use crate::{
     renderer::RenderLayout,
     syntect::{IndexedLine, Syntect, SYNTECT_CACHE_FREQUENCY},
     text_utils,
-    theme::EVERFOREST_DARK,
+    theme::Theme,
     view::View,
 };
 
@@ -76,6 +76,7 @@ impl Buffer {
     pub fn new(
         window: &Window,
         path: &str,
+        theme: &Theme,
         language_server: Option<Rc<RefCell<LanguageServer>>>,
     ) -> Self {
         let uri = if path.starts_with('/') {
@@ -103,13 +104,22 @@ impl Buffer {
             redo_stack: vec![],
             mode: BufferMode::Normal,
             language_server,
-            syntect: Syntect::new(path, &EVERFOREST_DARK),
+            syntect: Syntect::new(path, theme),
             input: String::new(),
             highlight_queue,
             search_string: String::new(),
             search_anchor: 0,
             version: 1,
             platform_resources: PlatformResources::new(window),
+        }
+    }
+
+    pub fn syntect_reload(&mut self, theme: &Theme) {
+        self.syntect = Syntect::new(&self.path, &theme);
+        let mut i = 0;
+        while i < self.piece_table.num_lines() {
+            self.highlight_queue.push_back(i);
+            i += SYNTECT_CACHE_FREQUENCY;
         }
     }
 

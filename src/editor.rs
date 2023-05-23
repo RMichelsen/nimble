@@ -733,6 +733,11 @@ impl Editor {
             }
             VirtualKeyCode::C if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 self.renderer.cycle_theme();
+
+                for document in &mut self.open_documents {
+                    document.buffer.syntect_reload(&self.renderer.theme);
+                }
+
                 return true;
             }
             VirtualKeyCode::O if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
@@ -854,11 +859,18 @@ impl Editor {
                     if ready_to_quit {
                         self.open_documents
                             .remove(self.visible_documents[self.active_view].unwrap());
-                        if !self.open_documents.is_empty() {
-                            self.visible_documents[self.active_view] =
-                                Some(self.open_documents.len().saturating_sub(1));
-                        } else {
+
+                        if self.open_documents.is_empty() {
                             self.visible_documents = [None, None];
+                        } else {
+                            for index in &mut self.visible_documents {
+                                if let Some(index) = index {
+                                    *index = min(
+                                        index.saturating_sub(1),
+                                        self.open_documents.len().saturating_sub(1),
+                                    );
+                                }
+                            }
                         }
                     }
 
@@ -867,11 +879,18 @@ impl Editor {
                 EditorCommand::QuitNoCheck => {
                     self.open_documents
                         .remove(self.visible_documents[self.active_view].unwrap());
-                    if !self.open_documents.is_empty() {
-                        self.visible_documents[self.active_view] =
-                            Some(self.open_documents.len().saturating_sub(1));
-                    } else {
+
+                    if self.open_documents.is_empty() {
                         self.visible_documents = [None, None];
+                    } else {
+                        for index in &mut self.visible_documents {
+                            if let Some(index) = index {
+                                *index = min(
+                                    index.saturating_sub(1),
+                                    self.open_documents.len().saturating_sub(1),
+                                );
+                            }
+                        }
                     }
 
                     return !self.open_documents.is_empty();
@@ -942,11 +961,18 @@ impl Editor {
                     if ready_to_quit {
                         self.open_documents
                             .remove(self.visible_documents[self.active_view].unwrap());
-                        if !self.open_documents.is_empty() {
-                            self.visible_documents[self.active_view] =
-                                Some(self.open_documents.len().saturating_sub(1));
-                        } else {
+
+                        if self.open_documents.is_empty() {
                             self.visible_documents = [None, None];
+                        } else {
+                            for index in &mut self.visible_documents {
+                                if let Some(index) = index {
+                                    *index = min(
+                                        index.saturating_sub(1),
+                                        self.open_documents.len().saturating_sub(1),
+                                    );
+                                }
+                            }
                         }
                     }
 
@@ -955,12 +981,20 @@ impl Editor {
                 EditorCommand::QuitNoCheck => {
                     self.open_documents
                         .remove(self.visible_documents[self.active_view].unwrap());
-                    if !self.open_documents.is_empty() {
-                        self.visible_documents[self.active_view] =
-                            Some(self.open_documents.len().saturating_sub(1));
-                    } else {
+
+                    if self.open_documents.is_empty() {
                         self.visible_documents = [None, None];
+                    } else {
+                        for index in &mut self.visible_documents {
+                            if let Some(index) = index {
+                                *index = min(
+                                    index.saturating_sub(1),
+                                    self.open_documents.len().saturating_sub(1),
+                                );
+                            }
+                        }
                     }
+
                     return !self.open_documents.is_empty();
                 }
                 EditorCommand::QuitAll => {
@@ -1009,7 +1043,7 @@ impl Editor {
         } else {
             self.open_documents.push(Document {
                 path: path.to_string(),
-                buffer: Buffer::new(window, path, language_server),
+                buffer: Buffer::new(window, path, &self.renderer.theme, language_server),
                 view: View::new(),
             });
             self.visible_documents[self.active_view] =
