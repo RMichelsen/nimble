@@ -148,6 +148,12 @@ impl Buffer {
                 self.cursors[0].position = position;
                 self.cursors[0].anchor = position;
             }
+        } else {
+            self.cursors.truncate(1);
+            self.switch_to_normal_mode();
+            let last_position = self.piece_table.num_chars().saturating_sub(2);
+            self.cursors[0].position = last_position;
+            self.cursors[0].anchor = last_position;
         }
     }
 
@@ -175,11 +181,10 @@ impl Buffer {
                     self.switch_to_visual_mode();
                     self.motion(ExtendSelectionInside(b'w'));
                     return true;
-                } else {
-                    self.set_cursor(line, col);
                 }
             }
         }
+        self.set_cursor(line, col);
         false
     }
 

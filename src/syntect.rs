@@ -173,7 +173,7 @@ fn start_highlight_thread(
         }
 
         loop {
-            thread::sleep(Duration::from_millis(16));
+            thread::sleep(Duration::from_micros(8333));
             let (start, text) = if let Some(indexed_line) = queue.lock().unwrap().pop_front() {
                 (indexed_line.index, indexed_line.text)
             } else {

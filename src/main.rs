@@ -39,7 +39,7 @@ use winit::platform::macos::WindowExtMacOS;
 use winit::{
     dpi::{LogicalSize, PhysicalPosition},
     event::{ElementState, Event, ModifiersState, MouseButton, MouseScrollDelta, WindowEvent},
-    event_loop::EventLoop,
+    event_loop::{ControlFlow, EventLoop},
     window::{Window, WindowBuilder},
 };
 
@@ -65,6 +65,8 @@ fn main() {
     let mut double_click_timer = Instant::now();
     let mut hover_timer = Some(Instant::now());
     event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_micros(8333));
+
         editor.update_layouts(&window);
 
         // Handle incoming responses, re-render if necessary
