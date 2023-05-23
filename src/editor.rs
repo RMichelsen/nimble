@@ -68,6 +68,7 @@ pub struct Workspace {
 struct DocumentLayout {
     pub layout: RenderLayout,
     pub numbers_layout: RenderLayout,
+    pub status_line_layout: RenderLayout,
 }
 
 pub struct Editor {
@@ -80,7 +81,6 @@ pub struct Editor {
     visible_documents: [Option<usize>; 2],
     visible_documents_layouts: [DocumentLayout; 2],
     file_finder_layout: RenderLayout,
-    status_line_layout: RenderLayout,
     language_servers: HashMap<&'static str, Rc<RefCell<LanguageServer>>>,
 }
 
@@ -96,7 +96,6 @@ impl Editor {
             visible_documents: [None, None],
             visible_documents_layouts: [DocumentLayout::default(), DocumentLayout::default()],
             file_finder_layout: RenderLayout::default(),
-            status_line_layout: RenderLayout::default(),
             language_servers: HashMap::default(),
         }
     }
@@ -118,7 +117,79 @@ impl Editor {
         let font_size = self.renderer.get_font_size();
 
         self.visible_documents_layouts = match self.visible_documents {
-            [Some(i), None] => {
+            [Some(i), Some(j)] if self.split_view => {
+                let left_document = &mut self.open_documents[i];
+                let left_numbers_num_cols = (0..)
+                    .take_while(|i| 10usize.pow(*i) <= left_document.buffer.piece_table.num_lines())
+                    .count()
+                    + 2;
+
+                let left_layout = RenderLayout {
+                    row_offset: 0,
+                    col_offset: left_numbers_num_cols,
+                    num_rows: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(1),
+                    num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize
+                        - left_numbers_num_cols,
+                };
+
+                let left_numbers_layout = RenderLayout {
+                    row_offset: 0,
+                    col_offset: 0,
+                    num_rows: left_layout.num_rows,
+                    num_cols: left_numbers_num_cols.saturating_sub(2),
+                };
+
+                let left_status_line_layout = RenderLayout {
+                    row_offset: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(2),
+                    col_offset: 0,
+                    num_rows: 2,
+                    num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
+                };
+
+                let right_document = &mut self.open_documents[j];
+                let right_numbers_num_cols = (0..)
+                    .take_while(|i| {
+                        10usize.pow(*i) <= right_document.buffer.piece_table.num_lines()
+                    })
+                    .count()
+                    + 2;
+
+                let right_layout = RenderLayout {
+                    row_offset: 0,
+                    col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize
+                        + right_numbers_num_cols,
+                    num_rows: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(1),
+                    num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
+                };
+
+                let right_numbers_layout = RenderLayout {
+                    row_offset: 0,
+                    col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
+                    num_rows: right_layout.num_rows,
+                    num_cols: right_numbers_num_cols.saturating_sub(2),
+                };
+
+                let right_status_line_layout = RenderLayout {
+                    row_offset: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(2),
+                    col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
+                    num_rows: 2,
+                    num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
+                };
+
+                [
+                    DocumentLayout {
+                        layout: left_layout,
+                        numbers_layout: left_numbers_layout,
+                        status_line_layout: left_status_line_layout,
+                    },
+                    DocumentLayout {
+                        layout: right_layout,
+                        numbers_layout: right_numbers_layout,
+                        status_line_layout: right_status_line_layout,
+                    },
+                ]
+            }
+            [Some(i), _] => {
                 let document = &mut self.open_documents[i];
                 let numbers_num_cols = (0..)
                     .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
@@ -143,6 +214,17 @@ impl Editor {
                     num_cols: numbers_num_cols.saturating_sub(2),
                 };
 
+                let status_line_layout = RenderLayout {
+                    row_offset: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(2),
+                    col_offset: 0,
+                    num_rows: 2,
+                    num_cols: if self.split_view {
+                        (window_size.0 / font_size.0 / 2.0).ceil() as usize
+                    } else {
+                        (window_size.0 / font_size.0).ceil() as usize
+                    },
+                };
+
                 let right_layout = if self.split_view {
                     DocumentLayout {
                         layout: RenderLayout {
@@ -153,6 +235,13 @@ impl Editor {
                             num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
                         },
                         numbers_layout: RenderLayout::default(),
+                        status_line_layout: RenderLayout {
+                            row_offset: ((window_size.1 / font_size.1).ceil() as usize)
+                                .saturating_sub(2),
+                            col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
+                            num_rows: 2,
+                            num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
+                        },
                     }
                 } else {
                     DocumentLayout::default()
@@ -162,75 +251,100 @@ impl Editor {
                     DocumentLayout {
                         layout,
                         numbers_layout,
+                        status_line_layout,
                     },
                     right_layout,
                 ]
             }
-            [Some(i), Some(j)] if self.split_view => {
-                let left_document = &mut self.open_documents[i];
-                let left_numbers_num_cols = (0..)
-                    .take_while(|i| 10usize.pow(*i) <= left_document.buffer.piece_table.num_lines())
-                    .count()
-                    + 2;
+            [None, Some(i)] => {
+                if !self.split_view {
+                    [DocumentLayout::default(), DocumentLayout::default()]
+                } else {
+                    let left_layout = DocumentLayout {
+                        layout: RenderLayout {
+                            row_offset: 0,
+                            col_offset: 0,
+                            num_rows: ((window_size.1 / font_size.1).ceil() as usize)
+                                .saturating_sub(1),
+                            num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
+                        },
+                        numbers_layout: RenderLayout::default(),
+                        status_line_layout: RenderLayout {
+                            row_offset: ((window_size.1 / font_size.1).ceil() as usize)
+                                .saturating_sub(2),
+                            col_offset: 0,
+                            num_rows: 2,
+                            num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
+                        },
+                    };
 
-                let left_layout = RenderLayout {
-                    row_offset: 0,
-                    col_offset: left_numbers_num_cols,
-                    num_rows: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(1),
-                    num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize
-                        - left_numbers_num_cols,
-                };
+                    let right_document = &mut self.open_documents[i];
+                    let right_numbers_num_cols = (0..)
+                        .take_while(|i| {
+                            10usize.pow(*i) <= right_document.buffer.piece_table.num_lines()
+                        })
+                        .count()
+                        + 2;
 
-                let left_numbers_layout = RenderLayout {
-                    row_offset: 0,
+                    let right_layout = RenderLayout {
+                        row_offset: 0,
+                        col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize
+                            + right_numbers_num_cols,
+                        num_rows: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(1),
+                        num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
+                    };
+
+                    let right_numbers_layout = RenderLayout {
+                        row_offset: 0,
+                        col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
+                        num_rows: right_layout.num_rows,
+                        num_cols: right_numbers_num_cols.saturating_sub(2),
+                    };
+
+                    let right_status_line_layout = RenderLayout {
+                        row_offset: ((window_size.1 / font_size.1).ceil() as usize)
+                            .saturating_sub(2),
+                        col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
+                        num_rows: 2,
+                        num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
+                    };
+
+                    [
+                        left_layout,
+                        DocumentLayout {
+                            layout: right_layout,
+                            numbers_layout: right_numbers_layout,
+                            status_line_layout: right_status_line_layout,
+                        },
+                    ]
+                }
+            }
+            [None, None] => {
+                let left_status_line_layout = RenderLayout {
+                    row_offset: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(2),
                     col_offset: 0,
-                    num_rows: left_layout.num_rows,
-                    num_cols: left_numbers_num_cols.saturating_sub(2),
+                    num_rows: 2,
+                    num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
                 };
 
-                let right_document = &mut self.open_documents[j];
-                let right_numbers_num_cols = (0..)
-                    .take_while(|i| {
-                        10usize.pow(*i) <= right_document.buffer.piece_table.num_lines()
-                    })
-                    .count()
-                    + 2;
-
-                let right_layout = RenderLayout {
-                    row_offset: 0,
-                    col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize
-                        + right_numbers_num_cols,
-                    num_rows: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(1),
-                    num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize
-                        - right_numbers_num_cols,
-                };
-
-                let right_numbers_layout = RenderLayout {
-                    row_offset: 0,
+                let right_status_line_layout = RenderLayout {
+                    row_offset: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(2),
                     col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-                    num_rows: right_layout.num_rows,
-                    num_cols: right_numbers_num_cols.saturating_sub(2),
+                    num_rows: 2,
+                    num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
                 };
+
                 [
                     DocumentLayout {
-                        layout: left_layout,
-                        numbers_layout: left_numbers_layout,
+                        status_line_layout: left_status_line_layout,
+                        ..Default::default()
                     },
                     DocumentLayout {
-                        layout: right_layout,
-                        numbers_layout: right_numbers_layout,
+                        status_line_layout: right_status_line_layout,
+                        ..Default::default()
                     },
                 ]
             }
-            [None, None] => [DocumentLayout::default(), DocumentLayout::default()],
-            _ => panic!("Impossible view configuration"),
-        };
-
-        self.status_line_layout = RenderLayout {
-            row_offset: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(2),
-            col_offset: 0,
-            num_rows: 2,
-            num_cols: (window_size.0 / font_size.0).ceil() as usize,
         };
 
         if let (Some(workspace), Some(file_finder)) = (&self.workspace, &self.file_finder) {
@@ -316,6 +430,10 @@ impl Editor {
     pub fn render(&mut self, window: &Window) {
         self.renderer.start_draw();
 
+        let window_size = (
+            window.inner_size().width as f64 / window.scale_factor(),
+            window.inner_size().height as f64 / window.scale_factor(),
+        );
         let font_size = self.renderer.get_font_size();
 
         if let Some(left_document) = self.visible_documents.get(0).unwrap() {
@@ -334,6 +452,12 @@ impl Editor {
                 &self.open_documents[*left_document].buffer,
                 &self.visible_documents_layouts[0].numbers_layout,
                 &self.open_documents[*left_document].view,
+            );
+
+            self.renderer.draw_status_line(
+                &self.workspace,
+                Some(self.open_documents[*left_document].path.clone()),
+                &self.visible_documents_layouts[0].status_line_layout,
             );
         }
 
@@ -354,9 +478,44 @@ impl Editor {
                 &self.visible_documents_layouts[1].numbers_layout,
                 &self.open_documents[*right_document].view,
             );
+
+            self.renderer.draw_status_line(
+                &self.workspace,
+                Some(self.open_documents[*right_document].path.clone()),
+                &self.visible_documents_layouts[1].status_line_layout,
+            );
         } else if self.split_view {
             self.renderer
                 .clear_layout_contents(&self.visible_documents_layouts[1].layout);
+        }
+
+        if self.split_view {
+            if self.visible_documents[0].is_none() {
+                self.renderer.draw_status_line(
+                    &self.workspace,
+                    None,
+                    &self.visible_documents_layouts[0].status_line_layout,
+                );
+            }
+            if self.visible_documents[1].is_none() {
+                self.renderer.draw_status_line(
+                    &self.workspace,
+                    None,
+                    &self.visible_documents_layouts[1].status_line_layout,
+                );
+            }
+            self.renderer.draw_split(window);
+        } else if self.visible_documents == [None, None] {
+            self.renderer.draw_status_line(
+                &self.workspace,
+                None,
+                &RenderLayout {
+                    row_offset: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(2),
+                    col_offset: 0,
+                    num_rows: 2,
+                    num_cols: (window_size.0 / font_size.0).ceil() as usize,
+                },
+            );
         }
 
         if let (Some(workspace), Some(file_finder)) = (&self.workspace, &self.file_finder) {
@@ -366,12 +525,6 @@ impl Editor {
                 file_finder,
             );
         }
-
-        self.renderer.draw_status_line(
-            &self.workspace,
-            self.visible_documents[self.active_view].map(|i| self.open_documents[i].path.clone()),
-            &self.status_line_layout,
-        );
 
         self.renderer.end_draw();
     }
@@ -575,6 +728,10 @@ impl Editor {
     ) -> bool {
         match key_code {
             VirtualKeyCode::T if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+                self.split_view = !self.split_view;
+                return true;
+            }
+            VirtualKeyCode::C if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 self.renderer.cycle_theme();
                 return true;
             }

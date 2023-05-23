@@ -560,6 +560,29 @@ impl Renderer {
             true,
         );
     }
+
+    pub fn draw_split(&mut self, window: &Window) {
+        let window_size = (
+            window.inner_size().width as f64 / window.scale_factor(),
+            window.inner_size().height as f64 / window.scale_factor(),
+        );
+
+        let font_size = self.get_font_size();
+
+        let num_rows = ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(1);
+
+        let layout = RenderLayout {
+            row_offset: 0,
+            col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
+            num_rows,
+            num_cols: 2,
+        };
+
+        for i in 0..num_rows {
+            self.context
+                .fill_cell_slim_line(i, 0, &layout, self.theme.numbers_color);
+        }
+    }
 }
 
 impl Color {
