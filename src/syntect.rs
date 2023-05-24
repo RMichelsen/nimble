@@ -32,7 +32,7 @@ impl From<crate::renderer::Color> for Color {
     }
 }
 
-pub const SYNTECT_CACHE_FREQUENCY: usize = 50;
+pub const SYNTECT_CACHE_FREQUENCY: usize = 100;
 
 pub struct IndexedLine {
     pub index: usize,

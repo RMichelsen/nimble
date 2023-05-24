@@ -1,7 +1,6 @@
 use std::{
     cell::RefCell,
     cmp::{max, min},
-    collections::HashMap,
     ops::Range,
     rc::Rc,
 };
@@ -89,7 +88,7 @@ pub fn get_filtered_completions(
     let mut merged_items: Vec<CompletionItem> = vec![];
     for item in &completion_list.items {
         if !merged_items.iter().any(|x| {
-            x.insert_text.as_ref().unwrap_or(&item.label)
+            x.insert_text.as_ref().unwrap_or(&x.label)
                 == item.insert_text.as_ref().unwrap_or(&item.label)
         }) {
             merged_items.push(item.clone());
@@ -97,7 +96,7 @@ pub fn get_filtered_completions(
             let existing_item = merged_items
                 .iter_mut()
                 .find(|x| {
-                    x.insert_text.as_ref().unwrap_or(&item.label)
+                    x.insert_text.as_ref().unwrap_or(&x.label)
                         == item.insert_text.as_ref().unwrap_or(&item.label)
                 })
                 .unwrap();
