@@ -374,11 +374,11 @@ impl Renderer {
             let mut completion_string = String::default();
             for (i, item) in completions
                 .iter()
-                .enumerate()
                 .skip(request.selection_view_offset)
+                .enumerate()
                 .take(completion_view.height)
             {
-                if i - request.selection_view_offset == selected_item {
+                if i == selected_item {
                     selected_item_start_position = completion_string.len();
                 }
 
@@ -399,9 +399,74 @@ impl Renderer {
                         .insert_text
                         .as_ref()
                         .unwrap_or(&completions[request.selection_index].label)
-                        .len(),
+                        .len()
+                        + 1,
                 },
             ];
+
+            let detail_string = completions[request.selection_index]
+                .detail
+                .clone()
+                .unwrap_or_default();
+
+            let label_string = if completions[request.selection_index]
+                .insert_text
+                .as_ref()
+                .is_some_and(|text| {
+                    text.trim() != completions[request.selection_index].label.trim()
+                }) {
+                completions[request.selection_index].label.clone()
+            } else {
+                String::default()
+            };
+
+            let mut label_detail_combined = String::default();
+
+            let longest_detail_string = detail_string
+                .split('\n')
+                .max_by(|x, y| x.len().cmp(&y.len()))
+                .unwrap_or("")
+                .len();
+
+            if detail_string
+                .as_bytes()
+                .iter()
+                .filter(|&c| *c == b'\n')
+                .count()
+                == label_string
+                    .as_bytes()
+                    .iter()
+                    .filter(|&c| *c == b'\n')
+                    .count()
+            {
+                for (detail, label) in detail_string.split('\n').zip(label_string.split('\n')) {
+                    label_detail_combined.push_str(detail);
+                    for _ in 0..longest_detail_string - detail.len() {
+                        label_detail_combined.push(' ');
+                    }
+                    label_detail_combined.push_str(label);
+                    label_detail_combined.push('\n');
+                }
+            }
+
+            if !label_detail_combined.is_empty() {
+                let bytes: Vec<u8> = label_detail_combined
+                    .into_bytes()
+                    .into_iter()
+                    .map(|c| if c.is_ascii() { c } else { b' ' })
+                    .collect();
+
+                self.context.draw_popup_below(
+                    completion_view.row,
+                    completion_view.col + completion_view.width,
+                    layout,
+                    bytes.trim_ascii_end(),
+                    self.theme.selection_background_color,
+                    self.theme.background_color,
+                    None,
+                    &self.theme,
+                );
+            }
 
             self.context.draw_text(
                 completion_view.row,

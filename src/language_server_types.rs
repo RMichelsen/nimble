@@ -81,7 +81,10 @@ pub struct ClientCapabilities {
 #[serde(rename_all = "camelCase")]
 pub struct InitializeParams {
     pub process_id: u32,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub root_uri: Option<String>,
+
     pub capabilities: ClientCapabilities,
 }
 
@@ -112,6 +115,8 @@ pub struct DidOpenTextDocumentParams {
 pub struct Diagnostic {
     pub range: Range,
     pub message: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub severity: Option<i32>,
 }
 
@@ -181,7 +186,11 @@ pub struct ParameterInformation {
 #[serde(rename_all = "camelCase")]
 pub struct SignatureInformation {
     pub label: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub parameters: Option<Vec<ParameterInformation>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub active_parameter: Option<u32>,
 }
 
@@ -189,7 +198,11 @@ pub struct SignatureInformation {
 #[serde(rename_all = "camelCase")]
 pub struct SignatureHelp {
     pub signatures: Vec<SignatureInformation>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub active_signature: Option<u32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub active_parameter: Option<u32>,
 }
 
@@ -198,8 +211,13 @@ pub struct SignatureHelp {
 pub struct SignatureHelpContext {
     // Invoked = 1, TriggerCharacer = 2, ContentChange = 3
     pub trigger_kind: i32,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger_character: Option<String>,
+
     pub is_retrigger: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub active_signature_help: Option<SignatureHelp>,
 }
 
@@ -231,6 +249,9 @@ pub struct CompletionItem {
     pub label: String,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub insert_text: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -257,6 +278,7 @@ pub struct CompletionOptions {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SignatureHelpOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger_characters: Option<Vec<String>>,
 }
 

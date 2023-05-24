@@ -1,6 +1,7 @@
 use std::{
     cell::RefCell,
     cmp::{max, min},
+    collections::HashMap,
     ops::Range,
     rc::Rc,
 };
@@ -85,6 +86,34 @@ pub fn get_filtered_completions(
     request: &CompletionRequest,
     cursor_position: usize,
 ) -> Vec<CompletionItem> {
+    let mut merged_items: Vec<CompletionItem> = vec![];
+    for item in &completion_list.items {
+        if !merged_items.iter().any(|x| {
+            x.insert_text.as_ref().unwrap_or(&item.label)
+                == item.insert_text.as_ref().unwrap_or(&item.label)
+        }) {
+            merged_items.push(item.clone());
+        } else {
+            let existing_item = merged_items
+                .iter_mut()
+                .find(|x| {
+                    x.insert_text.as_ref().unwrap_or(&item.label)
+                        == item.insert_text.as_ref().unwrap_or(&item.label)
+                })
+                .unwrap();
+
+            existing_item.label.push(b'\n' as char);
+            existing_item.label.push_str(&item.label);
+
+            if let Some(existing_details) = &mut existing_item.detail {
+                if let Some(details) = &item.detail {
+                    existing_details.push(b'\n' as char);
+                    existing_details.push_str(&details)
+                }
+            }
+        }
+    }
+
     // Filter from start of word if manually triggered or
     let request_position = if request.manually_triggered {
         cursor_position.saturating_sub(
@@ -103,8 +132,7 @@ pub fn get_filtered_completions(
         .take(cursor_position - request_position)
         .collect();
 
-    let mut filtered_completions: Vec<CompletionItem> = completion_list
-        .items
+    let mut filtered_completions: Vec<CompletionItem> = merged_items
         .iter()
         .filter(|item| {
             item.insert_text
