@@ -5,6 +5,7 @@ use std::{
     str::pattern::Pattern,
 };
 
+use url::Url;
 use winit::window::Window;
 
 use crate::{
@@ -172,7 +173,7 @@ impl Renderer {
     pub fn draw_status_line(
         &mut self,
         workspace: &Option<Workspace>,
-        opened_file: Option<String>,
+        opened_file: Option<Url>,
         layout: &RenderLayout,
         active: bool,
     ) {
@@ -191,9 +192,10 @@ impl Renderer {
         };
 
         let (status_line, mut effects) = if let Some(opened_file) = opened_file {
+            let file_path = opened_file.to_file_path().unwrap();
             let mut effects = vec![];
             if let Some(workspace) = workspace {
-                if workspace.path.is_prefix_of(&opened_file) {
+                if workspace.path.is_prefix_of(file_path.to_str().unwrap()) {
                     effects.push(TextEffect {
                         kind: TextEffectKind::ForegroundColor(color),
                         start: 1,
@@ -201,7 +203,7 @@ impl Renderer {
                     });
                 }
             }
-            (format!(" {}", opened_file), effects)
+            (format!(" {}", file_path.to_str().unwrap()), effects)
         } else {
             (
                 format!(

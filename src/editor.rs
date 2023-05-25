@@ -42,7 +42,7 @@ pub enum EditorCommand {
 }
 
 struct Document {
-    path: String,
+    uri: Url,
     buffer: Buffer,
     view: View,
 }
@@ -462,7 +462,8 @@ impl Editor {
                             document.view.center_if_not_visible(
                                 &document.buffer,
                                 &active_document_layout.layout,
-                            )
+                            );
+                            document.buffer.update_syntect(0);
                         }
                     }
                 }
@@ -502,7 +503,7 @@ impl Editor {
 
             self.renderer.draw_status_line(
                 &self.workspace,
-                Some(self.open_documents[*left_document].path.clone()),
+                Some(self.open_documents[*left_document].uri.clone()),
                 &self.visible_documents_layouts[0].status_line_layout,
                 self.active_view == 0,
             );
@@ -529,7 +530,7 @@ impl Editor {
 
             self.renderer.draw_status_line(
                 &self.workspace,
-                Some(self.open_documents[*right_document].path.clone()),
+                Some(self.open_documents[*right_document].uri.clone()),
                 &self.visible_documents_layouts[1].status_line_layout,
                 self.active_view == 1,
             );
@@ -1033,15 +1034,17 @@ impl Editor {
             ))
         });
 
+        let uri = Url::from_file_path(path).unwrap();
+
         if let Some(i) = self
             .open_documents
             .iter()
-            .position(|document| document.path == path)
+            .position(|document| document.uri == uri)
         {
             self.visible_documents[self.active_view] = Some(i);
         } else {
             self.open_documents.push(Document {
-                path: path.to_string(),
+                uri,
                 buffer: Buffer::new(window, path, &self.renderer.theme, language_server),
                 view: View::new(),
             });

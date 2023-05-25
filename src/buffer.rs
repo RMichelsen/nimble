@@ -774,6 +774,36 @@ impl Buffer {
         false
     }
 
+    pub fn update_syntect(&mut self, line: usize) {
+        if let Some(syntect) = &mut self.syntect {
+            syntect.queue.lock().unwrap().clear();
+            self.highlight_queue.clear();
+
+            let start = if let Some(last_cursor) = self.cursors.last() {
+                self.piece_table.line_index(last_cursor.position) / SYNTECT_CACHE_FREQUENCY
+            } else {
+                0
+            };
+
+            if start > 0 {
+                self.highlight_queue
+                    .push_back((start - 1) * SYNTECT_CACHE_FREQUENCY);
+                self.highlight_queue
+                    .push_back(start * SYNTECT_CACHE_FREQUENCY);
+                if start + 1 < self.piece_table.num_lines() {
+                    self.highlight_queue
+                        .push_back((start + 1) * SYNTECT_CACHE_FREQUENCY);
+                }
+            }
+
+            let mut i = (line / SYNTECT_CACHE_FREQUENCY) * SYNTECT_CACHE_FREQUENCY;
+            while i < self.piece_table.num_lines() {
+                self.highlight_queue.push_back(i);
+                i += SYNTECT_CACHE_FREQUENCY;
+            }
+        }
+    }
+
     fn handle_input_command(&mut self) -> Option<EditorCommand> {
         let input = self.input.clone();
         match input.as_str() {
@@ -1787,25 +1817,9 @@ impl Buffer {
         }
     }
 
-    fn update_syntect(&mut self, line: usize) {
-        if let Some(syntect) = &mut self.syntect {
-            syntect.queue.lock().unwrap().clear();
-            self.highlight_queue.clear();
-            let mut i = (line / SYNTECT_CACHE_FREQUENCY) * SYNTECT_CACHE_FREQUENCY;
-            while i < self.piece_table.num_lines() {
-                self.highlight_queue.push_back(i);
-                i += SYNTECT_CACHE_FREQUENCY;
-            }
-        }
-    }
-
     fn diagnostic_positions(&self) -> Option<Vec<(usize, usize)>> {
         if let Some(server) = &self.language_server {
-            if let Some(diagnostics) = server
-                .borrow()
-                .saved_diagnostics
-                .get(&self.uri)
-            {
+            if let Some(diagnostics) = server.borrow().saved_diagnostics.get(&self.uri) {
                 let mut positions = vec![];
                 for diagnostic in diagnostics {
                     if let (Some(start), Some(end)) = (
@@ -1838,11 +1852,7 @@ impl Buffer {
         old_positions: &[(usize, usize)],
     ) {
         if let Some(server) = &self.language_server {
-            if let Some(diagnostics) = server
-                .borrow_mut()
-                .saved_diagnostics
-                .get_mut(&self.uri)
-            {
+            if let Some(diagnostics) = server.borrow_mut().saved_diagnostics.get_mut(&self.uri) {
                 for i in 0..diagnostics.len() {
                     let (mut start, mut end) = old_positions[i];
                     if start > position {
@@ -1868,11 +1878,7 @@ impl Buffer {
     ) {
         let count = end - position;
         if let Some(server) = &self.language_server {
-            if let Some(diagnostics) = server
-                .borrow_mut()
-                .saved_diagnostics
-                .get_mut(&self.uri)
-            {
+            if let Some(diagnostics) = server.borrow_mut().saved_diagnostics.get_mut(&self.uri) {
                 for i in 0..diagnostics.len() {
                     let (mut start, mut end) = old_positions[i];
                     if start >= position {
@@ -1892,10 +1898,7 @@ impl Buffer {
 
     fn clear_diagnostics(&mut self) {
         if let Some(server) = &self.language_server {
-            server
-                .borrow_mut()
-                .saved_diagnostics
-                .remove(&self.uri);
+            server.borrow_mut().saved_diagnostics.remove(&self.uri);
         }
     }
 }
