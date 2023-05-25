@@ -379,7 +379,7 @@ impl Editor {
                                 for document in &self.open_documents {
                                     if let Some(language) = document.buffer.language {
                                         if *identifier == language.identifier {
-                                            document.buffer.send_did_open(&mut server);
+                                            document.buffer.send_did_open();
                                         }
                                     }
                                 }
@@ -1030,13 +1030,16 @@ impl Editor {
 
     pub fn open_file(&mut self, path: &str, window: &Window) {
         let language_server = language_from_path(path).and_then(|language| {
-            LanguageServer::new(language).map(|server| {
-                if !self.language_servers.contains_key(language.identifier) {
+            if !self.language_servers.contains_key(language.identifier) {
+                LanguageServer::new(language).and_then(|server| {
                     self.language_servers
-                        .insert(language.identifier, Rc::new(RefCell::new(server)));
-                }
-                Rc::clone(self.language_servers.get(language.identifier).unwrap())
-            })
+                        .insert(language.identifier, Rc::new(RefCell::new(server)))
+                })
+            } else {
+                Some(Rc::clone(
+                    self.language_servers.get(language.identifier).unwrap(),
+                ))
+            }
         });
 
         if let Some(i) = self
@@ -1053,6 +1056,12 @@ impl Editor {
             });
             self.visible_documents[self.active_view] =
                 Some(self.open_documents.len().saturating_sub(1));
+
+            self.open_documents
+                .last_mut()
+                .unwrap()
+                .buffer
+                .send_did_open();
         }
     }
 

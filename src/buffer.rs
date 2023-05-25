@@ -123,18 +123,22 @@ impl Buffer {
         }
     }
 
-    pub fn send_did_open(&self, server: &mut RefMut<LanguageServer>) {
-        let text = self.piece_table.iter_chars().collect();
-        let open_params = DidOpenTextDocumentParams {
-            text_document: TextDocumentItem {
-                uri: self.uri.clone(),
-                language_id: self.language.unwrap().identifier.to_string(),
-                version: 0,
-                text: unsafe { String::from_utf8_unchecked(text) },
-            },
-        };
+    pub fn send_did_open(&self) {
+        if let Some(server) = &self.language_server {
+            let text = self.piece_table.iter_chars().collect();
+            let open_params = DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: self.uri.clone(),
+                    language_id: self.language.unwrap().identifier.to_string(),
+                    version: 0,
+                    text: unsafe { String::from_utf8_unchecked(text) },
+                },
+            };
 
-        server.send_notification("textDocument/didOpen", Some(open_params));
+            server
+                .borrow_mut()
+                .send_notification("textDocument/didOpen", Some(open_params));
+        }
     }
 
     pub fn set_cursor(&mut self, line: usize, col: usize) {
