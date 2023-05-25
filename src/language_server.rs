@@ -50,7 +50,7 @@ impl LanguageServer {
         let mut server = Command::new(language.lsp_executable?)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            // .stderr(Stdio::piped())
             .spawn()
             .ok()?;
         let mut stdin = server.stdin.take()?;
@@ -95,7 +95,7 @@ impl LanguageServer {
     pub fn save_diagnostics(&mut self, value: serde_json::Value) {
         let params = serde_json::from_value::<PublishDiagnosticParams>(value).unwrap();
         self.saved_diagnostics
-            .insert(params.uri.to_ascii_lowercase(), params.diagnostics);
+            .insert(params.uri, params.diagnostics);
     }
 
     pub fn save_completions(&mut self, request_id: i32, value: serde_json::Value) {

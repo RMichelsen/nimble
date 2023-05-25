@@ -70,7 +70,7 @@ fn main() {
         editor.update_layouts(&window);
 
         // Handle incoming responses, re-render if necessary
-        if editor.handle_lsp_responses() {
+        if editor.handle_lsp_responses(&window) {
             editor.render(&window);
         }
 

@@ -421,17 +421,10 @@ impl View {
     }
 
     fn scroll_vertical(&mut self, buffer: &Buffer, delta: isize) {
-        if let Some(result) = self.line_offset.checked_add_signed(delta) {
-            self.line_offset = min(
-                result,
-                buffer
-                    .piece_table
-                    .iter_chars()
-                    .filter(|c| *c == b'\n')
-                    .count()
-                    .saturating_sub(1),
-            );
-        }
+        self.line_offset = min(
+            self.line_offset.saturating_add_signed(delta),
+            buffer.piece_table.num_lines().saturating_sub(1),
+        );
     }
 
     fn pos_in_edit_visible_range(&self, line: usize, col: usize, layout: &RenderLayout) -> bool {

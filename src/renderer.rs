@@ -330,11 +330,7 @@ impl Renderer {
             .draw_text_fit_view(view, layout, &text, &effects, &self.theme);
 
         if let Some(server) = language_server {
-            if let Some(diagnostics) = server
-                .borrow()
-                .saved_diagnostics
-                .get(&buffer.uri.to_ascii_lowercase())
-            {
+            if let Some(diagnostics) = server.borrow().saved_diagnostics.get(&buffer.uri) {
                 view.visible_diagnostic_lines_iter(
                     buffer,
                     layout,
@@ -536,11 +532,7 @@ impl Renderer {
         });
 
         if let Some(server) = language_server {
-            if let Some(diagnostics) = server
-                .borrow()
-                .saved_diagnostics
-                .get(&buffer.uri.to_ascii_lowercase())
-            {
+            if let Some(diagnostics) = server.borrow().saved_diagnostics.get(&buffer.uri) {
                 if let Some((line, col)) = view.hover {
                     if let Some(diagnostic) = diagnostics.iter().find(|diagnostic| {
                         let (start_line, start_col) = (

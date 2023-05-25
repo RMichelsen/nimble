@@ -7,6 +7,7 @@ use std::{
 };
 
 use bstr::ByteSlice;
+use url::Url;
 use winit::{
     event::{ModifiersState, VirtualKeyCode},
     window::Window,
@@ -24,9 +25,10 @@ use crate::{
     editor::EditorCommand,
     language_server::LanguageServer,
     language_server_types::{
-        CompletionParams, DidChangeTextDocumentParams, DidOpenTextDocumentParams, Position, Range,
-        SignatureHelpContext, SignatureHelpParams, TextDocumentChangeEvent, TextDocumentIdentifier,
-        TextDocumentItem, VersionedTextDocumentIdentifier,
+        CompletionParams, DefinitionParams, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
+        ImplementationParams, Position, Range, SignatureHelpContext, SignatureHelpParams,
+        TextDocumentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
+        VersionedTextDocumentIdentifier,
     },
     language_support::{language_from_path, Language},
     piece_table::{Piece, PieceTable},
@@ -79,11 +81,7 @@ impl Buffer {
         theme: &Theme,
         language_server: Option<Rc<RefCell<LanguageServer>>>,
     ) -> Self {
-        let uri = if path.starts_with('/') {
-            "file://".to_string()
-        } else {
-            "file:///".to_string()
-        } + &path.replace('\\', "/");
+        let uri = Url::from_file_path(path).unwrap().to_string();
         let language = language_from_path(path);
         let piece_table = PieceTable::from_file(path);
 
@@ -123,22 +121,18 @@ impl Buffer {
         }
     }
 
-    pub fn send_did_open(&self) {
-        if let Some(server) = &self.language_server {
-            let text = self.piece_table.iter_chars().collect();
-            let open_params = DidOpenTextDocumentParams {
-                text_document: TextDocumentItem {
-                    uri: self.uri.clone(),
-                    language_id: self.language.unwrap().identifier.to_string(),
-                    version: 0,
-                    text: unsafe { String::from_utf8_unchecked(text) },
-                },
-            };
+    pub fn send_did_open(&self, server: &mut RefMut<LanguageServer>) {
+        let text = self.piece_table.iter_chars().collect();
+        let open_params = DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: self.uri.clone(),
+                language_id: self.language.unwrap().identifier.to_string(),
+                version: 0,
+                text: unsafe { String::from_utf8_unchecked(text) },
+            },
+        };
 
-            server
-                .borrow_mut()
-                .send_notification("textDocument/didOpen", Some(open_params));
-        }
+        server.send_notification("textDocument/didOpen", Some(open_params));
     }
 
     pub fn set_cursor(&mut self, line: usize, col: usize) {
@@ -673,6 +667,12 @@ impl Buffer {
             }
             (Normal, "u") => {
                 self.command(Undo);
+            }
+            (Normal, "gd") => {
+                self.command(GotoDefinition);
+            }
+            (Normal, "gi") => {
+                self.command(GotoImplementation);
             }
             (Visual, "v") => self.switch_to_normal_mode(),
             (_, "v") => self.switch_to_visual_mode(),
@@ -1510,6 +1510,16 @@ impl Buffer {
                     self.cursors[i].position += size;
                 }
             }
+            GotoDefinition => {
+                if let Some(last_cursor) = self.cursors.last() {
+                    self.lsp_goto_definition(last_cursor.position);
+                }
+            }
+            GotoImplementation => {
+                if let Some(last_cursor) = self.cursors.last() {
+                    self.lsp_goto_implementation(last_cursor.position);
+                }
+            }
         }
 
         for cursor in &mut self.cursors {
@@ -1697,6 +1707,48 @@ impl Buffer {
         }
     }
 
+    fn lsp_goto_definition(&mut self, position: usize) {
+        if let Some(server) = &self.language_server {
+            let (line, col) = (
+                self.piece_table.line_index(position),
+                self.piece_table.col_index(position),
+            );
+            let definition_params = DefinitionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: self.uri.to_string(),
+                },
+                position: Position {
+                    line: line as u32,
+                    character: col as u32,
+                },
+            };
+            server
+                .borrow_mut()
+                .send_request("textDocument/definition", definition_params);
+        }
+    }
+
+    fn lsp_goto_implementation(&mut self, position: usize) {
+        if let Some(server) = &self.language_server {
+            let (line, col) = (
+                self.piece_table.line_index(position),
+                self.piece_table.col_index(position),
+            );
+            let definition_params = ImplementationParams {
+                text_document: TextDocumentIdentifier {
+                    uri: self.uri.to_string(),
+                },
+                position: Position {
+                    line: line as u32,
+                    character: col as u32,
+                },
+            };
+            server
+                .borrow_mut()
+                .send_request("textDocument/implementation", definition_params);
+        }
+    }
+
     fn insert_rebalance(
         &mut self,
         position: usize,
@@ -1752,7 +1804,7 @@ impl Buffer {
             if let Some(diagnostics) = server
                 .borrow()
                 .saved_diagnostics
-                .get(&self.uri.to_ascii_lowercase())
+                .get(&self.uri)
             {
                 let mut positions = vec![];
                 for diagnostic in diagnostics {
@@ -1789,7 +1841,7 @@ impl Buffer {
             if let Some(diagnostics) = server
                 .borrow_mut()
                 .saved_diagnostics
-                .get_mut(&self.uri.to_ascii_lowercase())
+                .get_mut(&self.uri)
             {
                 for i in 0..diagnostics.len() {
                     let (mut start, mut end) = old_positions[i];
@@ -1819,7 +1871,7 @@ impl Buffer {
             if let Some(diagnostics) = server
                 .borrow_mut()
                 .saved_diagnostics
-                .get_mut(&self.uri.to_ascii_lowercase())
+                .get_mut(&self.uri)
             {
                 for i in 0..diagnostics.len() {
                     let (mut start, mut end) = old_positions[i];
@@ -1843,7 +1895,7 @@ impl Buffer {
             server
                 .borrow_mut()
                 .saved_diagnostics
-                .remove(&self.uri.to_ascii_lowercase());
+                .remove(&self.uri);
         }
     }
 }
@@ -2005,9 +2057,9 @@ fn is_prefix_of_command(str: &str, mode: BufferMode) -> bool {
     }
 }
 
-const NORMAL_MODE_COMMANDS: [&str; 27] = [
+const NORMAL_MODE_COMMANDS: [&str; 29] = [
     "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "dd", "D", "J", "K", "v", "V", "u",
-    ">", "<", "p", "P", "yy", "zz", "n", "N", "/",
+    ">", "<", "p", "P", "yy", "zz", "n", "N", "/", "gd", "gi",
 ];
 const VISUAL_MODE_COMMANDS: [&str; 21] = [
     "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "d", ">", "<", "y", "p", "P", "zz",
@@ -2063,4 +2115,6 @@ enum BufferCommand {
     CopyLine,
     PasteSelection,
     PasteCursorSelection,
+    GotoDefinition,
+    GotoImplementation,
 }

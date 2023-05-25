@@ -141,6 +141,20 @@ pub struct Range {
     pub end: Position,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Location {
+    pub uri: String,
+    pub range: Range,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum LocationType {
+    Location(Location),
+    LocationArray(Vec<Location>),
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextDocumentChangeEvent {
@@ -167,6 +181,20 @@ pub struct VersionedTextDocumentIdentifier {
 pub struct DidChangeTextDocumentParams {
     pub text_document: VersionedTextDocumentIdentifier,
     pub content_changes: Vec<TextDocumentChangeEvent>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DefinitionParams {
+    pub text_document: TextDocumentIdentifier,
+    pub position: Position,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImplementationParams {
+    pub text_document: TextDocumentIdentifier,
+    pub position: Position,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

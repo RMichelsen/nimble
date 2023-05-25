@@ -9,6 +9,7 @@ use std::{
 };
 
 use fuzzy_matcher::{clangd::ClangdMatcher, FuzzyMatcher};
+use url::Url;
 use walkdir::WalkDir;
 use winit::{
     dpi::LogicalPosition,
@@ -19,7 +20,7 @@ use winit::{
 use crate::{
     buffer::Buffer,
     language_server::LanguageServer,
-    language_server_types::VoidParams,
+    language_server_types::{LocationType, VoidParams},
     language_support::{
         language_from_path, CPP_FILE_EXTENSIONS, PYTHON_FILE_EXTENSIONS, RUST_FILE_EXTENSIONS,
     },
@@ -122,6 +123,7 @@ impl Editor {
                 let left_numbers_num_cols = (0..)
                     .take_while(|i| 10usize.pow(*i) <= left_document.buffer.piece_table.num_lines())
                     .count()
+                    .max(4)
                     + 2;
 
                 let left_layout = RenderLayout {
@@ -152,6 +154,7 @@ impl Editor {
                         10usize.pow(*i) <= right_document.buffer.piece_table.num_lines()
                     })
                     .count()
+                    .max(4)
                     + 2;
 
                 let right_layout = RenderLayout {
@@ -194,6 +197,7 @@ impl Editor {
                 let numbers_num_cols = (0..)
                     .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
                     .count()
+                    .max(4)
                     + 2;
 
                 let layout = RenderLayout {
@@ -284,6 +288,7 @@ impl Editor {
                             10usize.pow(*i) <= right_document.buffer.piece_table.num_lines()
                         })
                         .count()
+                        .max(4)
                         + 2;
 
                     let right_layout = RenderLayout {
@@ -366,9 +371,10 @@ impl Editor {
         false
     }
 
-    pub fn handle_lsp_responses(&mut self) -> bool {
+    pub fn handle_lsp_responses(&mut self, window: &Window) -> bool {
         let mut require_redraw = false;
 
+        let mut goto_location = None;
         for (identifier, server) in &mut self.language_servers {
             let mut server = server.borrow_mut();
             match server.handle_responses() {
@@ -379,7 +385,7 @@ impl Editor {
                                 for document in &self.open_documents {
                                     if let Some(language) = document.buffer.language {
                                         if *identifier == language.identifier {
-                                            document.buffer.send_did_open();
+                                            document.buffer.send_did_open(&mut server);
                                         }
                                     }
                                 }
@@ -406,6 +412,22 @@ impl Editor {
                                 }
                                 require_redraw = true;
                             }
+                            "textDocument/definition" | "textDocument/implementation" => {
+                                if let Some(value) = response.value {
+                                    if let Ok(value) = serde_json::from_value::<LocationType>(value)
+                                    {
+                                        match value {
+                                            LocationType::Location(location) => {
+                                                goto_location = Some(location);
+                                            }
+                                            LocationType::LocationArray(locations) => {
+                                                goto_location = locations.first().cloned();
+                                            }
+                                        }
+                                    }
+                                }
+                                require_redraw = true;
+                            }
                             _ => (),
                         }
                     }
@@ -419,7 +441,30 @@ impl Editor {
                     }
                 }
                 Err(e) => {
-                    todo!();
+                    panic!();
+                }
+            }
+        }
+
+        if let Some(location) = goto_location {
+            if let Ok(path) = Url::parse(&location.uri) {
+                if let Ok(file_path) = path.to_file_path() {
+                    if let Some(file_path) = file_path.to_str() {
+                        self.open_file(file_path, window);
+                        let active_document_layout =
+                            &self.visible_documents_layouts[self.active_view];
+                        if let Some(i) = self.visible_documents[self.active_view] {
+                            let document = &mut self.open_documents[i];
+                            document.buffer.set_cursor(
+                                location.range.start.line as usize,
+                                location.range.start.character as usize,
+                            );
+                            document.view.center_if_not_visible(
+                                &document.buffer,
+                                &active_document_layout.layout,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -854,67 +899,7 @@ impl Editor {
         }
 
         if let Some(command) = delayed_command {
-            match command {
-                EditorCommand::Quit => {
-                    let ready_to_quit = self.visible_documents[self.active_view]
-                        .is_some_and(|i| self.open_documents[i].buffer.ready_to_quit());
-
-                    if ready_to_quit {
-                        self.open_documents
-                            .remove(self.visible_documents[self.active_view].unwrap());
-
-                        if self.open_documents.is_empty() {
-                            self.visible_documents = [None, None];
-                        } else {
-                            for index in &mut self.visible_documents {
-                                if let Some(index) = index {
-                                    *index = min(
-                                        index.saturating_sub(1),
-                                        self.open_documents.len().saturating_sub(1),
-                                    );
-                                }
-                            }
-                        }
-                    }
-
-                    return !self.open_documents.is_empty();
-                }
-                EditorCommand::QuitNoCheck => {
-                    self.open_documents
-                        .remove(self.visible_documents[self.active_view].unwrap());
-
-                    if self.open_documents.is_empty() {
-                        self.visible_documents = [None, None];
-                    } else {
-                        for index in &mut self.visible_documents {
-                            if let Some(index) = index {
-                                *index = min(
-                                    index.saturating_sub(1),
-                                    self.open_documents.len().saturating_sub(1),
-                                );
-                            }
-                        }
-                    }
-
-                    return !self.open_documents.is_empty();
-                }
-                EditorCommand::QuitAll => {
-                    let ready_to_quit = self.ready_to_quit();
-                    if ready_to_quit {
-                        self.open_documents.clear();
-                        self.active_view = 0;
-                        self.visible_documents = [None, None];
-                        return false;
-                    }
-                }
-                EditorCommand::QuitAllNoCheck => {
-                    self.open_documents.clear();
-                    self.active_view = 0;
-                    self.visible_documents = [None, None];
-                    return false;
-                }
-                _ => (),
-            }
+            return self.run_editor_quit_command(command);
         }
 
         true
@@ -933,7 +918,6 @@ impl Editor {
 
         let active_document_layout = &self.visible_documents_layouts[self.active_view];
         let font_size = self.renderer.get_font_size();
-
         let mut delayed_command = None;
         if let Some(i) = self.visible_documents[self.active_view] {
             let document = &mut self.open_documents[i];
@@ -958,20 +942,28 @@ impl Editor {
         }
 
         if let Some(command) = delayed_command {
-            match command {
-                EditorCommand::Quit => {
-                    let ready_to_quit = self.visible_documents[self.active_view]
-                        .is_some_and(|i| self.open_documents[i].buffer.ready_to_quit());
+            return self.run_editor_quit_command(command);
+        }
 
-                    if ready_to_quit {
-                        self.open_documents
-                            .remove(self.visible_documents[self.active_view].unwrap());
+        true
+    }
 
-                        if self.open_documents.is_empty() {
-                            self.visible_documents = [None, None];
-                        } else {
-                            for index in &mut self.visible_documents {
-                                if let Some(index) = index {
+    fn run_editor_quit_command(&mut self, quit_command: EditorCommand) -> bool {
+        match quit_command {
+            EditorCommand::Quit => {
+                let ready_to_quit = self.visible_documents[self.active_view]
+                    .is_some_and(|i| self.open_documents[i].buffer.ready_to_quit());
+
+                if ready_to_quit {
+                    let active_document_index = self.visible_documents[self.active_view].unwrap();
+                    self.open_documents.remove(active_document_index);
+
+                    if self.open_documents.is_empty() {
+                        self.visible_documents = [None, None];
+                    } else {
+                        for index in &mut self.visible_documents {
+                            if let Some(index) = index {
+                                if *index >= active_document_index {
                                     *index = min(
                                         index.saturating_sub(1),
                                         self.open_documents.len().saturating_sub(1),
@@ -980,18 +972,20 @@ impl Editor {
                             }
                         }
                     }
-
-                    return !self.open_documents.is_empty();
                 }
-                EditorCommand::QuitNoCheck => {
-                    self.open_documents
-                        .remove(self.visible_documents[self.active_view].unwrap());
 
-                    if self.open_documents.is_empty() {
-                        self.visible_documents = [None, None];
-                    } else {
-                        for index in &mut self.visible_documents {
-                            if let Some(index) = index {
+                return !self.open_documents.is_empty();
+            }
+            EditorCommand::QuitNoCheck => {
+                let active_document_index = self.visible_documents[self.active_view].unwrap();
+                self.open_documents.remove(active_document_index);
+
+                if self.open_documents.is_empty() {
+                    self.visible_documents = [None, None];
+                } else {
+                    for index in &mut self.visible_documents {
+                        if let Some(index) = index {
+                            if *index >= active_document_index {
                                 *index = min(
                                     index.saturating_sub(1),
                                     self.open_documents.len().saturating_sub(1),
@@ -999,27 +993,25 @@ impl Editor {
                             }
                         }
                     }
+                }
 
-                    return !self.open_documents.is_empty();
-                }
-                EditorCommand::QuitAll => {
-                    let ready_to_quit = self.ready_to_quit();
-                    self.open_documents.clear();
-                    self.active_view = 0;
-                    self.visible_documents = [None, None];
-                    return false;
-                }
-                EditorCommand::QuitAllNoCheck => {
-                    self.open_documents.clear();
-                    self.active_view = 0;
-                    self.visible_documents = [None, None];
-                    return false;
-                }
-                _ => (),
+                return !self.open_documents.is_empty();
             }
+            EditorCommand::QuitAll => {
+                let ready_to_quit = self.ready_to_quit();
+                self.open_documents.clear();
+                self.active_view = 0;
+                self.visible_documents = [None, None];
+                return false;
+            }
+            EditorCommand::QuitAllNoCheck => {
+                self.open_documents.clear();
+                self.active_view = 0;
+                self.visible_documents = [None, None];
+                return false;
+            }
+            _ => panic!(),
         }
-
-        true
     }
 
     pub fn ready_to_quit(&mut self) -> bool {
@@ -1034,12 +1026,11 @@ impl Editor {
                 LanguageServer::new(language).and_then(|server| {
                     self.language_servers
                         .insert(language.identifier, Rc::new(RefCell::new(server)))
-                })
-            } else {
-                Some(Rc::clone(
-                    self.language_servers.get(language.identifier).unwrap(),
-                ))
+                });
             }
+            Some(Rc::clone(
+                self.language_servers.get(language.identifier).unwrap(),
+            ))
         });
 
         if let Some(i) = self
@@ -1057,11 +1048,16 @@ impl Editor {
             self.visible_documents[self.active_view] =
                 Some(self.open_documents.len().saturating_sub(1));
 
-            self.open_documents
-                .last_mut()
-                .unwrap()
-                .buffer
-                .send_did_open();
+            if let Some(language) = language_from_path(path) {
+                if let Some(server) = self.language_servers.get(language.identifier) {
+                    let mut server = server.borrow_mut();
+                    self.open_documents
+                        .last_mut()
+                        .unwrap()
+                        .buffer
+                        .send_did_open(&mut server);
+                }
+            }
         }
     }
 
