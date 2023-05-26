@@ -332,7 +332,11 @@ impl Renderer {
             .draw_text_fit_view(view, layout, &text, &effects, &self.theme);
 
         if let Some(server) = language_server {
-            if let Some(diagnostics) = server.borrow().saved_diagnostics.get(&buffer.uri) {
+            if let Some(diagnostics) = server
+                .borrow()
+                .saved_diagnostics
+                .get(&buffer.uri.to_lowercase())
+            {
                 view.visible_diagnostic_lines_iter(
                     buffer,
                     layout,
@@ -447,7 +451,7 @@ impl Renderer {
                 }
             }
 
-            if !label_detail_combined.is_empty() {
+            if !label_detail_combined.trim().is_empty() {
                 let bytes: Vec<u8> = label_detail_combined
                     .into_bytes()
                     .into_iter()
@@ -534,7 +538,11 @@ impl Renderer {
         });
 
         if let Some(server) = language_server {
-            if let Some(diagnostics) = server.borrow().saved_diagnostics.get(&buffer.uri) {
+            if let Some(diagnostics) = server
+                .borrow()
+                .saved_diagnostics
+                .get(&buffer.uri.to_lowercase())
+            {
                 if let Some((line, col)) = view.hover {
                     if let Some(diagnostic) = diagnostics.iter().find(|diagnostic| {
                         let (start_line, start_col) = (
@@ -569,6 +577,47 @@ impl Renderer {
                             col,
                             layout,
                             diagnostic.message.as_bytes(),
+                            self.theme.selection_background_color,
+                            self.theme.background_color,
+                            None,
+                            &self.theme,
+                        );
+                    } else if let Some(message) = &view.hover_message {
+                        let (row, col) = (
+                            view.absolute_to_view_row(line) + 1,
+                            view.absolute_to_view_col(col),
+                        );
+
+                        let max_bytes = (layout.num_cols / 2) * (layout.num_rows / 2);
+
+                        let mut limit = 0;
+                        let mut offset = 0;
+                        for line in message.split('\n') {
+                            limit += max(line.len(), layout.num_cols / 2);
+                            offset += line.len();
+                            if limit > max_bytes {
+                                break;
+                            }
+                        }
+
+                        let mut line_limit = 0;
+                        let truncated_message: Vec<u8> = message
+                            .as_bytes()
+                            .iter()
+                            .take_while(|&x| {
+                                if *x == b'\n' {
+                                    line_limit += 1;
+                                }
+                                line_limit < 10
+                            })
+                            .copied()
+                            .collect();
+
+                        self.context.draw_popup_below(
+                            row,
+                            col,
+                            layout,
+                            &truncated_message,
                             self.theme.selection_background_color,
                             self.theme.background_color,
                             None,

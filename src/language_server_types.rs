@@ -197,6 +197,26 @@ pub struct ImplementationParams {
     pub position: Position,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverParams {
+    pub text_document: TextDocumentIdentifier,
+    pub position: Position,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkupContent {
+    pub kind: String,
+    pub value: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Hover {
+    pub contents: MarkupContent,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ParameterLabelType {

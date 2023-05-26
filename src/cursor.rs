@@ -107,7 +107,7 @@ pub fn get_filtered_completions(
             if let Some(existing_details) = &mut existing_item.detail {
                 if let Some(details) = &item.detail {
                     existing_details.push(b'\n' as char);
-                    existing_details.push_str(&details)
+                    existing_details.push_str(details)
                 }
             }
         }

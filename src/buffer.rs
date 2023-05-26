@@ -26,8 +26,8 @@ use crate::{
     language_server::LanguageServer,
     language_server_types::{
         CompletionParams, DefinitionParams, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
-        ImplementationParams, Position, Range, SignatureHelpContext, SignatureHelpParams,
-        TextDocumentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
+        HoverParams, ImplementationParams, Position, Range, SignatureHelpContext,
+        SignatureHelpParams, TextDocumentChangeEvent, TextDocumentIdentifier, TextDocumentItem,
         VersionedTextDocumentIdentifier,
     },
     language_support::{language_from_path, Language},
@@ -113,7 +113,7 @@ impl Buffer {
     }
 
     pub fn syntect_reload(&mut self, theme: &Theme) {
-        self.syntect = Syntect::new(&self.path, &theme);
+        self.syntect = Syntect::new(&self.path, theme);
         let mut i = 0;
         while i < self.piece_table.num_lines() {
             self.highlight_queue.push_back(i);
@@ -184,6 +184,15 @@ impl Buffer {
         }
         self.set_cursor(line, col);
         false
+    }
+
+    pub fn handle_mouse_hover(&mut self, line: usize, col: usize) {
+        if let Some(cursor_line) = self.piece_table.line_at_index(line) {
+            if col >= cursor_line.length {
+                return;
+            }
+            self.lsp_hover(line, col);
+        }
     }
 
     pub fn insert_cursor(&mut self, line: usize, col: usize) {
@@ -1779,6 +1788,23 @@ impl Buffer {
         }
     }
 
+    fn lsp_hover(&mut self, line: usize, col: usize) {
+        if let Some(server) = &self.language_server {
+            let hover_params = HoverParams {
+                text_document: TextDocumentIdentifier {
+                    uri: self.uri.to_string(),
+                },
+                position: Position {
+                    line: line as u32,
+                    character: col as u32,
+                },
+            };
+            server
+                .borrow_mut()
+                .send_request("textDocument/hover", hover_params);
+        }
+    }
+
     fn insert_rebalance(
         &mut self,
         position: usize,
@@ -1819,7 +1845,11 @@ impl Buffer {
 
     fn diagnostic_positions(&self) -> Option<Vec<(usize, usize)>> {
         if let Some(server) = &self.language_server {
-            if let Some(diagnostics) = server.borrow().saved_diagnostics.get(&self.uri) {
+            if let Some(diagnostics) = server
+                .borrow()
+                .saved_diagnostics
+                .get(&self.uri.to_lowercase())
+            {
                 let mut positions = vec![];
                 for diagnostic in diagnostics {
                     if let (Some(start), Some(end)) = (
@@ -1852,7 +1882,11 @@ impl Buffer {
         old_positions: &[(usize, usize)],
     ) {
         if let Some(server) = &self.language_server {
-            if let Some(diagnostics) = server.borrow_mut().saved_diagnostics.get_mut(&self.uri) {
+            if let Some(diagnostics) = server
+                .borrow_mut()
+                .saved_diagnostics
+                .get_mut(&self.uri.to_lowercase())
+            {
                 for i in 0..diagnostics.len() {
                     let (mut start, mut end) = old_positions[i];
                     if start > position {
@@ -1878,7 +1912,11 @@ impl Buffer {
     ) {
         let count = end - position;
         if let Some(server) = &self.language_server {
-            if let Some(diagnostics) = server.borrow_mut().saved_diagnostics.get_mut(&self.uri) {
+            if let Some(diagnostics) = server
+                .borrow_mut()
+                .saved_diagnostics
+                .get_mut(&self.uri.to_lowercase())
+            {
                 for i in 0..diagnostics.len() {
                     let (mut start, mut end) = old_positions[i];
                     if start >= position {
@@ -1898,7 +1936,10 @@ impl Buffer {
 
     fn clear_diagnostics(&mut self) {
         if let Some(server) = &self.language_server {
-            server.borrow_mut().saved_diagnostics.remove(&self.uri);
+            server
+                .borrow_mut()
+                .saved_diagnostics
+                .remove(&self.uri.to_lowercase());
         }
     }
 }

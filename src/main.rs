@@ -7,6 +7,7 @@
 #![feature(byte_slice_trim_ascii)]
 #![feature(const_fn_floating_point_arithmetic)]
 #![feature(if_let_guard)]
+#![feature(split_array)]
 
 mod buffer;
 mod cursor;
@@ -161,6 +162,9 @@ fn main() {
                         left_mouse_button_timer = Instant::now();
                         request_redraw(&window);
                     }
+                    if state == ElementState::Released {
+                        hover_timer = None;
+                    }
                 }
             }
             Event::WindowEvent {
@@ -215,7 +219,9 @@ fn main() {
 
         if let Some(mouse_position) = mouse_position {
             if let Some(timer) = hover_timer {
-                if timer.elapsed() > Duration::from_millis(300) {
+                if left_mouse_button_state.is_some_and(|state| state != ElementState::Pressed)
+                    && timer.elapsed() > Duration::from_millis(300)
+                {
                     editor.handle_mouse_hover(
                         mouse_position.to_logical(window.scale_factor()),
                         &window,

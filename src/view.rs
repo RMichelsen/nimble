@@ -30,6 +30,7 @@ pub struct View {
     pub line_offset: usize,
     pub col_offset: usize,
     pub hover: Option<(usize, usize)>,
+    pub hover_message: Option<String>,
 }
 
 impl View {
@@ -38,6 +39,7 @@ impl View {
             line_offset: 0,
             col_offset: 0,
             hover: None,
+            hover_message: None,
         }
     }
 
@@ -57,6 +59,7 @@ impl View {
 
     pub fn exit_hover(&mut self) {
         self.hover = None;
+        self.hover_message = None;
     }
 
     pub fn visible_cursors_iter<F>(&self, layout: &RenderLayout, buffer: &Buffer, f: F)

@@ -47,6 +47,7 @@ impl PieceTable {
         let mut indentations = [0; 9];
         let mut indent_counter = usize::MAX;
         let mut previous_indent = 0;
+        let mut bytes_since_line = 0;
         while let Some(byte) = bytes.next() {
             let byte = byte.unwrap();
 
@@ -69,10 +70,12 @@ impl PieceTable {
                 }
             }
 
-            // Convert '\t' to four spaces
+            // Convert '\t' to spaces until next multiple of 4
             if byte == b'\t' {
-                original.append(&mut vec![b' '; 4]);
-                index += 4;
+                let num = 4 - bytes_since_line % 4;
+                original.append(&mut vec![b' '; num]);
+                bytes_since_line += num;
+                index += num;
                 continue;
             }
 
@@ -83,6 +86,9 @@ impl PieceTable {
                 if byte == b'\n' {
                     linebreaks.push(index);
                     indent_counter = 0;
+                    bytes_since_line = 0;
+                } else {
+                    bytes_since_line += 1;
                 }
 
                 index += 1;
@@ -96,6 +102,7 @@ impl PieceTable {
                 original.push(b'\n');
                 linebreaks.push(index);
                 indent_counter = 0;
+                bytes_since_line = 0;
                 index += 1;
             }
         }

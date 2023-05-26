@@ -16,7 +16,7 @@ use windows::{
                 D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
                 D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_IMMEDIATELY,
                 D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT,
-                D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
+                D2D1_RENDER_TARGET_USAGE_NONE,
             },
             DirectWrite::{
                 DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout1,
@@ -590,14 +590,14 @@ impl GraphicsContext {
         );
 
         let (width, height) = self.get_text_width_height(
-            col_offset + self.font_size.1 * 0.5,
-            row_offset + self.font_size.1 * 0.5,
+            col_offset + self.font_size.1 * 0.25,
+            row_offset + self.font_size.1 * 0.25,
             layout,
             text,
         );
 
         if row_offset + height as f32 > self.window_size.1 {
-            row_offset -= height as f32 + self.font_size.1 + self.font_size.1;
+            row_offset -= height as f32 + self.font_size.1 * 0.5 + self.font_size.1;
         }
 
         let (width, height) = (
@@ -623,8 +623,14 @@ impl GraphicsContext {
                 &D2D_RECT_F {
                     left: col_offset - 0.5,
                     top: row_offset - 0.5,
-                    right: col_offset + self.font_size.0 * width as f32 + self.font_size.1 + 0.5,
-                    bottom: row_offset + self.font_size.1 * height as f32 + self.font_size.1 + 0.5,
+                    right: col_offset
+                        + self.font_size.0 * width as f32
+                        + self.font_size.1 * 0.5
+                        + 0.5,
+                    bottom: row_offset
+                        + self.font_size.1 * height as f32
+                        + self.font_size.1 * 0.5
+                        + 0.5,
                 },
                 &outer_brush,
             );
@@ -642,30 +648,26 @@ impl GraphicsContext {
                 )
                 .unwrap();
 
-            self.render_target.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: D2D_RECT_F {
-                        left: col_offset - 0.5 + self.font_size.1 * 0.25,
-                        top: row_offset - 0.5 + self.font_size.1 * 0.25,
-                        right: col_offset
-                            + self.font_size.0 * width as f32
-                            + self.font_size.1 * 0.75
-                            + 0.5,
-                        bottom: row_offset
-                            + self.font_size.1 * height as f32
-                            + self.font_size.1 * 0.75
-                            + 0.5,
-                    },
-                    radiusX: 1.5,
-                    radiusY: 1.5,
+            self.render_target.FillRectangle(
+                &D2D_RECT_F {
+                    left: col_offset - 0.5 + self.font_size.1 * 0.125,
+                    top: row_offset - 0.5 + self.font_size.1 * 0.125,
+                    right: col_offset
+                        + self.font_size.0 * width as f32
+                        + self.font_size.1 * 0.375
+                        + 0.5,
+                    bottom: row_offset
+                        + self.font_size.1 * height as f32
+                        + self.font_size.1 * 0.375
+                        + 0.5,
                 },
                 &inner_brush,
             );
         }
 
         self.draw_text_with_offset(
-            col_offset + self.font_size.1 * 0.5,
-            row_offset + self.font_size.1 * 0.5,
+            col_offset + self.font_size.1 * 0.25,
+            row_offset + self.font_size.1 * 0.25,
             layout,
             text,
             effects.unwrap_or(&[]),
@@ -694,14 +696,14 @@ impl GraphicsContext {
         );
 
         let (width, height) = self.get_text_width_height(
-            col_offset + self.font_size.1 * 0.5,
-            row_offset + self.font_size.1 * 0.5,
+            col_offset + self.font_size.1 * 0.25,
+            row_offset + self.font_size.1 * 0.25,
             layout,
             text,
         );
 
         if row_offset - height as f32 > 0.0 {
-            row_offset -= height as f32 + self.font_size.1 + self.font_size.1;
+            row_offset -= height as f32 + self.font_size.1 * 0.5 + self.font_size.1;
         }
 
         let (width, height) = (
@@ -727,8 +729,14 @@ impl GraphicsContext {
                 &D2D_RECT_F {
                     left: col_offset - 0.5,
                     top: row_offset - 0.5,
-                    right: col_offset + self.font_size.0 * width as f32 + self.font_size.1 + 0.5,
-                    bottom: row_offset + self.font_size.1 * height as f32 + self.font_size.1 + 0.5,
+                    right: col_offset
+                        + self.font_size.0 * width as f32
+                        + self.font_size.1 * 0.5
+                        + 0.5,
+                    bottom: row_offset
+                        + self.font_size.1 * height as f32
+                        + self.font_size.1 * 0.5
+                        + 0.5,
                 },
                 &outer_brush,
             );
@@ -746,30 +754,26 @@ impl GraphicsContext {
                 )
                 .unwrap();
 
-            self.render_target.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: D2D_RECT_F {
-                        left: col_offset - 0.5 + self.font_size.1 * 0.25,
-                        top: row_offset - 0.5 + self.font_size.1 * 0.25,
-                        right: col_offset
-                            + self.font_size.0 * width as f32
-                            + self.font_size.1 * 0.75
-                            + 0.5,
-                        bottom: row_offset
-                            + self.font_size.1 * height as f32
-                            + self.font_size.1 * 0.75
-                            + 0.5,
-                    },
-                    radiusX: 1.5,
-                    radiusY: 1.5,
+            self.render_target.FillRectangle(
+                &D2D_RECT_F {
+                    left: col_offset - 0.5 + self.font_size.1 * 0.125,
+                    top: row_offset - 0.5 + self.font_size.1 * 0.125,
+                    right: col_offset
+                        + self.font_size.0 * width as f32
+                        + self.font_size.1 * 0.375
+                        + 0.5,
+                    bottom: row_offset
+                        + self.font_size.1 * height as f32
+                        + self.font_size.1 * 0.375
+                        + 0.5,
                 },
                 &inner_brush,
             );
         }
 
         self.draw_text_with_offset(
-            col_offset + self.font_size.1 * 0.5,
-            row_offset + self.font_size.1 * 0.5,
+            col_offset + self.font_size.1 * 0.25,
+            row_offset + self.font_size.1 * 0.25,
             layout,
             text,
             effects.unwrap_or(&[]),
@@ -800,16 +804,16 @@ impl GraphicsContext {
         );
 
         let (width, height) = self.get_text_width_height(
-            col_offset + self.font_size.1 * 0.5,
-            row_offset + self.font_size.1 * 0.5,
+            col_offset + self.font_size.1 * 0.25,
+            row_offset + self.font_size.1 * 0.25,
             layout,
             text,
         );
 
         let width = width.max(
             self.get_text_width_height(
-                col_offset + self.font_size.1 * 0.5,
-                row_offset + self.font_size.1 * 0.5,
+                col_offset + self.font_size.1 * 0.25,
+                row_offset + self.font_size.1 * 0.25,
                 layout,
                 search_string.as_bytes(),
             )
@@ -839,8 +843,14 @@ impl GraphicsContext {
                 &D2D_RECT_F {
                     left: col_offset - 0.5,
                     top: row_offset - 0.5,
-                    right: col_offset + self.font_size.0 * width as f32 + self.font_size.1 + 0.5,
-                    bottom: row_offset + self.font_size.1 * height as f32 + self.font_size.1 + 0.5,
+                    right: col_offset
+                        + self.font_size.0 * width as f32
+                        + self.font_size.1 * 0.5
+                        + 0.5,
+                    bottom: row_offset
+                        + self.font_size.1 * height as f32
+                        + self.font_size.1 * 0.5
+                        + 0.5,
                 },
                 &outer_brush,
             );
@@ -860,27 +870,23 @@ impl GraphicsContext {
                 )
                 .unwrap();
 
-            self.render_target.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: D2D_RECT_F {
-                        left: col_offset - 0.5 + self.font_size.1 * 0.25,
-                        top: row_offset - 0.5 + self.font_size.1 * 0.25,
-                        right: col_offset
-                            + self.font_size.0 * width as f32
-                            + self.font_size.1 * 0.75
-                            + 0.5,
-                        bottom: row_offset + self.font_size.1 + self.font_size.1 * 0.25,
-                    },
-                    radiusX: 1.5,
-                    radiusY: 1.5,
+            self.render_target.FillRectangle(
+                &D2D_RECT_F {
+                    left: col_offset - 0.5 + self.font_size.1 * 0.125,
+                    top: row_offset - 0.5 + self.font_size.1 * 0.125,
+                    right: col_offset
+                        + self.font_size.0 * width as f32
+                        + self.font_size.1 * 0.375
+                        + 0.5,
+                    bottom: row_offset + self.font_size.1 + self.font_size.1 * 0.125,
                 },
                 &inner_brush,
             );
         }
 
         self.draw_text_with_offset(
-            col_offset + self.font_size.1 * 0.5,
-            row_offset + self.font_size.1 * 0.25,
+            col_offset + self.font_size.1 * 0.25,
+            row_offset + self.font_size.1 * 0.125,
             layout,
             search_string.as_bytes(),
             &[TextEffect {
@@ -907,22 +913,18 @@ impl GraphicsContext {
                 )
                 .unwrap();
 
-            self.render_target.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: D2D_RECT_F {
-                        left: col_offset - 0.5 + self.font_size.1 * 0.25,
-                        top: row_offset - 0.5 + self.font_size.1 * 0.25,
-                        right: col_offset
-                            + self.font_size.0 * width as f32
-                            + self.font_size.1 * 0.75
-                            + 0.5,
-                        bottom: row_offset
-                            + self.font_size.1 * (height.saturating_sub(1)) as f32
-                            + self.font_size.1 * 0.75
-                            + 0.5,
-                    },
-                    radiusX: 1.5,
-                    radiusY: 1.5,
+            self.render_target.FillRectangle(
+                &D2D_RECT_F {
+                    left: col_offset - 0.5 + self.font_size.1 * 0.125,
+                    top: row_offset - 0.5 + self.font_size.1 * 0.125,
+                    right: col_offset
+                        + self.font_size.0 * width as f32
+                        + self.font_size.1 * 0.375
+                        + 0.5,
+                    bottom: row_offset
+                        + self.font_size.1 * (height.saturating_sub(1)) as f32
+                        + self.font_size.1 * 0.375
+                        + 0.5,
                 },
                 &inner_brush,
             );
@@ -940,31 +942,27 @@ impl GraphicsContext {
                 )
                 .unwrap();
 
-            self.render_target.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: D2D_RECT_F {
-                        left: col_offset - 0.5 + self.font_size.1 * 0.25,
-                        top: row_offset + self.font_size.1 * selection_view_index as f32 - 0.5
-                            + self.font_size.1 * 0.5,
-                        right: col_offset
-                            + self.font_size.0 * width as f32
-                            + self.font_size.1 * 0.75
-                            + 0.5,
-                        bottom: row_offset
-                            + self.font_size.1 * (selection_view_index + 1) as f32
-                            + self.font_size.1 * 0.5
-                            + 0.5,
-                    },
-                    radiusX: 1.5,
-                    radiusY: 1.5,
+            self.render_target.FillRectangle(
+                &D2D_RECT_F {
+                    left: col_offset - 0.5 + self.font_size.1 * 0.125,
+                    top: row_offset + self.font_size.1 * selection_view_index as f32 - 0.5
+                        + self.font_size.1 * 0.25,
+                    right: col_offset
+                        + self.font_size.0 * width as f32
+                        + self.font_size.1 * 0.375
+                        + 0.5,
+                    bottom: row_offset
+                        + self.font_size.1 * (selection_view_index + 1) as f32
+                        + self.font_size.1 * 0.25
+                        + 0.5,
                 },
                 &inner_brush,
             );
         }
 
         self.draw_text_with_offset(
-            col_offset + self.font_size.1 * 0.5,
-            row_offset + self.font_size.1 * 0.5,
+            col_offset + self.font_size.1 * 0.25,
+            row_offset + self.font_size.1 * 0.25,
             layout,
             text,
             effects.unwrap_or(&[]),
