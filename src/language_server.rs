@@ -1,14 +1,26 @@
 use std::{
     borrow::BorrowMut,
     collections::{HashMap, VecDeque},
+    fs::File,
     io::{BufRead, BufReader, Read, Write},
-    process::{Child, ChildStdin, Command, Stdio},
+    mem::size_of,
+    os::windows::{
+        prelude::{FromRawHandle, OwnedHandle},
+        process::CommandExt,
+    },
+    process::{Command, Stdio},
+    ptr::null_mut,
     sync::{Arc, Mutex},
     thread::{self, JoinHandle},
 };
 
 use bstr::ByteSlice;
 use serde_json::Value;
+use windows::Win32::{
+    Foundation::HANDLE,
+    Security::SECURITY_ATTRIBUTES,
+    System::{Pipes::CreatePipe, Threading::CREATE_NO_WINDOW},
+};
 
 use crate::{
     language_server_types::{
@@ -32,7 +44,7 @@ pub struct ServerNotification {
 
 pub struct LanguageServer {
     language: &'static Language,
-    stdin: ChildStdin,
+    stdin: File,
     requests: HashMap<i32, &'static str>,
     request_id: i32,
     responses: Arc<Mutex<VecDeque<ServerMessage>>>,
@@ -47,16 +59,60 @@ pub struct LanguageServer {
 
 impl LanguageServer {
     pub fn new(language: &'static Language) -> Option<Self> {
-        let mut server = Command::new(language.lsp_executable?)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .ok()?;
-        let mut stdin = server.stdin.take()?;
+        let (mut stdin, stdout) = if cfg!(target_os = "windows") {
+            let mut stdin_read = HANDLE::default();
+            let mut stdin_write = HANDLE::default();
+            let mut stdout_read = HANDLE::default();
+            let mut stdout_write = HANDLE::default();
+
+            let security_attributes = SECURITY_ATTRIBUTES {
+                nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+                bInheritHandle: true.into(),
+                lpSecurityDescriptor: null_mut(),
+            };
+
+            unsafe {
+                CreatePipe(
+                    &mut stdin_read,
+                    &mut stdin_write,
+                    Some(&security_attributes),
+                    0,
+                );
+                CreatePipe(
+                    &mut stdout_read,
+                    &mut stdout_write,
+                    Some(&security_attributes),
+                    0,
+                );
+
+                let process = Command::new(language.lsp_executable?)
+                    .stdin(Stdio::from_raw_handle(stdin_read.0 as *mut _))
+                    .stdout(Stdio::from_raw_handle(stdout_write.0 as *mut _))
+                    .stderr(Stdio::null())
+                    .creation_flags(CREATE_NO_WINDOW.0)
+                    .spawn()
+                    .ok()?;
+                (
+                    File::from_raw_handle(stdin_write.0 as *mut _),
+                    File::from_raw_handle(stdout_read.0 as *mut _),
+                )
+            }
+        } else {
+            let mut process = Command::new(language.lsp_executable?)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .ok()?;
+            (
+                File::from(OwnedHandle::from(process.stdin.take()?)),
+                File::from(OwnedHandle::from(process.stdout.take()?)),
+            )
+        };
+
         let responses = Arc::new(Mutex::new(VecDeque::new()));
 
-        start_reader_thread(server, language, Arc::clone(&responses));
+        start_reader_thread(stdout, language, Arc::clone(&responses));
 
         send_request(
             &mut stdin,
@@ -222,11 +278,11 @@ impl LanguageServer {
 }
 
 fn start_reader_thread(
-    mut server: Child,
+    stdout: File,
     language: &'static Language,
     responses: Arc<Mutex<VecDeque<ServerMessage>>>,
 ) -> JoinHandle<()> {
-    let stdout = server.stdout.take().unwrap();
+    // let stdout = server.stdout.take().unwrap();
 
     thread::spawn(move || {
         let mut buffer = vec![];
@@ -263,7 +319,7 @@ fn start_reader_thread(
 }
 
 pub fn send_request<T: serde::Serialize>(
-    stdin: &mut ChildStdin,
+    stdin: &mut File,
     request_id: i32,
     method: &'static str,
     params: T,
@@ -276,7 +332,7 @@ pub fn send_request<T: serde::Serialize>(
 }
 
 fn send_notification<T: serde::Serialize>(
-    stdin: &mut ChildStdin,
+    stdin: &mut File,
     method: &'static str,
     params: T,
 ) -> Result<(), std::io::Error> {

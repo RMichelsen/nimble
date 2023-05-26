@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![feature(iterator_try_collect)]
