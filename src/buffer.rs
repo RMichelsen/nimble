@@ -136,10 +136,10 @@ impl Buffer {
     }
 
     pub fn set_cursor(&mut self, line: usize, col: usize) {
-        if let Some(cursor_line) = self.piece_table.line_at_index(line) {
+        if let Some(mouse_line) = self.piece_table.line_at_index(line) {
             if let Some(position) = self
                 .piece_table
-                .char_index_from_line_col(line, min(col, cursor_line.length.saturating_sub(1)))
+                .char_index_from_line_col(line, min(col, mouse_line.length.saturating_sub(1)))
             {
                 self.cursors.truncate(1);
                 self.switch_to_normal_mode();
@@ -156,11 +156,21 @@ impl Buffer {
     }
 
     pub fn set_drag(&mut self, line: usize, col: usize) {
-        if let Some(cursor_line) = self.piece_table.line_at_index(line) {
+        if let Some(mouse_line) = self.piece_table.line_at_index(line) {
             if let Some(position) = self
                 .piece_table
-                .char_index_from_line_col(line, min(col, cursor_line.length))
+                .char_index_from_line_col(line, min(col, mouse_line.length))
             {
+                // Only start visual selection if the cursor moved cell
+                // Disallowing selecting '\n' on the same line by dragging
+                if self.cursors[0].position == position
+                    || (self.piece_table.line_index(self.cursors[0].position) == mouse_line.index
+                        && self.cursors[0].position == mouse_line.end.saturating_sub(1)
+                        && col >= self.piece_table.col_index(self.cursors[0].position))
+                {
+                    return;
+                }
+
                 if self.cursors[0].position != position {
                     self.switch_to_visual_mode();
                     self.cursors[0].position = position;

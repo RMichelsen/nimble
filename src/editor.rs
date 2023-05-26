@@ -909,6 +909,9 @@ impl Editor {
         match key_code {
             VirtualKeyCode::T if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 self.split_view = !self.split_view;
+                if !self.split_view {
+                    self.active_view = 0;
+                }
                 return true;
             }
             VirtualKeyCode::C if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
@@ -1026,6 +1029,9 @@ impl Editor {
                         .center_if_not_visible(&document.buffer, &active_document_layout.layout),
                     EditorCommand::ToggleSplitView => {
                         self.split_view = !self.split_view;
+                        if !self.split_view {
+                            self.active_view = 0;
+                        }
                     }
                     x => delayed_command = Some(x),
                 }
@@ -1069,6 +1075,9 @@ impl Editor {
                         .center_if_not_visible(&document.buffer, &active_document_layout.layout),
                     EditorCommand::ToggleSplitView => {
                         self.split_view = !self.split_view;
+                        if !self.split_view {
+                            self.active_view = 0;
+                        }
                     }
                     x => delayed_command = Some(x),
                 }

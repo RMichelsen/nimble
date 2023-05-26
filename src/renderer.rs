@@ -569,7 +569,7 @@ impl Renderer {
                     }) {
                         let (row, col) = (
                             view.absolute_to_view_row(line) + 1,
-                            view.absolute_to_view_col(col),
+                            view.absolute_to_view_col(col) + 1,
                         );
 
                         self.context.draw_popup_below(
@@ -585,20 +585,8 @@ impl Renderer {
                     } else if let Some(message) = &view.hover_message {
                         let (row, col) = (
                             view.absolute_to_view_row(line) + 1,
-                            view.absolute_to_view_col(col),
+                            view.absolute_to_view_col(col) + 1,
                         );
-
-                        let max_bytes = (layout.num_cols / 2) * (layout.num_rows / 2);
-
-                        let mut limit = 0;
-                        let mut offset = 0;
-                        for line in message.split('\n') {
-                            limit += max(line.len(), layout.num_cols / 2);
-                            offset += line.len();
-                            if limit > max_bytes {
-                                break;
-                            }
-                        }
 
                         let mut line_limit = 0;
                         let truncated_message: Vec<u8> = message
