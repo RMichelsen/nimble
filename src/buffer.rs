@@ -943,9 +943,17 @@ impl Buffer {
                 }
             }
             ReplaceChar(c) => {
-                self.command(CutSingleSelection);
-                self.command(InsertChar(c));
-                self.motion(Backward(1));
+                let mut content_changes = vec![];
+
+                let num_chars = self.piece_table.num_chars();
+                for i in 0..self.cursors.len() {
+                    content_changes.push(
+                        self.delete_chars(self.cursors[i].position, self.cursors[i].position + 1),
+                    );
+                    content_changes.push(self.insert_chars(self.cursors[i].position, &[c]));
+                }
+
+                self.lsp_change(content_changes);
             }
             CutSelection => {
                 let mut content_changes = vec![];
