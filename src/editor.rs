@@ -193,7 +193,8 @@ impl Editor {
                 col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize
                     + right_numbers_num_cols,
                 num_rows: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(1),
-                num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
+                num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize
+                    - right_numbers_num_cols,
             };
 
             let right_numbers_layout = RenderLayout {
@@ -612,10 +613,6 @@ impl Editor {
         let font_size = self.renderer.get_font_size();
 
         if let Some(left_document) = self.visible_documents[0].last() {
-            self.renderer
-                .clear_layout_contents(&self.visible_documents_layouts[0].layout);
-            self.renderer
-                .clear_layout_contents(&self.visible_documents_layouts[0].numbers_layout);
             self.renderer.draw_buffer(
                 &self.open_documents[*left_document].buffer,
                 &self.visible_documents_layouts[0].layout,
@@ -639,10 +636,6 @@ impl Editor {
         }
 
         if let Some(right_document) = self.visible_documents[1].last() {
-            self.renderer
-                .clear_layout_contents(&self.visible_documents_layouts[1].layout);
-            self.renderer
-                .clear_layout_contents(&self.visible_documents_layouts[1].numbers_layout);
             self.renderer.draw_buffer(
                 &self.open_documents[*right_document].buffer,
                 &self.visible_documents_layouts[1].layout,
@@ -663,9 +656,6 @@ impl Editor {
                 &self.visible_documents_layouts[1].status_line_layout,
                 self.active_view == 1,
             );
-        } else if self.split_view {
-            self.renderer
-                .clear_layout_contents(&self.visible_documents_layouts[1].layout);
         }
 
         if self.split_view {

@@ -554,7 +554,21 @@ impl GraphicsContext {
         effects: &[TextEffect],
         theme: &Theme,
     ) {
-        self.draw_text_with_col_offset(0, 0, layout, text, effects, theme, view.col_offset, false)
+        unsafe {
+            self.render_target.PushAxisAlignedClip(
+                &D2D_RECT_F {
+                    left: layout.col_offset as f32 * self.font_size.0,
+                    top: layout.row_offset as f32 * self.font_size.1,
+                    right: (layout.col_offset + layout.num_cols) as f32 * self.font_size.0,
+                    bottom: (layout.row_offset + layout.num_rows) as f32 * self.font_size.1,
+                },
+                D2D1_ANTIALIAS_MODE_ALIASED,
+            );
+        }
+        self.draw_text_with_col_offset(0, 0, layout, text, effects, theme, view.col_offset, false);
+        unsafe {
+            self.render_target.PopAxisAlignedClip();
+        }
     }
 
     pub fn set_word_wrapping(&self, wrap: bool) {
