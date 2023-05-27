@@ -35,6 +35,8 @@ pub enum EditorCommand {
     CenterView,
     CenterIfNotVisible,
     ToggleSplitView,
+    NextTab,
+    PreviousTab,
     Quit,
     QuitAll,
     QuitNoCheck,
@@ -1034,6 +1036,18 @@ impl Editor {
                             self.active_view = 0;
                         }
                     }
+                    EditorCommand::NextTab => {
+                        if self.visible_documents[self.active_view].len() > 1 {
+                            let front = self.visible_documents[self.active_view].remove(0);
+                            self.visible_documents[self.active_view].push(front);
+                        }
+                    }
+                    EditorCommand::PreviousTab => {
+                        if self.visible_documents[self.active_view].len() > 1 {
+                            let back = self.visible_documents[self.active_view].pop().unwrap();
+                            self.visible_documents[self.active_view].insert(0, back);
+                        }
+                    }
                     x => delayed_command = Some(x),
                 }
                 document
@@ -1078,6 +1092,18 @@ impl Editor {
                         self.split_view = !self.split_view;
                         if !self.split_view {
                             self.active_view = 0;
+                        }
+                    }
+                    EditorCommand::NextTab => {
+                        if self.visible_documents[self.active_view].len() > 1 {
+                            let front = self.visible_documents[self.active_view].remove(0);
+                            self.visible_documents[self.active_view].push(front);
+                        }
+                    }
+                    EditorCommand::PreviousTab => {
+                        if self.visible_documents[self.active_view].len() > 1 {
+                            let back = self.visible_documents[self.active_view].pop().unwrap();
+                            self.visible_documents[self.active_view].insert(0, back);
                         }
                     }
                     x => delayed_command = Some(x),

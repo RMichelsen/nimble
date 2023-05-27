@@ -376,6 +376,10 @@ impl Buffer {
                     self.command(InsertChar(b' '));
                 }
             }
+            (_, Tab) if modifiers.is_some_and(|m| m.contains(ModifiersState::SHIFT)) => {
+                return Some(EditorCommand::PreviousTab)
+            }
+            (_, Tab) => return Some(EditorCommand::NextTab),
 
             (Insert, Space) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 self.command(StartCompletion);
