@@ -101,11 +101,10 @@ pub fn get_filtered_completions(
                 })
                 .unwrap();
 
-            existing_item.label.push(b'\n' as char);
-            existing_item.label.push_str(&item.label);
-
             if let Some(existing_details) = &mut existing_item.detail {
                 if let Some(details) = &item.detail {
+                    existing_item.label.push(b'\n' as char);
+                    existing_item.label.push_str(&item.label);
                     existing_details.push(b'\n' as char);
                     existing_details.push_str(details)
                 }
@@ -138,25 +137,6 @@ pub fn get_filtered_completions(
         let score2 = text_utils::fuzzy_match(&match_string, text2.as_bytes());
         score2.cmp(&score1)
     });
-
-    let score1 = text_utils::fuzzy_match("ind".as_bytes(), "indent_width".as_bytes());
-    let score2 = text_utils::fuzzy_match("ind".as_bytes(), "col_index".as_bytes());
-
-    // let mut filtered_completions: vec<completionitem> = merged_items
-    //     .iter()
-    //     .filter(|item| {
-    //         item.insert_text
-    //             .as_ref()
-    //             .unwrap_or(&item.label)
-    //             .starts_with(unsafe { std::str::from_utf8_unchecked(&match_string) })
-    //     })
-    //     .cloned()
-    //     .collect();
-
-    // // if the match string doesn't match anything, show all entries
-    // if filtered_completions.is_empty() {
-    //     filtered_completions = completion_list.items.to_vec();
-    // }
 
     merged_items
 }
