@@ -282,8 +282,6 @@ fn start_reader_thread(
     language: &'static Language,
     responses: Arc<Mutex<VecDeque<ServerMessage>>>,
 ) -> JoinHandle<()> {
-    // let stdout = server.stdout.take().unwrap();
-
     thread::spawn(move || {
         let mut buffer = vec![];
         let mut reader = BufReader::new(stdout);
