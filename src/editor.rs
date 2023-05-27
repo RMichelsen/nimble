@@ -61,6 +61,7 @@ pub struct FileFinder {
 }
 
 pub struct Workspace {
+    pub uri: Url,
     pub path: String,
     pub gitignore_paths: Vec<String>,
 }
@@ -1174,10 +1175,12 @@ impl Editor {
     pub fn open_file(&mut self, path: &str, window: &Window) {
         let language_server = language_from_path(path).map(|language| {
             if !self.language_servers.contains_key(language.identifier) {
-                LanguageServer::new(language).and_then(|server| {
-                    self.language_servers
-                        .insert(language.identifier, Rc::new(RefCell::new(server)))
-                });
+                LanguageServer::new(language, &self.workspace.as_ref().unwrap()).and_then(
+                    |server| {
+                        self.language_servers
+                            .insert(language.identifier, Rc::new(RefCell::new(server)))
+                    },
+                );
             }
             Rc::clone(self.language_servers.get(language.identifier).unwrap())
         });
@@ -1232,6 +1235,7 @@ impl Workspace {
         };
 
         Self {
+            uri: Url::from_directory_path(path).unwrap(),
             path: path.to_string(),
             gitignore_paths,
         }

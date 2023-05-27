@@ -23,6 +23,7 @@ use windows::Win32::{
 };
 
 use crate::{
+    editor::Workspace,
     language_server_types::{
         ClientCapabilities, CompletionList, Diagnostic, GeneralClientCapabilities,
         InitializeParams, InitializeResult, InitializedParams, Notification,
@@ -58,8 +59,8 @@ pub struct LanguageServer {
 }
 
 impl LanguageServer {
-    pub fn new(language: &'static Language) -> Option<Self> {
-        let (mut stdin, stdout) = if cfg!(target_os = "windows") {
+    pub fn new(language: &'static Language, workspace: &Workspace) -> Option<Self> {
+        let (process_id, mut stdin, stdout) = if cfg!(target_os = "windows") {
             let mut stdin_read = HANDLE::default();
             let mut stdin_write = HANDLE::default();
             let mut stdout_read = HANDLE::default();
@@ -93,6 +94,7 @@ impl LanguageServer {
                     .spawn()
                     .ok()?;
                 (
+                    process.id(),
                     File::from_raw_handle(stdin_write.0 as *mut _),
                     File::from_raw_handle(stdout_read.0 as *mut _),
                 )
@@ -105,6 +107,7 @@ impl LanguageServer {
                 .spawn()
                 .ok()?;
             (
+                process.id(),
                 File::from(OwnedHandle::from(process.stdin.take()?)),
                 File::from(OwnedHandle::from(process.stdout.take()?)),
             )
@@ -119,8 +122,8 @@ impl LanguageServer {
             0,
             "initialize",
             InitializeParams {
-                process_id: 0,
-                root_uri: None,
+                process_id,
+                root_uri: Some(workspace.uri.to_string()),
                 capabilities: ClientCapabilities {
                     general: GeneralClientCapabilities {
                         position_encodings: vec!["utf-8".to_string()],
