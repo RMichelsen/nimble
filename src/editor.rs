@@ -8,7 +8,6 @@ use std::{
     rc::Rc,
 };
 
-use fuzzy_matcher::{clangd::ClangdMatcher, FuzzyMatcher};
 use url::Url;
 use walkdir::WalkDir;
 use winit::{
@@ -26,6 +25,7 @@ use crate::{
     },
     platform_resources,
     renderer::{RenderLayout, Renderer},
+    text_utils,
     view::View,
 };
 
@@ -1274,13 +1274,13 @@ impl FileFinder {
     }
 
     pub fn filter_files(&mut self) {
-        let matcher = ClangdMatcher::default();
-
-        self.files.sort_by(|f0, f1| {
-            if let (Some(n0), Some(n1)) = (f0.name.to_str(), f1.name.to_str()) {
-                let s0 = matcher.fuzzy_match(n0, &self.search_string).unwrap_or(0);
-                let s1 = matcher.fuzzy_match(n1, &self.search_string).unwrap_or(0);
-                return s1.cmp(&s0);
+        self.files.sort_by(|file1, file2| {
+            if let (Some(name1), Some(name2)) = (file1.name.to_str(), file2.name.to_str()) {
+                let score1 =
+                    text_utils::fuzzy_match(self.search_string.as_bytes(), name1.as_bytes());
+                let score2 =
+                    text_utils::fuzzy_match(self.search_string.as_bytes(), name2.as_bytes());
+                return score2.cmp(&score1);
             }
             0.cmp(&0)
         });

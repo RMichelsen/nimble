@@ -131,23 +131,34 @@ pub fn get_filtered_completions(
         .take(cursor_position - request_position)
         .collect();
 
-    let mut filtered_completions: Vec<CompletionItem> = merged_items
-        .iter()
-        .filter(|item| {
-            item.insert_text
-                .as_ref()
-                .unwrap_or(&item.label)
-                .starts_with(unsafe { std::str::from_utf8_unchecked(&match_string) })
-        })
-        .cloned()
-        .collect();
+    merged_items.sort_by(|item1, item2| {
+        let text1 = item1.insert_text.as_ref().unwrap_or(&item1.label);
+        let text2 = item2.insert_text.as_ref().unwrap_or(&item2.label);
+        let score1 = text_utils::fuzzy_match(&match_string, text1.as_bytes());
+        let score2 = text_utils::fuzzy_match(&match_string, text2.as_bytes());
+        score2.cmp(&score1)
+    });
 
-    // If the match string doesn't match anything, show all entries
-    if filtered_completions.is_empty() {
-        filtered_completions = completion_list.items.to_vec();
-    }
+    let score1 = text_utils::fuzzy_match("ind".as_bytes(), "indent_width".as_bytes());
+    let score2 = text_utils::fuzzy_match("ind".as_bytes(), "col_index".as_bytes());
 
-    filtered_completions
+    // let mut filtered_completions: vec<completionitem> = merged_items
+    //     .iter()
+    //     .filter(|item| {
+    //         item.insert_text
+    //             .as_ref()
+    //             .unwrap_or(&item.label)
+    //             .starts_with(unsafe { std::str::from_utf8_unchecked(&match_string) })
+    //     })
+    //     .cloned()
+    //     .collect();
+
+    // // if the match string doesn't match anything, show all entries
+    // if filtered_completions.is_empty() {
+    //     filtered_completions = completion_list.items.to_vec();
+    // }
+
+    merged_items
 }
 
 impl Cursor {
