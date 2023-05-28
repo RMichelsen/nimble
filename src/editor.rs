@@ -24,7 +24,7 @@ use crate::{
         language_from_path, CPP_FILE_EXTENSIONS, PYTHON_FILE_EXTENSIONS, RUST_FILE_EXTENSIONS,
     },
     platform_resources,
-    renderer::{RenderLayout, Renderer, POPUP_MAX_HEIGHT},
+    renderer::{RenderLayout, Renderer},
     text_utils,
     view::{HoverMessage, View, SCROLL_LINES_PER_ROLL},
 };
@@ -253,8 +253,17 @@ impl Editor {
         false
     }
 
-    pub fn handle_lsp_responses(&mut self, window: &Window) -> bool {
+    pub fn handle_lsp_responses(
+        &mut self,
+        mouse_position: Option<LogicalPosition<f64>>,
+        window: &Window,
+    ) -> bool {
         let mut require_redraw = false;
+
+        let window_size = (
+            window.inner_size().width as f64 / window.scale_factor(),
+            window.inner_size().height as f64 / window.scale_factor(),
+        );
 
         let mut goto_location = None;
         for (identifier, server) in &mut self.language_servers {
@@ -313,64 +322,78 @@ impl Editor {
                             "textDocument/hover" => {
                                 if let Some(value) = response.value {
                                     if let Ok(hover) = serde_json::from_value::<Hover>(value) {
-                                        if let Some(i) =
-                                            self.visible_documents[self.active_view].last()
-                                        {
-                                            match hover.contents.kind.as_str() {
-                                                "plaintext" => {
-                                                    let num_lines = hover
-                                                        .contents
-                                                        .value
-                                                        .as_bytes()
-                                                        .iter()
-                                                        .filter(|&c| *c == b'\n')
-                                                        .count();
-                                                    self.open_documents[*i].view.hover_message =
-                                                        Some(HoverMessage {
+                                        if let Some(mouse_position) = &mouse_position {
+                                            let hover_view =
+                                                if mouse_position.x < window_size.0 / 2.0 {
+                                                    0
+                                                } else {
+                                                    1
+                                                };
+
+                                            if let Some(i) =
+                                                self.visible_documents[hover_view].last()
+                                            {
+                                                match hover.contents.kind.as_str() {
+                                                    "plaintext" => {
+                                                        let num_lines = hover
+                                                            .contents
+                                                            .value
+                                                            .as_bytes()
+                                                            .iter()
+                                                            .filter(|&c| *c == b'\n')
+                                                            .count();
+                                                        self.open_documents[*i]
+                                                            .view
+                                                            .hover_message = Some(HoverMessage {
                                                             message: hover.contents.value,
                                                             code_block_ranges: vec![],
                                                             line_offset: 0,
                                                             num_lines,
                                                         });
-                                                }
-                                                "markdown" => {
-                                                    let markdown = hover.contents.value;
-
-                                                    let mut processed_markdown = String::default();
-
-                                                    let mut code_block_ranges = vec![];
-                                                    let mut offset = 0;
-                                                    let mut code_block_start = None;
-                                                    for line in markdown.lines() {
-                                                        if line.starts_with("```") {
-                                                            if let Some(start) = code_block_start {
-                                                                code_block_ranges
-                                                                    .push((start, offset));
-                                                                code_block_start = None;
-                                                            } else {
-                                                                code_block_start = Some(offset);
-                                                            }
-                                                        } else {
-                                                            processed_markdown.push_str(line);
-                                                            processed_markdown.push('\n');
-                                                            offset = processed_markdown.len();
-                                                        }
                                                     }
+                                                    "markdown" => {
+                                                        let markdown = hover.contents.value;
 
-                                                    let num_lines = processed_markdown
-                                                        .as_bytes()
-                                                        .iter()
-                                                        .filter(|&c| *c == b'\n')
-                                                        .count();
-                                                    self.open_documents[*i].view.hover_message =
-                                                        Some(HoverMessage {
+                                                        let mut processed_markdown =
+                                                            String::default();
+
+                                                        let mut code_block_ranges = vec![];
+                                                        let mut offset = 0;
+                                                        let mut code_block_start = None;
+                                                        for line in markdown.lines() {
+                                                            if line.starts_with("```") {
+                                                                if let Some(start) =
+                                                                    code_block_start
+                                                                {
+                                                                    code_block_ranges
+                                                                        .push((start, offset));
+                                                                    code_block_start = None;
+                                                                } else {
+                                                                    code_block_start = Some(offset);
+                                                                }
+                                                            } else {
+                                                                processed_markdown.push_str(line);
+                                                                processed_markdown.push('\n');
+                                                                offset = processed_markdown.len();
+                                                            }
+                                                        }
+
+                                                        let num_lines = processed_markdown
+                                                            .as_bytes()
+                                                            .iter()
+                                                            .filter(|&c| *c == b'\n')
+                                                            .count();
+                                                        self.open_documents[*i]
+                                                            .view
+                                                            .hover_message = Some(HoverMessage {
                                                             message: processed_markdown,
                                                             code_block_ranges,
                                                             line_offset: 0,
                                                             num_lines,
                                                         });
+                                                    }
+                                                    _ => (),
                                                 }
-                                                _ => (),
                                             }
                                         }
                                     }
@@ -662,34 +685,77 @@ impl Editor {
             window.inner_size().height as f64 / window.scale_factor(),
         );
 
-        let active_document_layout = &self.visible_documents_layouts[self.active_view];
+        let hover_view = if mouse_position.x < window_size.0 / 2.0 {
+            0
+        } else {
+            1
+        };
+
         let font_size = self.renderer.get_font_size();
-        if let Some(i) = self.visible_documents[self.active_view].last() {
+        if let Some(i) = self
+            .visible_documents
+            .get(hover_view)
+            .and_then(|documents| documents.last())
+        {
             let document = &mut self.open_documents[*i];
+            let document_layout = &self.visible_documents_layouts[hover_view];
             document
                 .view
-                .hover(&active_document_layout.layout, mouse_position, font_size);
+                .hover(&document_layout.layout, mouse_position, font_size);
 
-            let (line, col) = document.view.get_line_col(
-                &active_document_layout.layout,
-                mouse_position,
-                font_size,
-            );
+            let (line, col) =
+                document
+                    .view
+                    .get_line_col(&document_layout.layout, mouse_position, font_size);
             document.buffer.handle_mouse_hover(line, col);
         }
     }
 
-    pub fn handle_mouse_exit_hover(&mut self) {
-        let font_size = self.renderer.get_font_size();
-        if let Some(i) = self.visible_documents[self.active_view].last() {
-            self.open_documents[*i].view.exit_hover();
+    pub fn handle_mouse_exit_hover(
+        &mut self,
+        mouse_position: Option<LogicalPosition<f64>>,
+        window: &Window,
+    ) {
+        let window_size = (
+            window.inner_size().width as f64 / window.scale_factor(),
+            window.inner_size().height as f64 / window.scale_factor(),
+        );
+
+        if let Some(mouse_position) = &mouse_position {
+            let hover_view = if mouse_position.x < window_size.0 / 2.0 {
+                0
+            } else {
+                1
+            };
+
+            if let Some(i) = self.visible_documents[hover_view].last() {
+                self.open_documents[*i].view.exit_hover();
+            }
         }
     }
 
-    pub fn hovering(&mut self) -> bool {
-        if let Some(i) = self.visible_documents[self.active_view].last() {
-            return self.open_documents[*i].view.hover.is_some();
+    pub fn hovering(
+        &mut self,
+        mouse_position: Option<LogicalPosition<f64>>,
+        window: &Window,
+    ) -> bool {
+        let window_size = (
+            window.inner_size().width as f64 / window.scale_factor(),
+            window.inner_size().height as f64 / window.scale_factor(),
+        );
+
+        if let Some(mouse_position) = &mouse_position {
+            let hover_view = if mouse_position.x < window_size.0 / 2.0 {
+                0
+            } else {
+                1
+            };
+
+            if let Some(i) = self.visible_documents[hover_view].last() {
+                return self.open_documents[*i].view.hover.is_some();
+            }
         }
+
         false
     }
 
@@ -718,10 +784,16 @@ impl Editor {
 
     pub fn handle_key(
         &mut self,
+        mouse_position: Option<LogicalPosition<f64>>,
         window: &Window,
         key_code: VirtualKeyCode,
         modifiers: Option<ModifiersState>,
     ) -> bool {
+        let window_size = (
+            window.inner_size().width as f64 / window.scale_factor(),
+            window.inner_size().height as f64 / window.scale_factor(),
+        );
+
         match key_code {
             VirtualKeyCode::T if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
                 self.split_view = !self.split_view;
@@ -772,12 +844,25 @@ impl Editor {
                         file_finder.selection_view_offset += 1;
                     }
                     return true;
-                } else if let Some(i) = self.visible_documents[self.active_view].last() {
-                    if let Some(hover_message) = &mut self.open_documents[*i].view.hover_message {
-                        hover_message.line_offset = min(
-                            hover_message.line_offset + SCROLL_LINES_PER_ROLL as usize,
-                            hover_message.num_lines.saturating_sub(POPUP_MAX_HEIGHT),
-                        );
+                } else if let Some(mouse_position) = &mouse_position {
+                    let hover_view = if mouse_position.x < window_size.0 / 2.0 {
+                        0
+                    } else {
+                        1
+                    };
+
+                    if let Some(i) = self.visible_documents[hover_view].last() {
+                        if let Some(hover_message) = &mut self.open_documents[*i].view.hover_message
+                        {
+                            let popup_max_height =
+                                self.visible_documents_layouts[hover_view].layout.num_rows / 2;
+                            hover_message.line_offset = min(
+                                hover_message.line_offset + SCROLL_LINES_PER_ROLL as usize,
+                                hover_message.num_lines.saturating_sub(
+                                    popup_max_height.saturating_sub(SCROLL_LINES_PER_ROLL as usize),
+                                ),
+                            );
+                        }
                     }
                 }
             }
@@ -788,11 +873,20 @@ impl Editor {
                         file_finder.selection_view_offset -= 1;
                     }
                     return true;
-                } else if let Some(i) = self.visible_documents[self.active_view].last() {
-                    if let Some(hover_message) = &mut self.open_documents[*i].view.hover_message {
-                        hover_message.line_offset = hover_message
-                            .line_offset
-                            .saturating_sub(SCROLL_LINES_PER_ROLL as usize);
+                } else if let Some(mouse_position) = &mouse_position {
+                    let hover_view = if mouse_position.x < window_size.0 / 2.0 {
+                        0
+                    } else {
+                        1
+                    };
+
+                    if let Some(i) = self.visible_documents[hover_view].last() {
+                        if let Some(hover_message) = &mut self.open_documents[*i].view.hover_message
+                        {
+                            hover_message.line_offset = hover_message
+                                .line_offset
+                                .saturating_sub(SCROLL_LINES_PER_ROLL as usize);
+                        }
                     }
                 }
             }

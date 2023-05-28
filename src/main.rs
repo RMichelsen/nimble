@@ -73,7 +73,10 @@ fn main() {
         editor.update_layouts(&window);
 
         // Handle incoming responses, re-render if necessary
-        if editor.handle_lsp_responses(&window) {
+        if editor.handle_lsp_responses(
+            mouse_position.map(|position| position.to_logical(window.scale_factor())),
+            &window,
+        ) {
             editor.render(&window);
         }
 
@@ -129,7 +132,13 @@ fn main() {
             } => {
                 if input.state == ElementState::Pressed {
                     if let Some(key_code) = input.virtual_keycode {
-                        if !editor.handle_key(&window, key_code, modifiers) {
+                        if !editor.handle_key(
+                            mouse_position
+                                .map(|position| position.to_logical(window.scale_factor())),
+                            &window,
+                            key_code,
+                            modifiers,
+                        ) {
                             editor.lsp_shutdown();
                             control_flow.set_exit();
                         }
@@ -187,11 +196,19 @@ fn main() {
                         old_position.to_logical(window.scale_factor()),
                         position.to_logical(window.scale_factor()),
                     ) {
-                        if editor.hovering() {
+                        if editor.hovering(
+                            mouse_position
+                                .map(|position| position.to_logical(window.scale_factor())),
+                            &window,
+                        ) {
                             request_redraw(&window);
                         }
                         hover_timer = Some(Instant::now());
-                        editor.handle_mouse_exit_hover();
+                        editor.handle_mouse_exit_hover(
+                            mouse_position
+                                .map(|position| position.to_logical(window.scale_factor())),
+                            &window,
+                        );
                     }
                 }
 

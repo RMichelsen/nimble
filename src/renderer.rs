@@ -54,8 +54,6 @@ pub struct Renderer {
     pub theme: Theme,
 }
 
-pub const POPUP_MAX_HEIGHT: usize = 30;
-
 impl Renderer {
     pub fn new(window: &Window) -> Self {
         let context = GraphicsContext::new(window);
@@ -598,10 +596,11 @@ impl Renderer {
                                 skip
                             })
                             .take_while(|&x| {
+                                let limit_reached = line_limit < (layout.num_rows / 2);
                                 if *x == b'\n' {
                                     line_limit += 1;
                                 }
-                                line_limit < POPUP_MAX_HEIGHT
+                                limit_reached
                             })
                             .copied()
                             .collect();
