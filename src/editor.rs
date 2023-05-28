@@ -26,7 +26,7 @@ use crate::{
     platform_resources,
     renderer::{RenderLayout, Renderer},
     text_utils,
-    view::View,
+    view::{HoverMessage, View, SCROLL_LINES_PER_ROLL},
 };
 
 pub const MAX_SHOWN_FILE_FINDER_ITEMS: usize = 10;
@@ -132,9 +132,9 @@ impl Editor {
                 row_offset: 0,
                 col_offset: left_numbers_num_cols,
                 num_rows: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(1),
-                num_cols: (window_size.0 / font_size.0 / if self.split_view { 2.0 } else { 1.0 })
-                    .ceil() as usize
-                    - left_numbers_num_cols,
+                num_cols: ((window_size.0 / font_size.0 / if self.split_view { 2.0 } else { 1.0 })
+                    .ceil() as usize)
+                    .saturating_sub(left_numbers_num_cols),
             };
 
             let left_numbers_layout = RenderLayout {
@@ -193,8 +193,8 @@ impl Editor {
                 col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize
                     + right_numbers_num_cols,
                 num_rows: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(1),
-                num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize
-                    - right_numbers_num_cols,
+                num_cols: ((window_size.0 / font_size.0 / 2.0).ceil() as usize)
+                    .saturating_sub(right_numbers_num_cols),
             };
 
             let right_numbers_layout = RenderLayout {
@@ -233,241 +233,6 @@ impl Editor {
                 },
             }
         };
-
-        // self.visible_documents_layouts = match self.visible_documents {
-        //     [[.., Some(i)], Some(j)] if self.split_view => {
-        //         let left_document = &mut self.open_documents[i];
-        //         let left_numbers_num_cols = (0..)
-        //             .take_while(|i| 10usize.pow(*i) <= left_document.buffer.piece_table.num_lines())
-        //             .count()
-        //             .max(4)
-        //             + 2;
-
-        //         let left_layout = RenderLayout {
-        //             row_offset: 0,
-        //             col_offset: left_numbers_num_cols,
-        //             num_rows: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(1),
-        //             num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize
-        //                 - left_numbers_num_cols,
-        //         };
-
-        //         let left_numbers_layout = RenderLayout {
-        //             row_offset: 0,
-        //             col_offset: 0,
-        //             num_rows: left_layout.num_rows,
-        //             num_cols: left_numbers_num_cols.saturating_sub(2),
-        //         };
-
-        //         let left_status_line_layout = RenderLayout {
-        //             row_offset: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(2),
-        //             col_offset: 0,
-        //             num_rows: 2,
-        //             num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //         };
-
-        //         let right_document = &mut self.open_documents[j];
-        //         let right_numbers_num_cols = (0..)
-        //             .take_while(|i| {
-        //                 10usize.pow(*i) <= right_document.buffer.piece_table.num_lines()
-        //             })
-        //             .count()
-        //             .max(4)
-        //             + 2;
-
-        //         let right_layout = RenderLayout {
-        //             row_offset: 0,
-        //             col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize
-        //                 + right_numbers_num_cols,
-        //             num_rows: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(1),
-        //             num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //         };
-
-        //         let right_numbers_layout = RenderLayout {
-        //             row_offset: 0,
-        //             col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //             num_rows: right_layout.num_rows,
-        //             num_cols: right_numbers_num_cols.saturating_sub(2),
-        //         };
-
-        //         let right_status_line_layout = RenderLayout {
-        //             row_offset: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(2),
-        //             col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //             num_rows: 2,
-        //             num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //         };
-
-        //         [
-        //             DocumentLayout {
-        //                 layout: left_layout,
-        //                 numbers_layout: left_numbers_layout,
-        //                 status_line_layout: left_status_line_layout,
-        //             },
-        //             DocumentLayout {
-        //                 layout: right_layout,
-        //                 numbers_layout: right_numbers_layout,
-        //                 status_line_layout: right_status_line_layout,
-        //             },
-        //         ]
-        //     }
-        //     [Some(i), _] => {
-        //         let document = &mut self.open_documents[i];
-        //         let numbers_num_cols = (0..)
-        //             .take_while(|i| 10usize.pow(*i) <= document.buffer.piece_table.num_lines())
-        //             .count()
-        //             .max(4)
-        //             + 2;
-
-        //         let layout = RenderLayout {
-        //             row_offset: 0,
-        //             col_offset: numbers_num_cols,
-        //             num_rows: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(1),
-        //             num_cols: if self.split_view {
-        //                 (window_size.0 / font_size.0 / 2.0).ceil() as usize - numbers_num_cols
-        //             } else {
-        //                 (window_size.0 / font_size.0).ceil() as usize - numbers_num_cols
-        //             },
-        //         };
-
-        //         let numbers_layout = RenderLayout {
-        //             row_offset: 0,
-        //             col_offset: 0,
-        //             num_rows: layout.num_rows,
-        //             num_cols: numbers_num_cols.saturating_sub(2),
-        //         };
-
-        //         let status_line_layout = RenderLayout {
-        //             row_offset: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(2),
-        //             col_offset: 0,
-        //             num_rows: 2,
-        //             num_cols: if self.split_view {
-        //                 (window_size.0 / font_size.0 / 2.0).ceil() as usize
-        //             } else {
-        //                 (window_size.0 / font_size.0).ceil() as usize
-        //             },
-        //         };
-
-        //         let right_layout = if self.split_view {
-        //             DocumentLayout {
-        //                 layout: RenderLayout {
-        //                     row_offset: 0,
-        //                     col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //                     num_rows: ((window_size.1 / font_size.1).ceil() as usize)
-        //                         .saturating_sub(1),
-        //                     num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //                 },
-        //                 numbers_layout: RenderLayout::default(),
-        //                 status_line_layout: RenderLayout {
-        //                     row_offset: ((window_size.1 / font_size.1).ceil() as usize)
-        //                         .saturating_sub(2),
-        //                     col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //                     num_rows: 2,
-        //                     num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //                 },
-        //             }
-        //         } else {
-        //             DocumentLayout::default()
-        //         };
-
-        //         [
-        //             DocumentLayout {
-        //                 layout,
-        //                 numbers_layout,
-        //                 status_line_layout,
-        //             },
-        //             right_layout,
-        //         ]
-        //     }
-        //     [None, Some(i)] => {
-        //         if !self.split_view {
-        //             [DocumentLayout::default(), DocumentLayout::default()]
-        //         } else {
-        //             let left_layout = DocumentLayout {
-        //                 layout: RenderLayout {
-        //                     row_offset: 0,
-        //                     col_offset: 0,
-        //                     num_rows: ((window_size.1 / font_size.1).ceil() as usize)
-        //                         .saturating_sub(1),
-        //                     num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //                 },
-        //                 numbers_layout: RenderLayout::default(),
-        //                 status_line_layout: RenderLayout {
-        //                     row_offset: ((window_size.1 / font_size.1).ceil() as usize)
-        //                         .saturating_sub(2),
-        //                     col_offset: 0,
-        //                     num_rows: 2,
-        //                     num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //                 },
-        //             };
-
-        //             let right_document = &mut self.open_documents[i];
-        //             let right_numbers_num_cols = (0..)
-        //                 .take_while(|i| {
-        //                     10usize.pow(*i) <= right_document.buffer.piece_table.num_lines()
-        //                 })
-        //                 .count()
-        //                 .max(4)
-        //                 + 2;
-
-        //             let right_layout = RenderLayout {
-        //                 row_offset: 0,
-        //                 col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize
-        //                     + right_numbers_num_cols,
-        //                 num_rows: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(1),
-        //                 num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //             };
-
-        //             let right_numbers_layout = RenderLayout {
-        //                 row_offset: 0,
-        //                 col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //                 num_rows: right_layout.num_rows,
-        //                 num_cols: right_numbers_num_cols.saturating_sub(2),
-        //             };
-
-        //             let right_status_line_layout = RenderLayout {
-        //                 row_offset: ((window_size.1 / font_size.1).ceil() as usize)
-        //                     .saturating_sub(2),
-        //                 col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //                 num_rows: 2,
-        //                 num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //             };
-
-        //             [
-        //                 left_layout,
-        //                 DocumentLayout {
-        //                     layout: right_layout,
-        //                     numbers_layout: right_numbers_layout,
-        //                     status_line_layout: right_status_line_layout,
-        //                 },
-        //             ]
-        //         }
-        //     }
-        //     [None, None] => {
-        //         let left_status_line_layout = RenderLayout {
-        //             row_offset: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(2),
-        //             col_offset: 0,
-        //             num_rows: 2,
-        //             num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //         };
-
-        //         let right_status_line_layout = RenderLayout {
-        //             row_offset: ((window_size.1 / font_size.1).ceil() as usize).saturating_sub(2),
-        //             col_offset: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //             num_rows: 2,
-        //             num_cols: (window_size.0 / font_size.0 / 2.0).ceil() as usize,
-        //         };
-
-        //         [
-        //             DocumentLayout {
-        //                 status_line_layout: left_status_line_layout,
-        //                 ..Default::default()
-        //             },
-        //             DocumentLayout {
-        //                 status_line_layout: right_status_line_layout,
-        //                 ..Default::default()
-        //             },
-        //         ]
-        //     }
-        // };
 
         if let (Some(workspace), Some(file_finder)) = (&self.workspace, &self.file_finder) {
             let num_cols = (window_size.0 / font_size.0).ceil() as usize;
@@ -551,8 +316,62 @@ impl Editor {
                                         if let Some(i) =
                                             self.visible_documents[self.active_view].last()
                                         {
-                                            self.open_documents[*i].view.hover_message =
-                                                Some(hover.contents.value);
+                                            match hover.contents.kind.as_str() {
+                                                "plaintext" => {
+                                                    let num_lines = hover
+                                                        .contents
+                                                        .value
+                                                        .as_bytes()
+                                                        .iter()
+                                                        .filter(|&c| *c == b'\n')
+                                                        .count();
+                                                    self.open_documents[*i].view.hover_message =
+                                                        Some(HoverMessage {
+                                                            message: hover.contents.value,
+                                                            code_block_ranges: vec![],
+                                                            line_offset: 0,
+                                                            num_lines,
+                                                        });
+                                                }
+                                                "markdown" => {
+                                                    let markdown = hover.contents.value;
+
+                                                    let mut processed_markdown = String::default();
+
+                                                    let mut code_block_ranges = vec![];
+                                                    let mut offset = 0;
+                                                    let mut code_block_start = None;
+                                                    for line in markdown.lines() {
+                                                        if line.starts_with("```") {
+                                                            if let Some(start) = code_block_start {
+                                                                code_block_ranges
+                                                                    .push((start, offset));
+                                                                code_block_start = None;
+                                                            } else {
+                                                                code_block_start = Some(offset);
+                                                            }
+                                                        } else {
+                                                            processed_markdown.push_str(line);
+                                                            processed_markdown.push('\n');
+                                                            offset = processed_markdown.len();
+                                                        }
+                                                    }
+
+                                                    let num_lines = processed_markdown
+                                                        .as_bytes()
+                                                        .iter()
+                                                        .filter(|&c| *c == b'\n')
+                                                        .count();
+                                                    self.open_documents[*i].view.hover_message =
+                                                        Some(HoverMessage {
+                                                            message: processed_markdown,
+                                                            code_block_ranges,
+                                                            line_offset: 0,
+                                                            num_lines,
+                                                        });
+                                                }
+                                                _ => (),
+                                            }
                                         }
                                     }
                                 }
@@ -829,7 +648,11 @@ impl Editor {
 
         if let Some(i) = self.visible_documents[self.active_view].last() {
             let document = &mut self.open_documents[*i];
+            let old_offset = document.view.line_offset;
             document.view.handle_scroll(&document.buffer, sign);
+            if document.view.line_offset != old_offset {
+                document.view.exit_hover();
+            }
         }
     }
 
@@ -949,6 +772,13 @@ impl Editor {
                         file_finder.selection_view_offset += 1;
                     }
                     return true;
+                } else if let Some(i) = self.visible_documents[self.active_view].last() {
+                    if let Some(hover_message) = &mut self.open_documents[*i].view.hover_message {
+                        hover_message.line_offset = min(
+                            hover_message.line_offset + SCROLL_LINES_PER_ROLL as usize,
+                            hover_message.num_lines,
+                        );
+                    }
                 }
             }
             VirtualKeyCode::K if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
@@ -958,6 +788,12 @@ impl Editor {
                         file_finder.selection_view_offset -= 1;
                     }
                     return true;
+                } else if let Some(i) = self.visible_documents[self.active_view].last() {
+                    if let Some(hover_message) = &mut self.open_documents[*i].view.hover_message {
+                        hover_message.line_offset = hover_message
+                            .line_offset
+                            .saturating_sub(SCROLL_LINES_PER_ROLL as usize);
+                    }
                 }
             }
             VirtualKeyCode::Back if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
@@ -1191,7 +1027,7 @@ impl Editor {
     pub fn open_file(&mut self, path: &str, window: &Window) {
         let language_server = language_from_path(path).map(|language| {
             if !self.language_servers.contains_key(language.identifier) {
-                LanguageServer::new(language, &self.workspace.as_ref().unwrap()).and_then(
+                LanguageServer::new(language, self.workspace.as_ref().unwrap()).and_then(
                     |server| {
                         self.language_servers
                             .insert(language.identifier, Rc::new(RefCell::new(server)))

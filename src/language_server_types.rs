@@ -69,12 +69,33 @@ where
 #[serde(rename_all = "camelCase")]
 pub struct GeneralClientCapabilities {
     pub position_encodings: Vec<String>,
+    pub markdown: MarkdownClientCapabilities,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextDocumentClientCapabilities {
+    pub hover: HoverClientCapabilities,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkdownClientCapabilities {
+    pub parser: String,
+    pub version: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverClientCapabilities {
+    pub content_format: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientCapabilities {
     pub general: GeneralClientCapabilities,
+    pub text_document: TextDocumentClientCapabilities,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

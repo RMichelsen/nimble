@@ -26,8 +26,9 @@ use crate::{
     editor::Workspace,
     language_server_types::{
         ClientCapabilities, CompletionList, Diagnostic, GeneralClientCapabilities,
-        InitializeParams, InitializeResult, InitializedParams, Notification,
-        PublishDiagnosticParams, Request, ServerMessage, SignatureHelp,
+        HoverClientCapabilities, InitializeParams, InitializeResult, InitializedParams,
+        MarkdownClientCapabilities, Notification, PublishDiagnosticParams, Request, ServerMessage,
+        SignatureHelp, TextDocumentClientCapabilities,
     },
     language_support::Language,
 };
@@ -127,6 +128,18 @@ impl LanguageServer {
                 capabilities: ClientCapabilities {
                     general: GeneralClientCapabilities {
                         position_encodings: vec!["utf-8".to_string()],
+                        markdown: MarkdownClientCapabilities {
+                            parser: String::from("Python-Markdown"),
+                            version: String::from("3.2.2"),
+                        },
+                    },
+                    text_document: TextDocumentClientCapabilities {
+                        hover: HoverClientCapabilities {
+                            content_format: vec![
+                                String::from("markdown"),
+                                String::from("plaintext"),
+                            ],
+                        },
                     },
                 },
             },

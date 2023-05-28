@@ -4,6 +4,7 @@ use windows::{
     Foundation::Numerics::Matrix3x2,
     Win32::{
         Foundation::HWND,
+        Globalization::{MultiByteToWideChar, CP_UTF8, MULTI_BYTE_TO_WIDE_CHAR_FLAGS},
         Graphics::{
             Direct2D::{
                 Common::{
@@ -294,8 +295,22 @@ impl GraphicsContext {
         text: &[u8],
     ) -> (f64, f64) {
         let mut wide_text = vec![];
-        for c in text {
-            wide_text.push(*c as u16);
+        let wide_text_len =
+            unsafe { MultiByteToWideChar(CP_UTF8, MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0), text, None) };
+        if wide_text_len > 0 {
+            wide_text.resize(wide_text_len as usize + 1, 0);
+            unsafe {
+                MultiByteToWideChar(
+                    CP_UTF8,
+                    MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0),
+                    text,
+                    Some(wide_text.as_mut_slice()),
+                )
+            };
+        } else {
+            for c in text {
+                wide_text.push(*c as u16);
+            }
         }
 
         let text_layout = unsafe {
@@ -303,10 +318,8 @@ impl GraphicsContext {
                 .CreateTextLayout(
                     &wide_text,
                     &self.text_format,
-                    (self.font_size.0 * (layout.col_offset + layout.num_cols) as f32 - x)
-                        .clamp(0.0, f32::MAX),
-                    (self.font_size.1 * (layout.row_offset + layout.num_rows) as f32 - y)
-                        .clamp(0.0, f32::MAX),
+                    self.font_size.0 * layout.num_cols as f32,
+                    self.font_size.1 * layout.num_rows as f32,
                 )
                 .unwrap()
         };
@@ -343,8 +356,22 @@ impl GraphicsContext {
         theme: &Theme,
     ) {
         let mut wide_text = vec![];
-        for c in text {
-            wide_text.push(*c as u16);
+        let wide_text_len =
+            unsafe { MultiByteToWideChar(CP_UTF8, MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0), text, None) };
+        if wide_text_len > 0 {
+            wide_text.resize(wide_text_len as usize + 1, 0);
+            unsafe {
+                MultiByteToWideChar(
+                    CP_UTF8,
+                    MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0),
+                    text,
+                    Some(wide_text.as_mut_slice()),
+                )
+            };
+        } else {
+            for c in text {
+                wide_text.push(*c as u16);
+            }
         }
 
         let text_layout = unsafe {
@@ -352,10 +379,8 @@ impl GraphicsContext {
                 .CreateTextLayout(
                     &wide_text,
                     &self.text_format,
-                    (self.font_size.0 * (layout.col_offset + layout.num_cols) as f32 - x)
-                        .clamp(0.0, f32::MAX),
-                    (self.font_size.1 * (layout.row_offset + layout.num_rows) as f32 - y)
-                        .clamp(0.0, f32::MAX),
+                    self.font_size.0 * layout.num_cols as f32,
+                    self.font_size.1 * layout.num_rows as f32,
                 )
                 .unwrap()
         };
@@ -439,6 +464,7 @@ impl GraphicsContext {
         col_offset: usize,
         align_right: bool,
     ) {
+        // Col offset text will not use conversion because only ASCII is allowed
         let mut wide_text = vec![];
         for c in text {
             wide_text.push(*c as u16);
@@ -603,21 +629,26 @@ impl GraphicsContext {
             (col + layout.col_offset) as f32 * self.font_size.0,
         );
 
+        let mut restricted_layout = *layout;
+        restricted_layout.num_rows /= 2;
+        restricted_layout.num_cols /= 2;
+
         let (width, height) = self.get_text_width_height(
             col_offset + self.font_size.1 * 0.25,
             row_offset + self.font_size.1 * 0.25,
-            layout,
+            &restricted_layout,
             text,
         );
 
-        if row_offset + height as f32 > self.window_size.1 {
-            row_offset -= height as f32 + self.font_size.1 * 0.5 + self.font_size.1;
-        }
-
         let (width, height) = (
-            (width / self.font_size.0 as f64).round() as usize,
-            (height / self.font_size.1 as f64).round() as usize,
+            ((width / self.font_size.0 as f64).round() as usize).min(restricted_layout.num_cols),
+            ((height / self.font_size.1 as f64).round() as usize).min(restricted_layout.num_rows),
         );
+
+        if row_offset + (height as f32 * self.font_size.1) > self.window_size.1 {
+            row_offset -=
+                (height as f32 * self.font_size.1) + self.font_size.1 * 0.5 + self.font_size.1;
+        }
 
         unsafe {
             let outer_brush = self
@@ -677,18 +708,38 @@ impl GraphicsContext {
                 },
                 &inner_brush,
             );
+
+            self.render_target.PushAxisAlignedClip(
+                &D2D_RECT_F {
+                    left: col_offset - 0.5 + self.font_size.1 * 0.125,
+                    top: row_offset - 0.5 + self.font_size.1 * 0.125,
+                    right: col_offset
+                        + self.font_size.0 * width as f32
+                        + self.font_size.1 * 0.375
+                        + 0.5,
+                    bottom: row_offset
+                        + self.font_size.1 * height as f32
+                        + self.font_size.1 * 0.375
+                        + 0.5,
+                },
+                D2D1_ANTIALIAS_MODE_ALIASED,
+            );
         }
 
         self.draw_text_with_offset(
             col_offset + self.font_size.1 * 0.25,
             row_offset + self.font_size.1 * 0.25,
-            layout,
+            &restricted_layout,
             text,
             effects.unwrap_or(&[]),
             theme,
         );
 
         self.set_word_wrapping(false);
+
+        unsafe {
+            self.render_target.PopAxisAlignedClip();
+        }
     }
 
     pub fn draw_popup_above(
@@ -709,23 +760,44 @@ impl GraphicsContext {
             (col + layout.col_offset) as f32 * self.font_size.0,
         );
 
+        let mut restricted_layout = *layout;
+        restricted_layout.num_rows /= 2;
+        restricted_layout.num_cols /= 2;
+
         let (width, height) = self.get_text_width_height(
             col_offset + self.font_size.1 * 0.25,
             row_offset + self.font_size.1 * 0.25,
-            layout,
+            &restricted_layout,
             text,
         );
 
-        if row_offset - height as f32 > 0.0 {
-            row_offset -= height as f32 + self.font_size.1 * 0.5 + self.font_size.1;
-        }
-
         let (width, height) = (
-            (width / self.font_size.0 as f64).round() as usize,
-            (height / self.font_size.1 as f64).round() as usize,
+            ((width / self.font_size.0 as f64).round() as usize).min(restricted_layout.num_cols),
+            ((height / self.font_size.1 as f64).round() as usize).min(restricted_layout.num_rows),
         );
 
+        if row_offset - (height as f32 * self.font_size.1) > 0.0 {
+            row_offset -=
+                (height as f32 * self.font_size.1) + self.font_size.1 * 0.5 + self.font_size.1;
+        }
+
         unsafe {
+            self.render_target.PushAxisAlignedClip(
+                &D2D_RECT_F {
+                    left: col_offset - 0.5,
+                    top: row_offset - 0.5,
+                    right: col_offset
+                        + self.font_size.0 * width as f32
+                        + self.font_size.1 * 0.5
+                        + 0.5,
+                    bottom: row_offset
+                        + self.font_size.1 * height as f32
+                        + self.font_size.1 * 0.5
+                        + 0.5,
+                },
+                D2D1_ANTIALIAS_MODE_ALIASED,
+            );
+
             let outer_brush = self
                 .render_target
                 .CreateSolidColorBrush(
@@ -788,13 +860,17 @@ impl GraphicsContext {
         self.draw_text_with_offset(
             col_offset + self.font_size.1 * 0.25,
             row_offset + self.font_size.1 * 0.25,
-            layout,
+            &restricted_layout,
             text,
             effects.unwrap_or(&[]),
             theme,
         );
 
         self.set_word_wrapping(false);
+
+        unsafe {
+            self.render_target.PopAxisAlignedClip();
+        }
     }
 
     pub fn draw_completion_popup(

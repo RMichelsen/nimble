@@ -11,7 +11,7 @@ use crate::{
     text_utils::{self, CharType},
 };
 
-const SCROLL_LINES_PER_ROLL: isize = 3;
+pub const SCROLL_LINES_PER_ROLL: isize = 3;
 const MAX_SHOWN_COMPLETION_ITEMS: usize = 10;
 
 pub struct CompletionView {
@@ -26,11 +26,18 @@ pub struct SignatureHelpView {
     pub col: usize,
 }
 
+pub struct HoverMessage {
+    pub message: String,
+    pub code_block_ranges: Vec<(usize, usize)>,
+    pub line_offset: usize,
+    pub num_lines: usize,
+}
+
 pub struct View {
     pub line_offset: usize,
     pub col_offset: usize,
     pub hover: Option<(usize, usize)>,
-    pub hover_message: Option<String>,
+    pub hover_message: Option<HoverMessage>,
 }
 
 impl View {

@@ -1,4 +1,5 @@
 use std::{
+    cmp::min,
     collections::{HashMap, VecDeque},
     path::Path,
     str::FromStr,
@@ -43,6 +44,9 @@ pub struct Syntect {
     pub queue: Arc<Mutex<VecDeque<IndexedLine>>>,
     pub cache_updated: Arc<Mutex<bool>>,
     cache: Arc<RwLock<HashMap<usize, Vec<TextEffect>>>>,
+    theme: Theme,
+    syntax_set: SyntaxSet,
+    extension: String,
 }
 
 impl Syntect {
@@ -52,10 +56,14 @@ impl Syntect {
         let cache = Arc::new(RwLock::new(HashMap::new()));
 
         let theme = convert_theme(theme);
+        let extension = Path::new(path).extension()?.to_str()?.to_string();
+        let syntax_set: SyntaxSet =
+            from_uncompressed_data(include_bytes!("../resources/syntax_definitions.packdump"))
+                .unwrap();
 
         start_highlight_thread(
             path,
-            theme,
+            theme.clone(),
             Arc::clone(&queue),
             Arc::clone(&cache_updated),
             Arc::clone(&cache),
@@ -65,7 +73,67 @@ impl Syntect {
             queue,
             cache_updated,
             cache,
+            theme,
+            syntax_set,
+            extension,
         })
+    }
+
+    pub fn highlight_code_blocks(&self, text: &[u8], ranges: &[(usize, usize)]) -> Vec<TextEffect> {
+        let highlighter = Highlighter::new(&self.theme);
+        let syntax_reference = self.syntax_set.find_syntax_by_extension(&self.extension);
+        if syntax_reference.is_none() {
+            return vec![];
+        }
+
+        let mut effects = vec![];
+
+        let mut adjusted_text_position = vec![];
+        let mut number_of_non_ascii_chars = 0;
+        for (i, c) in text.iter().enumerate() {
+            if !c.is_ascii() {
+                number_of_non_ascii_chars += 1;
+            }
+            adjusted_text_position
+                .push(i - (number_of_non_ascii_chars as f64 / 2.0).ceil() as usize);
+        }
+
+        for range in ranges {
+            if range.0 >= text.len() {
+                break;
+            }
+
+            let mut parse_state = ParseState::new(syntax_reference.unwrap());
+            let mut highlight_state = HighlightState::new(&highlighter, ScopeStack::new());
+
+            let code_block = &text[range.0..min(range.1, text.len())];
+            let mut offset = 0;
+            for line in code_block.split_inclusive(|c| *c == b'\n') {
+                let line = unsafe { std::str::from_utf8_unchecked(line) };
+                let ops = parse_state.parse_line(line, &self.syntax_set).unwrap();
+                for highlight in
+                    RangedHighlightIterator::new(&mut highlight_state, &ops, line, &highlighter)
+                {
+                    effects.push(TextEffect {
+                        kind: TextEffectKind::ForegroundColor(crate::renderer::Color::from_rgb(
+                            highlight.0.foreground.r,
+                            highlight.0.foreground.g,
+                            highlight.0.foreground.b,
+                        )),
+                        start: adjusted_text_position[range.0 + offset + highlight.2.start],
+                        length: adjusted_text_position[range.0
+                            + offset
+                            + highlight.2.start
+                            + highlight.2.len().saturating_sub(1)]
+                            - adjusted_text_position[range.0 + offset + highlight.2.start]
+                            + 1,
+                    });
+                }
+                offset += line.len();
+            }
+        }
+
+        effects
     }
 
     pub fn delete_rebalance(&mut self, piece_table: &PieceTable, position: usize, end: usize) {

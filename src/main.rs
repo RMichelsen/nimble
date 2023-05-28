@@ -9,6 +9,7 @@
 #![feature(const_fn_floating_point_arithmetic)]
 #![feature(if_let_guard)]
 #![feature(split_array)]
+#![feature(int_roundings)]
 
 mod buffer;
 mod cursor;

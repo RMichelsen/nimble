@@ -572,24 +572,51 @@ impl Renderer {
                             None,
                             &self.theme,
                         );
-                    } else if let Some(message) = &view.hover_message {
+                    } else if let Some(hover_message) = &view.hover_message {
+                        // TODO: Rendering the hover message this way is pretty inefficient.
+                        // However, most hovers are not many thousands characters long..
                         let (row, col) = (
                             view.absolute_to_view_row(line) + 1,
                             view.absolute_to_view_col(col) + 1,
                         );
 
+                        let mut leading_lines = 0;
                         let mut line_limit = 0;
-                        let truncated_message: Vec<u8> = message
+                        let mut offset = 0;
+                        let truncated_message: Vec<u8> = hover_message
+                            .message
                             .as_bytes()
                             .iter()
+                            .skip_while(|&x| {
+                                let skip = leading_lines < hover_message.line_offset;
+                                if *x == b'\n' {
+                                    leading_lines += 1;
+                                }
+                                offset += 1;
+                                skip
+                            })
                             .take_while(|&x| {
                                 if *x == b'\n' {
                                     line_limit += 1;
                                 }
-                                line_limit < 10
+                                line_limit < 30
                             })
                             .copied()
                             .collect();
+
+                        let mut offset_ranges = vec![];
+                        for range in &hover_message.code_block_ranges {
+                            offset_ranges.push((
+                                range.0.saturating_sub(offset),
+                                range.1.saturating_sub(offset),
+                            ));
+                        }
+
+                        let mut effects = vec![];
+                        if let Some(syntect) = &buffer.syntect {
+                            effects =
+                                syntect.highlight_code_blocks(&truncated_message, &offset_ranges);
+                        }
 
                         self.context.draw_popup_below(
                             row,
@@ -598,7 +625,7 @@ impl Renderer {
                             &truncated_message,
                             self.theme.selection_background_color,
                             self.theme.background_color,
-                            None,
+                            Some(&effects),
                             &self.theme,
                         );
                     }
