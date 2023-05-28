@@ -24,7 +24,7 @@ use crate::{
         language_from_path, CPP_FILE_EXTENSIONS, PYTHON_FILE_EXTENSIONS, RUST_FILE_EXTENSIONS,
     },
     platform_resources,
-    renderer::{RenderLayout, Renderer},
+    renderer::{RenderLayout, Renderer, POPUP_MAX_HEIGHT},
     text_utils,
     view::{HoverMessage, View, SCROLL_LINES_PER_ROLL},
 };
@@ -776,7 +776,7 @@ impl Editor {
                     if let Some(hover_message) = &mut self.open_documents[*i].view.hover_message {
                         hover_message.line_offset = min(
                             hover_message.line_offset + SCROLL_LINES_PER_ROLL as usize,
-                            hover_message.num_lines,
+                            hover_message.num_lines.saturating_sub(POPUP_MAX_HEIGHT),
                         );
                     }
                 }

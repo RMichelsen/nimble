@@ -95,7 +95,7 @@ impl Syntect {
                 number_of_non_ascii_chars += 1;
             }
             adjusted_text_position
-                .push(i - (number_of_non_ascii_chars as f64 / 2.0).ceil() as usize);
+                .push(i.saturating_sub((number_of_non_ascii_chars as f64 / 2.0).ceil() as usize));
         }
 
         for range in ranges {
