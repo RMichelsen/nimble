@@ -442,11 +442,14 @@ impl Renderer {
             }
 
             if !label_detail_combined.trim().is_empty() {
-                let bytes: Vec<u8> = label_detail_combined
-                    .into_bytes()
-                    .into_iter()
-                    .map(|c| if c.is_ascii() { c } else { b' ' })
-                    .collect();
+                let mut bytes = vec![];
+                for c in label_detail_combined.as_bytes() {
+                    if c.is_ascii() {
+                        bytes.push(*c)
+                    } else if bytes.last().is_some_and(|c| *c != b' ') {
+                        bytes.push(b' ');
+                    }
+                }
 
                 self.context.draw_popup_below(
                     completion_view.row,
@@ -457,6 +460,7 @@ impl Renderer {
                     self.theme.background_color,
                     None,
                     &self.theme,
+                    false,
                 );
             }
 
@@ -523,6 +527,7 @@ impl Renderer {
                     self.theme.background_color,
                     Some(&effects),
                     &self.theme,
+                    false,
                 );
             }
         });
@@ -571,6 +576,7 @@ impl Renderer {
                             self.theme.background_color,
                             None,
                             &self.theme,
+                            true,
                         );
                     } else if let Some(hover_message) = &view.hover_message {
                         // TODO: Rendering the hover message this way is pretty inefficient.
@@ -628,6 +634,7 @@ impl Renderer {
                             self.theme.background_color,
                             Some(&effects),
                             &self.theme,
+                            true,
                         );
                     }
                 }
@@ -649,6 +656,7 @@ impl Renderer {
                 self.theme.background_color,
                 None,
                 &self.theme,
+                false,
             );
         }
     }

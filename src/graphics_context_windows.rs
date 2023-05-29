@@ -621,6 +621,7 @@ impl GraphicsContext {
         inner_color: Color,
         effects: Option<&[TextEffect]>,
         theme: &Theme,
+        restrict: bool,
     ) {
         self.set_word_wrapping(true);
 
@@ -630,8 +631,11 @@ impl GraphicsContext {
         );
 
         let mut restricted_layout = *layout;
-        restricted_layout.num_rows /= 2;
-        restricted_layout.num_cols /= 2;
+
+        if restrict {
+            restricted_layout.num_rows /= 2;
+            restricted_layout.num_cols /= 2;
+        }
 
         let (width, height) = self.get_text_width_height(
             col_offset + self.font_size.1 * 0.25,
@@ -752,6 +756,7 @@ impl GraphicsContext {
         inner_color: Color,
         effects: Option<&[TextEffect]>,
         theme: &Theme,
+        restrict: bool,
     ) {
         self.set_word_wrapping(true);
 
@@ -761,8 +766,11 @@ impl GraphicsContext {
         );
 
         let mut restricted_layout = *layout;
-        restricted_layout.num_rows /= 2;
-        restricted_layout.num_cols /= 2;
+
+        if restrict {
+            restricted_layout.num_rows /= 2;
+            restricted_layout.num_cols /= 2;
+        }
 
         let (width, height) = self.get_text_width_height(
             col_offset + self.font_size.1 * 0.25,
