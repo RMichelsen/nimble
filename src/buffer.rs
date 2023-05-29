@@ -66,6 +66,9 @@ pub struct Buffer {
     pub language_server: Option<Rc<RefCell<LanguageServer>>>,
     pub syntect: Option<Syntect>,
     pub input: String,
+    last_executed_command: Option<String>,
+    insertion_command_stack: Vec<BufferCommand>,
+    insertion_stack_dirty: bool,
     highlight_queue: VecDeque<usize>,
     search_string: String,
     search_anchor: usize,
@@ -103,7 +106,10 @@ impl Buffer {
             mode: BufferMode::Normal,
             language_server,
             syntect: Syntect::new(path, theme),
-            input: String::new(),
+            input: String::default(),
+            last_executed_command: None,
+            insertion_command_stack: vec![],
+            insertion_stack_dirty: false,
             highlight_queue,
             search_string: String::new(),
             search_anchor: 0,
@@ -523,10 +529,12 @@ impl Buffer {
             (Normal, "p") => {
                 self.push_undo_state();
                 self.command(PasteSelection);
+                self.last_executed_command = Some(self.input.clone());
             }
             (Normal, "P") => {
                 self.push_undo_state();
                 self.command(PasteCursorSelection);
+                self.last_executed_command = Some(self.input.clone());
             }
 
             (Normal | Visual | VisualLine, ">") => {
@@ -540,6 +548,7 @@ impl Buffer {
             }
 
             (Normal, s) if s.starts_with("ci") && s.len() == 3 => {
+                self.last_executed_command = Some(self.input.clone());
                 let c = s.chars().nth(2).unwrap() as u8;
                 self.push_undo_state();
                 self.switch_to_visual_mode();
@@ -549,6 +558,7 @@ impl Buffer {
                 self.switch_to_insert_mode();
             }
             (Normal, s) if s.starts_with("di") && s.len() == 3 => {
+                self.last_executed_command = Some(self.input.clone());
                 let c = s.chars().nth(2).unwrap() as u8;
                 self.push_undo_state();
                 self.switch_to_visual_mode();
@@ -559,6 +569,7 @@ impl Buffer {
             }
 
             (Normal, s) if s.starts_with("ct") && s.len() == 3 => {
+                self.last_executed_command = Some(self.input.clone());
                 let c = s.chars().nth(2).unwrap() as u8;
                 self.push_undo_state();
                 self.switch_to_visual_mode();
@@ -568,6 +579,7 @@ impl Buffer {
                 self.switch_to_insert_mode();
             }
             (Normal, s) if s.starts_with("dt") && s.len() == 3 => {
+                self.last_executed_command = Some(self.input.clone());
                 let c = s.chars().nth(2).unwrap() as u8;
                 self.push_undo_state();
                 self.switch_to_visual_mode();
@@ -577,6 +589,7 @@ impl Buffer {
                 self.switch_to_normal_mode();
             }
             (Normal, s) if s.starts_with("cT") && s.len() == 3 => {
+                self.last_executed_command = Some(self.input.clone());
                 let c = s.chars().nth(2).unwrap() as u8;
                 self.push_undo_state();
                 self.switch_to_visual_mode();
@@ -586,6 +599,7 @@ impl Buffer {
                 self.switch_to_insert_mode();
             }
             (Normal, s) if s.starts_with("dT") && s.len() == 3 => {
+                self.last_executed_command = Some(self.input.clone());
                 let c = s.chars().nth(2).unwrap() as u8;
                 self.push_undo_state();
                 self.switch_to_visual_mode();
@@ -600,6 +614,7 @@ impl Buffer {
             }
 
             (Normal, "x") => {
+                self.last_executed_command = Some(self.input.clone());
                 self.push_undo_state();
                 self.command(CopySelection);
                 self.command(CutSelection);
@@ -631,6 +646,7 @@ impl Buffer {
             }
 
             (Normal, "dd") => {
+                self.last_executed_command = Some(self.input.clone());
                 self.push_undo_state();
                 self.switch_to_visual_mode();
                 self.motion(ExtendSelection);
@@ -639,6 +655,7 @@ impl Buffer {
                 self.switch_to_normal_mode();
             }
             (Normal, "D") => {
+                self.last_executed_command = Some(self.input.clone());
                 self.push_undo_state();
                 self.switch_to_visual_mode();
                 self.motion(ToEndOfLine);
@@ -690,6 +707,23 @@ impl Buffer {
             }
             (Normal, "u") => {
                 self.command(Undo);
+            }
+            (Normal, ".") => {
+                if let Some(command) = &self.last_executed_command {
+                    if let Some(last_char) = command.as_bytes().last() {
+                        self.input = command[..command.len().saturating_sub(1)].to_string();
+                        self.handle_char(*last_char as char);
+                        let insertion_commands: Vec<BufferCommand> =
+                            self.insertion_command_stack.iter().copied().collect();
+                        let tmp = self.insertion_command_stack.clone();
+                        for insertion_command in &insertion_commands {
+                            self.command(*insertion_command);
+                        }
+                        self.insertion_command_stack = tmp;
+                        self.motion(Backward(1));
+                        self.switch_to_normal_mode();
+                    }
+                }
             }
             (Normal, "gd") => {
                 self.command(GotoDefinition);
@@ -1002,6 +1036,12 @@ impl Buffer {
                 self.lsp_change(content_changes);
             }
             InsertChar(c) => {
+                if self.insertion_stack_dirty {
+                    self.insertion_command_stack.clear();
+                    self.insertion_stack_dirty = false;
+                }
+                self.insertion_command_stack.push(InsertChar(c));
+
                 for i in 0..self.cursors.len() {
                     let start = self.cursors[i].position;
 
@@ -1055,6 +1095,12 @@ impl Buffer {
                 }
             }
             InsertNewLine => {
+                if self.insertion_stack_dirty {
+                    self.insertion_command_stack.clear();
+                    self.insertion_stack_dirty = false;
+                }
+                self.insertion_command_stack.push(InsertNewLine);
+
                 let mut content_changes = vec![];
 
                 for cursor in &mut self.cursors {
@@ -1241,6 +1287,12 @@ impl Buffer {
                 self.lsp_change(content_changes);
             }
             DeleteCharBack => {
+                if self.insertion_stack_dirty {
+                    self.insertion_command_stack.clear();
+                    self.insertion_stack_dirty = false;
+                }
+                self.insertion_command_stack.push(DeleteCharBack);
+
                 let mut content_changes = vec![];
 
                 for i in 0..self.cursors.len() {
@@ -1296,6 +1348,12 @@ impl Buffer {
                 self.lsp_change(content_changes);
             }
             DeleteWordBack => {
+                if self.insertion_stack_dirty {
+                    self.insertion_command_stack.clear();
+                    self.insertion_stack_dirty = false;
+                }
+                self.insertion_command_stack.push(DeleteWordBack);
+
                 let mut content_changes = vec![];
 
                 for i in 0..self.cursors.len() {
@@ -1330,6 +1388,12 @@ impl Buffer {
                 self.lsp_change(content_changes);
             }
             DeleteWordFront => {
+                if self.insertion_stack_dirty {
+                    self.insertion_command_stack.clear();
+                    self.insertion_stack_dirty = false;
+                }
+                self.insertion_command_stack.push(DeleteWordFront);
+
                 let mut content_changes = vec![];
 
                 for i in 0..self.cursors.len() {
@@ -1716,6 +1780,7 @@ impl Buffer {
 
     fn switch_to_insert_mode(&mut self) {
         self.mode = Insert;
+        self.insertion_stack_dirty = true;
         for cursor in &mut self.cursors {
             cursor.reset_anchor();
         }
@@ -2123,9 +2188,9 @@ fn is_prefix_of_command(str: &str, mode: BufferMode) -> bool {
     }
 }
 
-const NORMAL_MODE_COMMANDS: [&str; 29] = [
+const NORMAL_MODE_COMMANDS: [&str; 30] = [
     "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "dd", "D", "J", "K", "v", "V", "u",
-    ">", "<", "p", "P", "yy", "zz", "n", "N", "/", "gd", "gi",
+    ">", "<", "p", "P", "yy", "zz", "n", "N", "/", "gd", "gi", ".",
 ];
 const VISUAL_MODE_COMMANDS: [&str; 21] = [
     "j", "k", "h", "l", "w", "b", "^", "$", "gg", "G", "x", "d", ">", "<", "y", "p", "P", "zz",
@@ -2158,7 +2223,7 @@ enum CursorMotion<'a> {
     SeekBackSelfInclusive(&'a [u8]),
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 enum BufferCommand {
     InsertCursorAbove,
     InsertCursorBelow,
