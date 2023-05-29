@@ -713,15 +713,19 @@ impl Buffer {
                     if let Some(last_char) = command.as_bytes().last() {
                         self.input = command[..command.len().saturating_sub(1)].to_string();
                         self.handle_char(*last_char as char);
-                        let insertion_commands: Vec<BufferCommand> =
-                            self.insertion_command_stack.iter().copied().collect();
-                        let tmp = self.insertion_command_stack.clone();
-                        for insertion_command in &insertion_commands {
-                            self.command(*insertion_command);
+
+                        if self.input.starts_with('c') {
+                            self.switch_to_insert_mode();
+                            let insertion_commands: Vec<BufferCommand> =
+                                self.insertion_command_stack.iter().copied().collect();
+                            let tmp = self.insertion_command_stack.clone();
+                            for insertion_command in &insertion_commands {
+                                self.command(*insertion_command);
+                            }
+                            self.insertion_command_stack = tmp;
+                            self.motion(Backward(1));
+                            self.switch_to_normal_mode();
                         }
-                        self.insertion_command_stack = tmp;
-                        self.motion(Backward(1));
-                        self.switch_to_normal_mode();
                     }
                 }
             }

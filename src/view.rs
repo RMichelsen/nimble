@@ -250,7 +250,7 @@ impl View {
                     f(
                         self.absolute_to_view_row(start_line),
                         self.absolute_to_view_col(start_col),
-                        end_col - start_col + 1,
+                        end_col.saturating_sub(start_col) + 1,
                     );
                 } else {
                     f(
