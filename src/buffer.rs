@@ -712,9 +712,10 @@ impl Buffer {
                 if let Some(command) = &self.last_executed_command {
                     if let Some(last_char) = command.as_bytes().last() {
                         self.input = command[..command.len().saturating_sub(1)].to_string();
+                        let change_command = self.input.starts_with('c');
                         self.handle_char(*last_char as char);
 
-                        if self.input.starts_with('c') {
+                        if change_command {
                             self.switch_to_insert_mode();
                             let insertion_commands: Vec<BufferCommand> =
                                 self.insertion_command_stack.iter().copied().collect();
