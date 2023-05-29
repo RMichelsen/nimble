@@ -19,13 +19,7 @@ fn match_score(chars_since_match: usize, c: u8, prev_c: Option<u8>) -> isize {
                 + SEPARATOR_BONUS
                     * (c.is_ascii_alphanumeric() && !prev_c.is_ascii_alphanumeric()) as isize
         }
-        (None, c) => {
-            FIRST_LETTER_BONUS * (chars_since_match == 0) as isize
-                + max(
-                    LEADING_LETTER_PENALTY * chars_since_match as isize,
-                    MAX_LEADING_LETTER_PENALTY,
-                )
-        }
+        (None, c) => FIRST_LETTER_BONUS * (chars_since_match == 0) as isize,
     }
 }
 
@@ -38,7 +32,10 @@ fn match_recursively(pattern: &[u8], text: &[u8], prev_c: Option<u8>, score: isi
     let mut best_score = isize::MIN;
 
     let mut chars_since_match = 0;
-    while let Some(i) = sub_string.iter().position(|&c| c == pattern[0]) {
+    while let Some(i) = sub_string
+        .iter()
+        .position(|&c| c.to_ascii_lowercase() == pattern[0].to_ascii_lowercase())
+    {
         chars_since_match += i;
         let sub_score = match_recursively(
             &pattern[1..],
@@ -78,6 +75,12 @@ pub fn fuzzy_match(pattern: &[u8], text: &[u8]) -> isize {
     }
 
     score += UNMATCHED_LETTER_PENALTY * (text.len() - pattern.len()) as isize;
+    for i in 0..3 {
+        match (text.get(i), pattern.get(i)) {
+            (Some(c1), Some(c2)) => (),
+            _ => score += LEADING_LETTER_PENALTY,
+        }
+    }
 
     match_recursively(pattern, text, None, score)
 }

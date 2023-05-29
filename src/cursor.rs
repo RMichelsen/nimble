@@ -138,6 +138,17 @@ pub fn get_filtered_completions(
         score2.cmp(&score1)
     });
 
+    if !match_string.is_empty() {
+        merged_items.retain(|item| {
+            item.insert_text
+                .as_ref()
+                .unwrap_or(&item.label)
+                .as_bytes()
+                .first()
+                == Some(&match_string[0])
+        })
+    }
+
     merged_items
 }
 
