@@ -2037,12 +2037,12 @@ fn lsp_signature_help(
     position: usize,
 ) {
     if let Some(server) = &language_server {
-        if character.is_none()
-            || server
+        if character.is_some_and(|c| {
+            server
                 .borrow()
                 .signature_help_trigger_characters
-                .contains(&character.unwrap())
-        {
+                .contains(&c)
+        }) {
             let (line, col) = (
                 piece_table.line_index(position),
                 piece_table.col_index(position),
