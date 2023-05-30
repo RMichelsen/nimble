@@ -20,9 +20,7 @@ use crate::{
     buffer::Buffer,
     language_server::LanguageServer,
     language_server_types::{Hover, LocationType, VoidParams},
-    language_support::{
-        language_from_path, CPP_FILE_EXTENSIONS, PYTHON_FILE_EXTENSIONS, RUST_FILE_EXTENSIONS,
-    },
+    language_support::language_from_path,
     platform_resources,
     renderer::{RenderLayout, Renderer},
     text_utils,
@@ -1186,33 +1184,26 @@ impl Workspace {
 
 impl FileFinder {
     pub fn new(workspace: &Workspace) -> Self {
+        let files: Vec<FileIdentifier> = WalkDir::new(&workspace.path)
+            .into_iter()
+            .filter_entry(|e| {
+                e.file_name() != OsStr::new(".git")
+                    && !workspace
+                        .gitignore_paths
+                        .iter()
+                        .any(|entry| entry == e.file_name().to_str().unwrap())
+            })
+            .flatten()
+            .filter(|e| e.file_type().is_file())
+            .map(|e| FileIdentifier {
+                name: e.file_name().to_os_string(),
+                path: e.path().as_os_str().to_os_string(),
+            })
+            .take(1000)
+            .collect();
+
         Self {
-            files: WalkDir::new(&workspace.path)
-                .into_iter()
-                .filter_entry(|e| {
-                    e.file_name() != OsStr::new(".git")
-                        && !workspace
-                            .gitignore_paths
-                            .iter()
-                            .any(|entry| entry == e.file_name().to_str().unwrap())
-                })
-                .flatten()
-                .filter(|e| {
-                    e.file_type().is_file()
-                        && e.path().extension().is_some_and(|extension| {
-                            let extension = extension.to_str().unwrap();
-                            CPP_FILE_EXTENSIONS.contains(&extension)
-                                || RUST_FILE_EXTENSIONS.contains(&extension)
-                                || PYTHON_FILE_EXTENSIONS.contains(&extension)
-                                || extension == "txt"
-                        })
-                })
-                .map(|e| FileIdentifier {
-                    name: e.file_name().to_os_string(),
-                    path: e.path().as_os_str().to_os_string(),
-                })
-                .take(1000)
-                .collect(),
+            files,
             search_string: String::default(),
             selection_index: 0,
             selection_view_offset: 0,
