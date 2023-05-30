@@ -422,7 +422,7 @@ impl Buffer {
                 self.input.push(c);
             }
             let partial_search = self.input[1..].to_string();
-            self.motion(SeekSelfInclusive(partial_search.as_bytes()));
+            self.motion(SeekToSelf(partial_search.as_bytes()));
             return Some(EditorCommand::CenterIfNotVisible);
         }
 
@@ -452,25 +452,25 @@ impl Buffer {
                 return None;
             }
             (_, "n") => {
-                self.motion(Seek(self.search_string.clone().as_bytes()));
+                self.motion(SeekUntil(self.search_string.clone().as_bytes()));
                 return Some(EditorCommand::CenterIfNotVisible);
             }
             (_, "N") => {
-                self.motion(SeekBack(self.search_string.clone().as_bytes()));
+                self.motion(SeekBackUntil(self.search_string.clone().as_bytes()));
                 return Some(EditorCommand::CenterIfNotVisible);
             }
             (_, "G") => self.motion(ToEndOfFile),
             (_, s) if s.starts_with('f') && s.len() == 2 => {
-                self.motion(ForwardToCharInclusive(s.chars().nth(1).unwrap() as u8));
+                self.motion(ForwardToChar(s.chars().nth(1).unwrap() as u8));
             }
             (_, s) if s.starts_with('F') && s.len() == 2 => {
-                self.motion(BackwardToCharInclusive(s.chars().nth(1).unwrap() as u8));
+                self.motion(BackwardToChar(s.chars().nth(1).unwrap() as u8));
             }
             (_, s) if s.starts_with('t') && s.len() == 2 => {
-                self.motion(ForwardToCharExclusive(s.chars().nth(1).unwrap() as u8));
+                self.motion(ForwardUntilChar(s.chars().nth(1).unwrap() as u8));
             }
             (_, s) if s.starts_with('T') && s.len() == 2 => {
-                self.motion(BackwardToCharExclusive(s.chars().nth(1).unwrap() as u8));
+                self.motion(BackwardUntilChar(s.chars().nth(1).unwrap() as u8));
             }
 
             (Visual, "y") => {
@@ -550,63 +550,33 @@ impl Buffer {
             (Normal, s) if s.starts_with("ci") && s.len() == 3 => {
                 self.last_executed_command = Some(self.input.clone());
                 let c = s.chars().nth(2).unwrap() as u8;
-                self.push_undo_state();
-                self.switch_to_visual_mode();
-                self.motion(ExtendSelectionInside(c));
-                self.command(CopySelection);
-                self.command(CutSelection);
-                self.switch_to_insert_mode();
+                self.command(CutMotion(c, CutMotion::Inside, true));
             }
             (Normal, s) if s.starts_with("di") && s.len() == 3 => {
                 self.last_executed_command = Some(self.input.clone());
                 let c = s.chars().nth(2).unwrap() as u8;
-                self.push_undo_state();
-                self.switch_to_visual_mode();
-                self.motion(ExtendSelectionInside(c));
-                self.command(CopySelection);
-                self.command(CutSelection);
-                self.switch_to_normal_mode();
+                self.command(CutMotion(c, CutMotion::Inside, false));
             }
 
             (Normal, s) if s.starts_with("ct") && s.len() == 3 => {
                 self.last_executed_command = Some(self.input.clone());
                 let c = s.chars().nth(2).unwrap() as u8;
-                self.push_undo_state();
-                self.switch_to_visual_mode();
-                self.motion(ForwardToCharExclusive(c));
-                self.command(CopySelection);
-                self.command(CutSelection);
-                self.switch_to_insert_mode();
+                self.command(CutMotion(c, CutMotion::ForwardUntil, true));
             }
             (Normal, s) if s.starts_with("dt") && s.len() == 3 => {
                 self.last_executed_command = Some(self.input.clone());
                 let c = s.chars().nth(2).unwrap() as u8;
-                self.push_undo_state();
-                self.switch_to_visual_mode();
-                self.motion(ForwardToCharExclusive(c));
-                self.command(CopySelection);
-                self.command(CutSelection);
-                self.switch_to_normal_mode();
+                self.command(CutMotion(c, CutMotion::ForwardUntil, false));
             }
             (Normal, s) if s.starts_with("cT") && s.len() == 3 => {
                 self.last_executed_command = Some(self.input.clone());
                 let c = s.chars().nth(2).unwrap() as u8;
-                self.push_undo_state();
-                self.switch_to_visual_mode();
-                self.motion(BackwardToCharExclusive(c));
-                self.command(CopySelection);
-                self.command(CutSelection);
-                self.switch_to_insert_mode();
+                self.command(CutMotion(c, CutMotion::BackwardUntil, true));
             }
             (Normal, s) if s.starts_with("dT") && s.len() == 3 => {
                 self.last_executed_command = Some(self.input.clone());
                 let c = s.chars().nth(2).unwrap() as u8;
-                self.push_undo_state();
-                self.switch_to_visual_mode();
-                self.motion(BackwardToCharExclusive(c));
-                self.command(CopySelection);
-                self.command(CutSelection);
-                self.switch_to_normal_mode();
+                self.command(CutMotion(c, CutMotion::BackwardTo, false));
             }
 
             (Visual, s) if s.starts_with('i') && s.len() == 2 => {
@@ -870,7 +840,7 @@ impl Buffer {
         let input = self.input.clone();
         match input.as_str() {
             input if input.as_bytes().first() == Some(&b'/') => {
-                self.motion(SeekSelfInclusive(input[1..].as_bytes()));
+                self.motion(SeekToSelf(input[1..].as_bytes()));
                 self.search_string = input[1..].to_string();
                 return Some(EditorCommand::CenterIfNotVisible);
             }
@@ -921,19 +891,17 @@ impl Buffer {
                 ToStartOfFile => cursor.move_to_start_of_file(),
                 ToEndOfFile => cursor.move_to_end_of_file(&self.piece_table),
                 ToFirstNonBlankChar => cursor.move_to_first_non_blank_char(&self.piece_table),
-                ForwardToCharInclusive(c) => cursor.move_to_char_inc(&self.piece_table, c),
-                BackwardToCharInclusive(c) => cursor.move_back_to_char_inc(&self.piece_table, c),
-                ForwardToCharExclusive(c) => cursor.move_to_char_exc(&self.piece_table, c),
-                BackwardToCharExclusive(c) => cursor.move_back_to_char_exc(&self.piece_table, c),
+                ForwardToChar(c) => cursor.move_to_char(&self.piece_table, c),
+                BackwardToChar(c) => cursor.move_back_to_char(&self.piece_table, c),
+                ForwardUntilChar(c) => cursor.move_until_char(&self.piece_table, c),
+                BackwardUntilChar(c) => cursor.move_back_until_char(&self.piece_table, c),
                 ExtendSelection => cursor.extend_selection(&self.piece_table),
                 ExtendSelectionInside(c) => cursor.extend_selection_inside(&self.piece_table, c),
                 GotoLine(n) => cursor.goto_line(&self.piece_table, n),
-                Seek(text) => cursor.seek(&self.piece_table, text.as_bytes(), false),
-                SeekBack(text) => cursor.seek_back(&self.piece_table, text.as_bytes(), false),
-                SeekSelfInclusive(text) => cursor.seek(&self.piece_table, text.as_bytes(), true),
-                SeekBackSelfInclusive(text) => {
-                    cursor.seek_back(&self.piece_table, text.as_bytes(), true)
-                }
+                SeekUntil(text) => cursor.seek(&self.piece_table, text.as_bytes(), false),
+                SeekBackUntil(text) => cursor.seek_back(&self.piece_table, text.as_bytes(), false),
+                SeekToSelf(text) => cursor.seek(&self.piece_table, text.as_bytes(), true),
+                SeekBackToSelf(text) => cursor.seek_back(&self.piece_table, text.as_bytes(), true),
             }
 
             // Normal mode does not allow cursors to be on newlines
@@ -1010,6 +978,73 @@ impl Buffer {
                         self.cursors[i].position =
                             min(start, self.piece_table.num_chars().saturating_sub(1));
                     }
+                }
+
+                self.lsp_change(content_changes);
+            }
+            CutMotion(c, motion, change_command) => {
+                self.push_undo_state();
+                self.switch_to_visual_mode();
+
+                let mut content_changes = vec![];
+                let mut selection: Vec<u8> = vec![];
+
+                let num_chars = self.piece_table.num_chars();
+                let num_cursors = self.cursors.len();
+                for i in 0..num_cursors {
+                    let old_position = self.cursors[i].position;
+
+                    match motion {
+                        CutMotion::Inside => {
+                            self.cursors[i].extend_selection_inside(&self.piece_table, c)
+                        }
+                        CutMotion::ForwardUntil => {
+                            self.cursors[i].move_until_char(&self.piece_table, c)
+                        }
+                        CutMotion::ForwardTo => self.cursors[i].move_to_char(&self.piece_table, c),
+                        CutMotion::BackwardUntil => {
+                            self.cursors[i].move_back_until_char(&self.piece_table, c)
+                        }
+                        CutMotion::BackwardTo => {
+                            self.cursors[i].move_back_to_char(&self.piece_table, c)
+                        }
+                    }
+
+                    if self.cursors[i].position != old_position {
+                        self.cursors[i].save_selection_to_clipboard(&self.piece_table);
+                        selection.extend(self.cursors[i].get_selection(&self.piece_table));
+
+                        // Insert new lines between the concatenated clipboard content in multi-cursor mode
+                        if num_cursors > 1 {
+                            selection.push(b'\n');
+                        }
+
+                        if self.cursors[i].position < self.cursors[i].anchor {
+                            let start = self.cursors[i].position;
+                            let end = min(self.cursors[i].anchor + 1, num_chars);
+                            content_changes.push(self.delete_chars(start, end));
+                        } else {
+                            let start = self.cursors[i].anchor;
+                            let end = min(self.cursors[i].position + 1, num_chars);
+                            content_changes.push(self.delete_chars(start, end));
+                            self.cursors[i].position =
+                                min(start, self.piece_table.num_chars().saturating_sub(1));
+                        }
+                    }
+                }
+
+                if content_changes.is_empty() {
+                    self.undo_stack.pop();
+                }
+
+                if !content_changes.is_empty() && change_command {
+                    self.switch_to_insert_mode();
+                } else {
+                    self.switch_to_normal_mode();
+                }
+
+                if !selection.is_empty() {
+                    self.platform_resources.set_clipboard(&selection);
                 }
 
                 self.lsp_change(content_changes);
@@ -2202,6 +2237,15 @@ const VISUAL_MODE_COMMANDS: [&str; 21] = [
     "n", "N", "/",
 ];
 
+#[derive(Clone, Copy, PartialEq)]
+enum CutMotion {
+    Inside,
+    ForwardUntil,
+    ForwardTo,
+    BackwardUntil,
+    BackwardTo,
+}
+
 enum CursorMotion<'a> {
     Forward(usize),
     Backward(usize),
@@ -2215,17 +2259,17 @@ enum CursorMotion<'a> {
     ToStartOfFile,
     ToEndOfFile,
     ToFirstNonBlankChar,
-    ForwardToCharInclusive(u8),
-    BackwardToCharInclusive(u8),
-    ForwardToCharExclusive(u8),
-    BackwardToCharExclusive(u8),
+    ForwardToChar(u8),
+    BackwardToChar(u8),
+    ForwardUntilChar(u8),
+    BackwardUntilChar(u8),
     ExtendSelection,
     ExtendSelectionInside(u8),
     GotoLine(usize),
-    Seek(&'a [u8]),
-    SeekBack(&'a [u8]),
-    SeekSelfInclusive(&'a [u8]),
-    SeekBackSelfInclusive(&'a [u8]),
+    SeekUntil(&'a [u8]),
+    SeekBackUntil(&'a [u8]),
+    SeekToSelf(&'a [u8]),
+    SeekBackToSelf(&'a [u8]),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -2235,6 +2279,7 @@ enum BufferCommand {
     ReplaceChar(u8),
     CutSelection,
     CutSingleSelection,
+    CutMotion(u8, CutMotion, bool),
     InsertChar(u8),
     InsertNewLine,
     IndentLine,

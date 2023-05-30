@@ -296,7 +296,7 @@ impl Cursor {
         self.position = piece_table.num_chars().saturating_sub(1);
     }
 
-    pub fn move_to_char_inc(&mut self, piece_table: &PieceTable, search_char: u8) {
+    pub fn move_to_char(&mut self, piece_table: &PieceTable, search_char: u8) {
         if let Some(count) = self.chars_until_char(piece_table, search_char) {
             if piece_table
                 .line_at_char(self.position)
@@ -308,7 +308,7 @@ impl Cursor {
         }
     }
 
-    pub fn move_back_to_char_inc(&mut self, piece_table: &PieceTable, search_char: u8) {
+    pub fn move_back_to_char(&mut self, piece_table: &PieceTable, search_char: u8) {
         if let Some(count) = self.chars_until_char_rev(piece_table, search_char) {
             if piece_table
                 .line_at_char(self.position)
@@ -320,7 +320,7 @@ impl Cursor {
         }
     }
 
-    pub fn move_to_char_exc(&mut self, piece_table: &PieceTable, search_char: u8) {
+    pub fn move_until_char(&mut self, piece_table: &PieceTable, search_char: u8) {
         if let Some(count) = self.chars_until_char(piece_table, search_char) {
             if piece_table
                 .line_at_char(self.position)
@@ -332,7 +332,7 @@ impl Cursor {
         }
     }
 
-    pub fn move_back_to_char_exc(&mut self, piece_table: &PieceTable, search_char: u8) {
+    pub fn move_back_until_char(&mut self, piece_table: &PieceTable, search_char: u8) {
         if let Some(count) = self.chars_until_char_rev(piece_table, search_char) {
             if piece_table
                 .line_at_char(self.position)
