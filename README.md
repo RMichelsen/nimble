@@ -5,7 +5,7 @@ Nimble is modal (vim-like) editor written in Rust. Feel free to try it out :)
 - Vim-like movement, motions and editing
 - Multiple cursors
 - LSP support, featuring auto-completion, signature help, hover info and commands (goto definition etc.)
-- Syntax highlighting with [Syntect](https://github.com/trishume/syntect) 
+- Syntax highlighting
 
 ## Screenshot
 ![](Screenshot.png)
