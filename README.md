@@ -14,6 +14,8 @@ Nimble is modal (vim-like) text editor written in Rust. Feel free to try it out 
 - I have developed Nimble to fit my personal workflow, it has *no* customization of keybindings, colorschemes etc.
 
 ## Keybindings
+- "Ctrl + O" - Open workspace
+- "Ctrl + P" - Open file in workspace
 - "Escape" - Enter normal mode
 - "i" - Enter insert mode at character
 - "I" - Enter insert mode at first non-blank character
