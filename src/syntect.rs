@@ -138,15 +138,16 @@ impl Syntect {
 
     pub fn delete_rebalance(&mut self, piece_table: &PieceTable, position: usize, end: usize) {
         let start_index = piece_table.line_index(position) / SYNTECT_CACHE_FREQUENCY;
-        let start_cache_offset = piece_table
-            .char_index_from_line_col(start_index * SYNTECT_CACHE_FREQUENCY, 0)
-            .unwrap();
-        let start_effects_offset = position - start_cache_offset;
-        if let Ok(ref mut cache) = self.cache.as_ref().write() {
-            if let Some(effects) = cache.get_mut(&start_index) {
-                for effect in effects {
-                    if effect.start >= start_effects_offset + (end - position) {
-                        effect.start = effect.start.saturating_sub(end - position);
+        if let Some(start_cache_offset) =
+            piece_table.char_index_from_line_col(start_index * SYNTECT_CACHE_FREQUENCY, 0)
+        {
+            let start_effects_offset = position - start_cache_offset;
+            if let Ok(ref mut cache) = self.cache.as_ref().write() {
+                if let Some(effects) = cache.get_mut(&start_index) {
+                    for effect in effects {
+                        if effect.start >= start_effects_offset + (end - position) {
+                            effect.start = effect.start.saturating_sub(end - position);
+                        }
                     }
                 }
             }
@@ -155,15 +156,16 @@ impl Syntect {
 
     pub fn insert_rebalance(&mut self, piece_table: &PieceTable, position: usize, count: usize) {
         let start_index = piece_table.line_index(position) / SYNTECT_CACHE_FREQUENCY;
-        let start_cache_offset = piece_table
-            .char_index_from_line_col(start_index * SYNTECT_CACHE_FREQUENCY, 0)
-            .unwrap();
-        let start_effects_offset = position - start_cache_offset;
-        if let Ok(ref mut cache) = self.cache.as_ref().write() {
-            if let Some(effects) = cache.get_mut(&start_index) {
-                for effect in effects {
-                    if effect.start >= start_effects_offset {
-                        effect.start += count;
+        if let Some(start_cache_offset) =
+            piece_table.char_index_from_line_col(start_index * SYNTECT_CACHE_FREQUENCY, 0)
+        {
+            let start_effects_offset = position - start_cache_offset;
+            if let Ok(ref mut cache) = self.cache.as_ref().write() {
+                if let Some(effects) = cache.get_mut(&start_index) {
+                    for effect in effects {
+                        if effect.start >= start_effects_offset {
+                            effect.start += count;
+                        }
                     }
                 }
             }
@@ -177,46 +179,49 @@ impl Syntect {
         end: usize,
     ) -> Vec<TextEffect> {
         let start_index = start / SYNTECT_CACHE_FREQUENCY;
-        let start_cache_offset = piece_table
-            .char_index_from_line_col(start_index * SYNTECT_CACHE_FREQUENCY, 0)
-            .unwrap();
-        let start_text_offset = piece_table.char_index_from_line_col(start, 0).unwrap();
-        let start_effects_offset = start_text_offset - start_cache_offset;
-        let mut effects = self
-            .cache
-            .try_read()
-            .map(|cache| cache.get(&start_index).cloned())
-            .unwrap_or(None)
-            .unwrap_or(vec![]);
+        if let Some(start_cache_offset) =
+            piece_table.char_index_from_line_col(start_index * SYNTECT_CACHE_FREQUENCY, 0)
+        {
+            if let Some(start_text_offset) = piece_table.char_index_from_line_col(start, 0) {
+                let start_effects_offset = start_text_offset - start_cache_offset;
+                let mut effects = self
+                    .cache
+                    .try_read()
+                    .map(|cache| cache.get(&start_index).cloned())
+                    .unwrap_or(None)
+                    .unwrap_or(vec![]);
 
-        effects.retain(|effect| effect.start >= start_effects_offset);
-        for effect in &mut effects {
-            effect.start -= start_effects_offset;
-        }
+                effects.retain(|effect| effect.start >= start_effects_offset);
+                for effect in &mut effects {
+                    effect.start -= start_effects_offset;
+                }
 
-        let end_index = end / SYNTECT_CACHE_FREQUENCY;
-        if end_index != start_index {
-            let end_cache_offset = piece_table
-                .char_index_from_line_col(end_index * SYNTECT_CACHE_FREQUENCY, 0)
-                .unwrap_or(piece_table.num_chars());
-            let end_text_offset = piece_table
-                .char_index_from_line_col(end, 0)
-                .unwrap_or(piece_table.num_chars());
-            let end_effects_offset = end_text_offset - end_cache_offset;
-            let mut end_effects = self
-                .cache
-                .try_read()
-                .map(|cache| cache.get(&end_index).cloned())
-                .unwrap_or(None)
-                .unwrap_or(vec![]);
-            end_effects.retain(|effect| effect.start < end_effects_offset);
-            for effect in &mut end_effects {
-                effect.start += (end_text_offset - start_text_offset) - end_effects_offset;
+                let end_index = end / SYNTECT_CACHE_FREQUENCY;
+                if end_index != start_index {
+                    let end_cache_offset = piece_table
+                        .char_index_from_line_col(end_index * SYNTECT_CACHE_FREQUENCY, 0)
+                        .unwrap_or(piece_table.num_chars());
+                    let end_text_offset = piece_table
+                        .char_index_from_line_col(end, 0)
+                        .unwrap_or(piece_table.num_chars());
+                    let end_effects_offset = end_text_offset - end_cache_offset;
+                    let mut end_effects = self
+                        .cache
+                        .try_read()
+                        .map(|cache| cache.get(&end_index).cloned())
+                        .unwrap_or(None)
+                        .unwrap_or(vec![]);
+                    end_effects.retain(|effect| effect.start < end_effects_offset);
+                    for effect in &mut end_effects {
+                        effect.start += (end_text_offset - start_text_offset) - end_effects_offset;
+                    }
+                    effects.append(&mut end_effects);
+                }
+
+                return effects;
             }
-            effects.append(&mut end_effects);
         }
-
-        effects
+        vec![]
     }
 }
 

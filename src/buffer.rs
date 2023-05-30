@@ -859,7 +859,7 @@ impl Buffer {
             ":q" | ":bd" => {
                 return Some(EditorCommand::Quit);
             }
-            ":q!" | "bd!" => {
+            ":q!" | ":bd!" => {
                 return Some(EditorCommand::QuitNoCheck);
             }
             ":qa" => {

@@ -557,7 +557,7 @@ impl<'a> Iterator for PieceTableCharReverseIterator<'a> {
                 };
 
                 if self.piece_char_index != usize::MAX {
-                    let c = Some(buffer[piece.start + self.piece_char_index]);
+                    let c = buffer.get(piece.start + self.piece_char_index).copied();
                     self.piece_char_index = self.piece_char_index.wrapping_sub(1);
                     return c;
                 }
