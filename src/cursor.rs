@@ -137,7 +137,7 @@ pub fn get_filtered_completions(
             item.insert_text
                 .as_ref()
                 .unwrap_or(&item.label)
-                .starts_with(unsafe { std::str::from_utf8_unchecked(&trimmed_match_string) })
+                .starts_with(unsafe { std::str::from_utf8_unchecked(trimmed_match_string) })
         })
         .cloned()
         .collect();
@@ -147,7 +147,7 @@ pub fn get_filtered_completions(
         filtered_completions = completion_list.items.to_vec();
     }
 
-    if match_string.get(0) == Some(&b' ') {
+    if match_string.first() == Some(&b' ') {
         for item in &mut filtered_completions {
             item.label.insert(0, ' ');
             if let Some(insert_text) = &mut item.insert_text {

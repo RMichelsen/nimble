@@ -688,7 +688,7 @@ impl Buffer {
                         if change_command {
                             self.switch_to_insert_mode();
                             let insertion_commands: Vec<BufferCommand> =
-                                self.insertion_command_stack.iter().copied().collect();
+                                self.insertion_command_stack.to_vec();
                             let tmp = self.insertion_command_stack.clone();
                             for insertion_command in &insertion_commands {
                                 self.command(*insertion_command);
