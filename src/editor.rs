@@ -285,10 +285,8 @@ impl Editor {
                                 if let Some(value) = response.value {
                                     server.save_completions(response.id, value);
                                 }
-                                if let Some(i) = self.visible_documents[self.active_view].last() {
-                                    self.open_documents[*i]
-                                        .buffer
-                                        .update_completions(&mut server);
+                                for document in &mut self.open_documents {
+                                    document.buffer.update_completions(&mut server);
                                 }
                                 require_redraw = true;
                             }
@@ -296,10 +294,8 @@ impl Editor {
                                 if let Some(value) = response.value {
                                     server.save_signature_help(response.id, value);
                                 }
-                                if let Some(i) = self.visible_documents[self.active_view].last() {
-                                    self.open_documents[*i]
-                                        .buffer
-                                        .update_signature_helps(&mut server);
+                                for document in &mut self.open_documents {
+                                    document.buffer.update_signature_helps(&mut server);
                                 }
                                 require_redraw = true;
                             }

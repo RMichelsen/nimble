@@ -75,9 +75,10 @@ pub fn fuzzy_match(pattern: &[u8], text: &[u8]) -> isize {
     }
 
     score += UNMATCHED_LETTER_PENALTY * (text.len() - pattern.len()) as isize;
-    for i in 0..3 {
+
+    for i in 0..pattern.len() {
         match (text.get(i), pattern.get(i)) {
-            (Some(c1), Some(c2)) => (),
+            (Some(c1), Some(c2)) if c1 == c2 => (),
             _ => score += LEADING_LETTER_PENALTY,
         }
     }

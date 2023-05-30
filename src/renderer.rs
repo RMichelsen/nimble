@@ -345,6 +345,10 @@ impl Renderer {
         }
 
         view.visible_completions(buffer, layout, |completions, completion_view, request| {
+            if completions.is_empty() {
+                return;
+            }
+
             let selected_item = request.selection_index - request.selection_view_offset;
 
             self.context.fill_cells(

@@ -129,27 +129,34 @@ pub fn get_filtered_completions(
         .iter_chars_at(request_position)
         .take(cursor_position - request_position)
         .collect();
+    let trimmed_match_string = match_string.trim_ascii();
 
-    merged_items.sort_by(|item1, item2| {
-        let text1 = item1.insert_text.as_ref().unwrap_or(&item1.label);
-        let text2 = item2.insert_text.as_ref().unwrap_or(&item2.label);
-        let score1 = text_utils::fuzzy_match(&match_string, text1.as_bytes());
-        let score2 = text_utils::fuzzy_match(&match_string, text2.as_bytes());
-        score2.cmp(&score1)
-    });
-
-    if !match_string.is_empty() {
-        merged_items.retain(|item| {
+    let mut filtered_completions: Vec<CompletionItem> = merged_items
+        .iter()
+        .filter(|item| {
             item.insert_text
                 .as_ref()
                 .unwrap_or(&item.label)
-                .as_bytes()
-                .first()
-                == Some(&match_string[0])
+                .starts_with(unsafe { std::str::from_utf8_unchecked(&trimmed_match_string) })
         })
+        .cloned()
+        .collect();
+
+    // If the match string doesn't match anything, show all entries
+    if filtered_completions.is_empty() {
+        filtered_completions = completion_list.items.to_vec();
     }
 
-    merged_items
+    if match_string.get(0) == Some(&b' ') {
+        for item in &mut filtered_completions {
+            item.label.insert(0, ' ');
+            if let Some(insert_text) = &mut item.insert_text {
+                insert_text.insert(0, ' ');
+            }
+        }
+    }
+
+    filtered_completions
 }
 
 impl Cursor {

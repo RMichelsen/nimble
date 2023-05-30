@@ -35,7 +35,7 @@ use crate::{
     platform_resources::PlatformResources,
     renderer::RenderLayout,
     syntect::{IndexedLine, Syntect, SYNTECT_CACHE_FREQUENCY},
-    text_utils,
+    text_utils::{self},
     theme::Theme,
     view::View,
 };
@@ -749,7 +749,7 @@ impl Buffer {
 
     pub fn update_completions(&mut self, server: &mut RefMut<LanguageServer>) {
         for cursor in &mut self.cursors {
-            if let Some(ref mut request) = cursor.completion_request {
+            if let Some(request) = cursor.completion_request.as_mut() {
                 if request
                     .next_id
                     .is_some_and(|id| server.saved_completions.contains_key(&id))
@@ -767,7 +767,7 @@ impl Buffer {
 
     pub fn update_signature_helps(&mut self, server: &mut RefMut<LanguageServer>) {
         for cursor in &mut self.cursors {
-            if let Some(ref mut request) = cursor.signature_help_request {
+            if let Some(request) = cursor.signature_help_request.as_mut() {
                 if request
                     .next_id
                     .is_some_and(|id| server.saved_signature_helps.contains_key(&id))
@@ -2098,7 +2098,7 @@ fn lsp_complete(
             character.is_some_and(|c| server.borrow().trigger_characters.contains(&c));
 
         if cursor.completion_request.is_some() && !is_trigger_character {
-            let request = &mut cursor.completion_request.unwrap();
+            let request = cursor.completion_request.as_mut().unwrap();
             if server
                 .borrow()
                 .saved_completions
@@ -2177,7 +2177,7 @@ fn lsp_signature_help(
                 .borrow_mut()
                 .send_request("textDocument/signatureHelp", signature_help_params)
             {
-                if let Some(ref mut request) = cursor.signature_help_request {
+                if let Some(request) = cursor.signature_help_request.as_mut() {
                     request.next_id = Some(id);
                     request.next_position = Some(position);
                 } else {

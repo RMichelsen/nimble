@@ -259,6 +259,7 @@ impl LanguageServer {
                                                 for c in trigger_characters {
                                                     self.signature_help_trigger_characters
                                                         .push(c.as_bytes()[0]);
+                                                    self.trigger_characters.push(c.as_bytes()[0])
                                                 }
                                             }
                                         }
