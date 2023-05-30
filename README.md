@@ -1,5 +1,5 @@
 # Nimble
-Nimble is modal (vim-like) editor written in Rust. Feel free to try it out :)
+Nimble is modal (vim-like) text editor written in Rust. Feel free to try it out :)
 
 ## Features
 - Vim-like movement, motions and editing
