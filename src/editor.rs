@@ -533,6 +533,24 @@ impl Editor {
                 file_finder,
             );
         }
+        
+        if let Some(left_document) = self.visible_documents[0].last() {
+            self.renderer.draw_buffer_hovers(
+                &self.open_documents[*left_document].buffer,
+                &self.visible_documents_layouts[0].layout,
+                &self.open_documents[*left_document].view,
+                &self.open_documents[*left_document].buffer.language_server,
+            );
+        }
+
+        if let Some(right_document) = self.visible_documents[1].last() {
+            self.renderer.draw_buffer_hovers(
+                &self.open_documents[*right_document].buffer,
+                &self.visible_documents_layouts[1].layout,
+                &self.open_documents[*right_document].view,
+                &self.open_documents[*right_document].buffer.language_server,
+            );
+        }
 
         self.renderer.end_draw();
     }

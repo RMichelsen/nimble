@@ -536,6 +536,33 @@ impl Renderer {
             }
         });
 
+        if buffer
+            .input
+            .as_bytes()
+            .first()
+            .is_some_and(|c| *c == b':' || *c == b'/')
+        {
+            self.context.draw_popup_above(
+                layout.num_rows,
+                0,
+                layout,
+                buffer.input.as_bytes(),
+                self.theme.selection_background_color,
+                self.theme.background_color,
+                None,
+                &self.theme,
+                false,
+            );
+        }
+    }
+    
+    pub fn draw_buffer_hovers(
+        &mut self,
+        buffer: &Buffer,
+        layout: &RenderLayout,
+        view: &View,
+        language_server: &Option<Rc<RefCell<LanguageServer>>>,
+    ) {
         if let Some(server) = language_server {
             if let Some(diagnostics) = server
                 .borrow()
@@ -643,25 +670,6 @@ impl Renderer {
                     }
                 }
             }
-        }
-
-        if buffer
-            .input
-            .as_bytes()
-            .first()
-            .is_some_and(|c| *c == b':' || *c == b'/')
-        {
-            self.context.draw_popup_above(
-                layout.num_rows,
-                0,
-                layout,
-                buffer.input.as_bytes(),
-                self.theme.selection_background_color,
-                self.theme.background_color,
-                None,
-                &self.theme,
-                false,
-            );
         }
     }
 
