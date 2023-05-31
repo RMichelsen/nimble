@@ -77,7 +77,6 @@ pub struct Buffer {
 }
 
 impl Buffer {
-    // TODO: Error handling
     pub fn new(
         window: &Window,
         path: &str,
@@ -992,6 +991,7 @@ impl Buffer {
                 let num_chars = self.piece_table.num_chars();
                 let num_cursors = self.cursors.len();
                 for i in 0..num_cursors {
+                    let old_anchor = self.cursors[i].anchor;
                     let old_position = self.cursors[i].position;
 
                     match motion {
@@ -1010,7 +1010,7 @@ impl Buffer {
                         }
                     }
 
-                    if self.cursors[i].position != old_position {
+                    if self.cursors[i].position != old_position || self.cursors[i].anchor != old_anchor {
                         self.cursors[i].save_selection_to_clipboard(&self.piece_table);
                         selection.extend(self.cursors[i].get_selection(&self.piece_table));
 
