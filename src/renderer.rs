@@ -610,6 +610,7 @@ impl Renderer {
                             true,
                         );
                     } else if let Some(hover_message) = &view.hover_message {
+                        println!("{}",hover_message.message);
                         // TODO: Rendering the hover message this way is pretty inefficient.
                         // However, most hovers are not many thousands characters long..
                         let (row, col) = (
