@@ -960,6 +960,7 @@ impl Buffer {
                 }
 
                 self.lsp_change(content_changes);
+                self.syntect_change();
             }
             CutSelection => {
                 let mut content_changes = vec![];
@@ -980,6 +981,7 @@ impl Buffer {
                 }
 
                 self.lsp_change(content_changes);
+                self.syntect_change();
             }
             CutMotion(c, motion, change_command) => {
                 self.push_undo_state();
@@ -1010,7 +1012,9 @@ impl Buffer {
                         }
                     }
 
-                    if self.cursors[i].position != old_position || self.cursors[i].anchor != old_anchor {
+                    if self.cursors[i].position != old_position
+                        || self.cursors[i].anchor != old_anchor
+                    {
                         self.cursors[i].save_selection_to_clipboard(&self.piece_table);
                         selection.extend(self.cursors[i].get_selection(&self.piece_table));
 
@@ -1048,6 +1052,7 @@ impl Buffer {
                 }
 
                 self.lsp_change(content_changes);
+                self.syntect_change();
             }
             CutSingleSelection => {
                 let mut content_changes = vec![];
@@ -1074,6 +1079,7 @@ impl Buffer {
                 }
 
                 self.lsp_change(content_changes);
+                self.syntect_change();
             }
             InsertChar(c) => {
                 if self.insertion_stack_dirty {
@@ -1133,6 +1139,8 @@ impl Buffer {
                     }
                     _ => (),
                 }
+
+                self.syntect_change();
             }
             InsertNewLine => {
                 if self.insertion_stack_dirty {
@@ -1196,6 +1204,7 @@ impl Buffer {
                     self.cursors[i].position += cursor_offset;
                 }
 
+                self.syntect_change();
                 self.lsp_change(content_changes);
             }
             IndentLine => {
@@ -1216,6 +1225,7 @@ impl Buffer {
                 }
                 self.motion(ToFirstNonBlankChar);
 
+                self.syntect_change();
                 self.lsp_change(content_changes);
             }
             UnindentLine => {
@@ -1241,6 +1251,7 @@ impl Buffer {
                 }
                 self.motion(ToFirstNonBlankChar);
 
+                self.syntect_change();
                 self.lsp_change(content_changes);
             }
             // TODO: Improve performance: selecting many lines (1000+) is slow.
@@ -1324,6 +1335,7 @@ impl Buffer {
                     }
                 }
 
+                self.syntect_change();
                 self.lsp_change(content_changes);
             }
             DeleteCharBack => {
@@ -1385,6 +1397,7 @@ impl Buffer {
                     self.cursors[i].position = start;
                 }
 
+                self.syntect_change();
                 self.lsp_change(content_changes);
             }
             DeleteWordBack => {
@@ -1425,6 +1438,7 @@ impl Buffer {
                     }
                 }
 
+                self.syntect_change();
                 self.lsp_change(content_changes);
             }
             DeleteWordFront => {
@@ -1464,6 +1478,7 @@ impl Buffer {
                     }
                 }
 
+                self.syntect_change();
                 self.lsp_change(content_changes);
             }
             Undo => {
@@ -1610,6 +1625,7 @@ impl Buffer {
                     }
                 }
 
+                self.syntect_change();
                 self.lsp_change(content_changes)
             }
             CopySelection => {
@@ -1661,6 +1677,7 @@ impl Buffer {
 
                     let changes = self.insert_chars(start, &text);
                     self.lsp_change(vec![changes]);
+                    self.syntect_change();
                     self.cursors[i].position = start + count;
                 }
             }
@@ -1672,6 +1689,7 @@ impl Buffer {
 
                     let changes = self.insert_chars(start, &text[0..size]);
                     self.lsp_change(vec![changes]);
+                    self.syntect_change();
                     self.cursors[i].position += size;
                 }
             }
@@ -1730,7 +1748,6 @@ impl Buffer {
         );
         self.piece_table.delete(start, end);
         self.delete_rebalance(start, end, &old_diagnostic_positions);
-        self.update_syntect(line1);
         TextDocumentChangeEvent {
             range: Some(Range {
                 start: Position {
@@ -1754,7 +1771,6 @@ impl Buffer {
             self.piece_table.col_index(start),
         );
         self.insert_rebalance(start, text.len(), &old_diagnostic_positions);
-        self.update_syntect(line);
         TextDocumentChangeEvent {
             range: Some(Range {
                 start: Position {
@@ -1834,6 +1850,16 @@ impl Buffer {
     fn switch_to_visual_line_mode(&mut self) {
         self.mode = VisualLine;
         self.input.clear();
+    }
+
+    fn syntect_change(&mut self) {
+        let first_line = self
+            .cursors
+            .iter()
+            .map(|x| self.piece_table.line_index(x.position))
+            .min()
+            .unwrap_or(0);
+        self.update_syntect(first_line);
     }
 
     fn lsp_reload(&mut self) {

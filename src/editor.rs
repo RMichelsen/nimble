@@ -267,7 +267,7 @@ impl Editor {
         for (identifier, server) in &mut self.language_servers {
             let mut server = server.borrow_mut();
             match server.handle_responses() {
-                Ok((responses, notifications)) => {
+                Some((responses, notifications)) => {
                     for response in responses {
                         match response.method {
                             "initialize" => {
@@ -406,9 +406,7 @@ impl Editor {
                         }
                     }
                 }
-                Err(e) => {
-                    panic!();
-                }
+                None => panic!(),
             }
         }
 
@@ -533,7 +531,7 @@ impl Editor {
                 file_finder,
             );
         }
-        
+
         if let Some(left_document) = self.visible_documents[0].last() {
             self.renderer.draw_buffer_hovers(
                 &self.open_documents[*left_document].buffer,

@@ -212,10 +212,7 @@ impl GraphicsContext {
                 col_offset,
                 self.window_size.1 - self.font_size.1 - row_offset,
             ),
-            &CGSize::new(
-                self.font_size.0 * count as f64,
-                self.font_size.1 * 0.1,
-            ),
+            &CGSize::new(self.font_size.0 * count as f64, self.font_size.1 * 0.1),
         ));
     }
 

@@ -633,8 +633,10 @@ impl GraphicsContext {
         let mut restricted_layout = *layout;
 
         if restrict {
-            restricted_layout.num_rows = (self.window_size.1 / self.font_size.1).ceil() as usize / 2;
-            restricted_layout.num_cols = (self.window_size.0 / self.font_size.0).ceil() as usize / 2;
+            restricted_layout.num_rows =
+                (self.window_size.1 / self.font_size.1).ceil() as usize / 2;
+            restricted_layout.num_cols =
+                (self.window_size.0 / self.font_size.0).ceil() as usize / 2;
         }
 
         let (width, height) = self.get_text_width_height(
@@ -768,8 +770,10 @@ impl GraphicsContext {
         let mut restricted_layout = *layout;
 
         if restrict {
-            restricted_layout.num_rows = (self.window_size.1 / self.font_size.1).ceil() as usize / 2;
-            restricted_layout.num_cols = (self.window_size.0 / self.font_size.0).ceil() as usize / 2;
+            restricted_layout.num_rows =
+                (self.window_size.1 / self.font_size.1).ceil() as usize / 2;
+            restricted_layout.num_cols =
+                (self.window_size.0 / self.font_size.0).ceil() as usize / 2;
         }
 
         let (width, height) = self.get_text_width_height(

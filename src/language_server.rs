@@ -10,7 +10,10 @@ use std::{
     },
     process::{Command, Stdio},
     ptr::null_mut,
-    sync::{Arc, Mutex},
+    sync::{
+        mpsc::{channel, Receiver, SendError, Sender},
+        Arc, Mutex,
+    },
     thread::{self, JoinHandle},
 };
 
@@ -46,7 +49,7 @@ pub struct ServerNotification {
 
 pub struct LanguageServer {
     language: &'static Language,
-    stdin: File,
+    sender: Sender<String>,
     requests: HashMap<i32, &'static str>,
     request_id: i32,
     responses: Arc<Mutex<VecDeque<ServerMessage>>>,
@@ -61,7 +64,7 @@ pub struct LanguageServer {
 
 impl LanguageServer {
     pub fn new(language: &'static Language, workspace: &Workspace) -> Option<Self> {
-        let (process_id, mut stdin, stdout) = if cfg!(target_os = "windows") {
+        let (process_id, stdin, stdout) = if cfg!(target_os = "windows") {
             let mut stdin_read = HANDLE::default();
             let mut stdin_write = HANDLE::default();
             let mut stdout_read = HANDLE::default();
@@ -116,10 +119,12 @@ impl LanguageServer {
 
         let responses = Arc::new(Mutex::new(VecDeque::new()));
 
+        let (mut sender, receiver) = channel();
         start_reader_thread(stdout, language, Arc::clone(&responses));
+        start_writer_thread(stdin, receiver);
 
         send_request(
-            &mut stdin,
+            &mut sender,
             0,
             "initialize",
             InitializeParams {
@@ -150,7 +155,7 @@ impl LanguageServer {
 
         Some(Self {
             language,
-            stdin,
+            sender,
             requests,
             request_id: 1,
             responses,
@@ -189,7 +194,7 @@ impl LanguageServer {
         params: T,
     ) -> Option<i32> {
         if self.initialized {
-            match send_request(&mut self.stdin, self.request_id, method, params) {
+            match send_request(&mut self.sender, self.request_id, method, params) {
                 Ok(()) => {
                     self.requests.insert(self.request_id, method);
                     self.request_id += 1;
@@ -203,21 +208,16 @@ impl LanguageServer {
 
     pub fn send_notification<T: serde::Serialize>(&mut self, method: &'static str, params: T) {
         if self.initialized {
-            match send_notification(&mut self.stdin, method, params) {
+            match send_notification(&mut self.sender, method, params) {
                 Ok(()) => (),
                 Err(_) => self.terminated = true,
             }
         }
     }
 
-    pub fn handle_responses(
-        &mut self,
-    ) -> Result<(Vec<ServerResponse>, Vec<ServerNotification>), std::io::Error> {
+    pub fn handle_responses(&mut self) -> Option<(Vec<ServerResponse>, Vec<ServerNotification>)> {
         if self.terminated {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::ConnectionAborted,
-                "Error occured, LSP must be restarted",
-            ));
+            return None;
         }
 
         let mut server_responses = vec![];
@@ -229,10 +229,11 @@ impl LanguageServer {
                         match self.requests.get(&id) {
                             Some(&"initialize") => {
                                 send_notification(
-                                    &mut self.stdin,
+                                    &mut self.sender,
                                     "initialized",
                                     InitializedParams {},
-                                )?;
+                                )
+                                .ok()?;
 
                                 if let Some(result) = result.clone() {
                                     if let Ok(result) =
@@ -290,8 +291,18 @@ impl LanguageServer {
                 }
             }
         }
-        Ok((server_responses, server_notifications))
+        Some((server_responses, server_notifications))
     }
+}
+
+fn start_writer_thread(mut stdin: File, receiver: Receiver<String>) -> JoinHandle<()> {
+    thread::spawn(move || loop {
+        let message = receiver.recv().unwrap();
+        match stdin.write_all(message.as_bytes()) {
+            Ok(()) => (),
+            _ => break,
+        }
+    })
 }
 
 fn start_reader_thread(
@@ -334,26 +345,28 @@ fn start_reader_thread(
 }
 
 pub fn send_request<T: serde::Serialize>(
-    stdin: &mut File,
+    sender: &mut Sender<String>,
     request_id: i32,
     method: &'static str,
     params: T,
-) -> Result<(), std::io::Error> {
+) -> Result<(), SendError<String>> {
     let request = Request::new(request_id, method, params);
     let message = serde_json::to_string(&request).unwrap();
     let header = format!("Content-Length: {}\r\n\r\n", message.len());
     let composed = header + message.as_str();
-    stdin.write_all(composed.as_bytes())
+    sender.send(composed)
 }
 
 fn send_notification<T: serde::Serialize>(
-    stdin: &mut File,
+    sender: &mut Sender<String>,
     method: &'static str,
     params: T,
-) -> Result<(), std::io::Error> {
+) -> Result<(), SendError<String>> {
     let notification = Notification::new(method, params);
     let message = serde_json::to_string(&notification).unwrap();
     let header = format!("Content-Length: {}\r\n\r\n", message.len());
     let composed = header + message.as_str();
-    stdin.write_all(composed.as_bytes())
+    sender.send(composed)
 }
+
+// stdin.write_all(composed.as_bytes())
