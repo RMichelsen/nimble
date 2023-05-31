@@ -534,7 +534,6 @@ impl Cursor {
                 }
             } else {
                 match_text = match_text[1..].to_vec();
-                match_text.clear();
             }
         }
     }
@@ -559,7 +558,7 @@ impl Cursor {
                     return;
                 }
             } else {
-                match_text = match_text[1..].to_vec();
+                match_text.pop();
             }
         }
         match_text.clear();
@@ -584,7 +583,7 @@ impl Cursor {
                     return;
                 }
             } else {
-                match_text = match_text[1..].to_vec();
+                match_text.pop();
             }
         }
     }
