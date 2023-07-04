@@ -7,15 +7,11 @@ use std::{
 };
 
 use bstr::ByteSlice;
+use imgui_winit_support::winit::window::Window;
 use url::Url;
-use winit::{
-    event::{ModifiersState, VirtualKeyCode},
-    window::Window,
-};
 use BufferCommand::*;
 use BufferMode::*;
 use CursorMotion::*;
-use VirtualKeyCode::{Back, Delete, Escape, Left, Return, Right, Slash, Space, Tab, J, K, R};
 
 use crate::{
     cursor::{
@@ -33,11 +29,9 @@ use crate::{
     language_support::{language_from_path, Language},
     piece_table::{Piece, PieceTable},
     platform_resources::PlatformResources,
-    renderer::RenderLayout,
     syntect::{IndexedLine, Syntect, SYNTECT_CACHE_FREQUENCY},
     text_utils::{self},
     theme::Theme,
-    view::View,
 };
 
 #[derive(Copy, Clone, PartialEq)]
@@ -79,13 +73,13 @@ pub struct Buffer {
 impl Buffer {
     pub fn new(
         window: &Window,
-        path: &str,
+        uri: &Url,
         theme: &Theme,
         language_server: Option<Rc<RefCell<LanguageServer>>>,
     ) -> Self {
-        let uri = Url::from_file_path(path).unwrap().to_string();
-        let language = language_from_path(path);
-        let piece_table = PieceTable::from_file(path);
+        let path = uri.to_file_path().unwrap().to_str().unwrap().to_string();
+        let language = language_from_path(&path);
+        let piece_table = PieceTable::from_file(&path);
 
         let mut highlight_queue = VecDeque::new();
         let mut i = 0;
@@ -95,8 +89,8 @@ impl Buffer {
         }
 
         Self {
-            path: path.to_string(),
-            uri,
+            path: path.clone(),
+            uri: uri.to_string(),
             language,
             piece_table,
             cursors: vec![Cursor::default()],
@@ -104,7 +98,7 @@ impl Buffer {
             redo_stack: vec![],
             mode: BufferMode::Normal,
             language_server,
-            syntect: Syntect::new(path, theme),
+            syntect: Syntect::new(&path, theme),
             input: String::default(),
             last_executed_command: None,
             insertion_command_stack: vec![],
@@ -221,46 +215,36 @@ impl Buffer {
         }
     }
 
-    pub fn handle_key(
-        &mut self,
-        key_code: VirtualKeyCode,
-        modifiers: Option<ModifiersState>,
-        view: &View,
-        layout: &RenderLayout,
-    ) -> Option<EditorCommand> {
-        match (self.mode, key_code) {
-            (_, VirtualKeyCode::Down) => self.motion(Down(1)),
-            (_, VirtualKeyCode::Up) => self.motion(Up(1)),
-            (_, Right) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
-                self.motion(ForwardByWord)
-            }
-            (_, Left) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
-                self.motion(BackwardByWord)
-            }
-            (_, Right) => self.motion(Forward(1)),
-            (_, Left) => self.motion(Backward(1)),
+    pub fn handle_key(&mut self, key: imgui::Key, ctrl_down: bool) -> Option<EditorCommand> {
+        match (self.mode, key) {
+            (_, imgui::Key::DownArrow) => self.motion(Down(1)),
+            (_, imgui::Key::UpArrow) => self.motion(Up(1)),
+            (_, imgui::Key::RightArrow) if ctrl_down => self.motion(ForwardByWord),
+            (_, imgui::Key::LeftArrow) if ctrl_down => self.motion(BackwardByWord),
+            (_, imgui::Key::RightArrow) => self.motion(Forward(1)),
+            (_, imgui::Key::LeftArrow) => self.motion(Backward(1)),
 
-            (Normal, Escape) if self.input.as_bytes().first() == Some(&b'/') => {
+            (Normal, imgui::Key::Escape) if self.input.as_bytes().first() == Some(&b'/') => {
                 self.input.clear();
                 self.cursors[0].position = self.search_anchor;
                 self.cursors[0].anchor = self.search_anchor;
                 return Some(EditorCommand::CenterIfNotVisible);
             }
-            (Normal, Escape) => {
+            (Normal, imgui::Key::Escape) => {
                 self.cursors.truncate(1);
                 self.input.clear();
             }
-            (Insert, Escape) => {
+            (Insert, imgui::Key::Escape) => {
                 self.motion(Backward(1));
                 self.switch_to_normal_mode();
             }
-            (_, Escape) => self.switch_to_normal_mode(),
+            (_, imgui::Key::Escape) => self.switch_to_normal_mode(),
 
-            (Insert, Back) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+            (Insert, imgui::Key::Backspace) if ctrl_down => {
                 self.command(DeleteWordBack);
             }
-            (Insert, Back) => self.command(DeleteCharBack),
-            (_, Back) => {
+            (Insert, imgui::Key::Backspace) => self.command(DeleteCharBack),
+            (_, imgui::Key::Backspace) => {
                 if self
                     .input
                     .as_bytes()
@@ -273,8 +257,8 @@ impl Buffer {
                 }
             }
 
-            (Insert, Return) => self.command(InsertNewLine),
-            (_, Return) => {
+            (Insert, imgui::Key::Enter) => self.command(InsertNewLine),
+            (_, imgui::Key::Enter) => {
                 if self
                     .input
                     .as_bytes()
@@ -289,31 +273,31 @@ impl Buffer {
                 }
             }
 
-            (Normal, Delete) => {
+            (Normal, imgui::Key::Delete) => {
                 self.command(CopySelection);
                 self.command(CutSelection);
             }
-            (Visual, Delete) => {
+            (Visual, imgui::Key::Delete) => {
                 self.command(CopySelection);
                 self.command(CutSelection);
                 self.switch_to_normal_mode();
             }
-            (VisualLine, Delete) => {
+            (VisualLine, imgui::Key::Delete) => {
                 self.motion(ExtendSelection);
                 self.command(CopySelection);
                 self.command(CutSelection);
                 self.switch_to_normal_mode();
             }
-            (Insert, Delete) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+            (Insert, imgui::Key::Delete) if ctrl_down => {
                 self.command(DeleteWordFront);
             }
-            (Insert, Delete) => self.command(CutSingleSelection),
+            (Insert, imgui::Key::Delete) => self.command(CutSingleSelection),
 
-            (Normal, R) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+            (Normal, imgui::Key::R) if ctrl_down => {
                 self.command(Redo);
             }
 
-            (Insert, J) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+            (Insert, imgui::Key::J) if ctrl_down => {
                 for cursor in &mut self.cursors {
                     if let Some(ref mut request) = cursor.completion_request {
                         if let Some(server) = &self.language_server {
@@ -327,29 +311,29 @@ impl Buffer {
                                     cursor.position,
                                 );
 
-                                if let Some(completion_view) = view.get_completion_view(
-                                    &self.piece_table,
-                                    &filtered_completions,
-                                    request.position,
-                                    layout,
-                                ) {
-                                    request.selection_index = min(
-                                        request.selection_index + 1,
-                                        filtered_completions.len().saturating_sub(1),
-                                    );
+                                // if let Some(completion_view) = view.get_completion_view(
+                                //     &self.piece_table,
+                                //     &filtered_completions,
+                                //     request.position,
+                                //     layout,
+                                // ) {
+                                //     request.selection_index = min(
+                                //         request.selection_index + 1,
+                                //         filtered_completions.len().saturating_sub(1),
+                                //     );
 
-                                    if request.selection_index
-                                        >= request.selection_view_offset + completion_view.height
-                                    {
-                                        request.selection_view_offset += 1;
-                                    }
-                                }
+                                //     if request.selection_index
+                                //         >= request.selection_view_offset + completion_view.height
+                                //     {
+                                //         request.selection_view_offset += 1;
+                                //     }
+                                // }
                             }
                         }
                     }
                 }
             }
-            (Insert, K) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+            (Insert, imgui::Key::K) if ctrl_down => {
                 for cursor in &mut self.cursors {
                     if let Some(ref mut request) = cursor.completion_request {
                         request.selection_index = request.selection_index.saturating_sub(1);
@@ -360,14 +344,12 @@ impl Buffer {
                 }
             }
 
-            (Normal | Visual | VisualLine, Slash)
-                if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) =>
-            {
+            (Normal | Visual | VisualLine, imgui::Key::Slash) if ctrl_down => {
                 self.push_undo_state();
                 self.command(ToggleComment);
             }
 
-            (Insert, Tab)
+            (Insert, imgui::Key::Tab)
                 if self
                     .cursors
                     .last()
@@ -376,17 +358,15 @@ impl Buffer {
                 self.push_undo_state();
                 self.command(Complete);
             }
-            (Insert, Tab) => {
+            (Insert, imgui::Key::Tab) => {
                 for _ in 0..self.piece_table.indent_width {
                     self.command(InsertChar(b' '));
                 }
             }
-            (_, Tab) if modifiers.is_some_and(|m| m.contains(ModifiersState::SHIFT)) => {
-                return Some(EditorCommand::PreviousTab)
-            }
-            (_, Tab) => return Some(EditorCommand::NextTab),
+            (_, imgui::Key::Tab) if ctrl_down => return Some(EditorCommand::PreviousTab),
+            (_, imgui::Key::Tab) => return Some(EditorCommand::NextTab),
 
-            (Insert, Space) if modifiers.is_some_and(|m| m.contains(ModifiersState::CTRL)) => {
+            (Insert, imgui::Key::Space) if ctrl_down => {
                 self.command(StartCompletion);
             }
 

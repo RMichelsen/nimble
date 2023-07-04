@@ -1,5 +1,5 @@
 use std::{
-    cmp::min,
+    cmp::{max, min},
     fs::File,
     io::{BufReader, Read, Write},
 };
@@ -267,6 +267,26 @@ impl PieceTable {
             .fold(0, |acc, piece| acc + piece.linebreaks.len())
     }
 
+    pub fn longest_line(&self) -> usize {
+        let t = std::time::Instant::now();
+        let mut longest_linebreak = 0;
+        let mut last_linebreak = 0;
+        let mut last_piece_ending_count = 0;
+        for piece in &self.pieces {
+            for linebreak in &piece.linebreaks {
+                longest_linebreak = max(
+                    linebreak - last_linebreak + last_piece_ending_count,
+                    longest_linebreak,
+                );
+                last_linebreak = *linebreak;
+                last_piece_ending_count = 0;
+            }
+            last_linebreak = 0;
+            last_piece_ending_count = piece.start + piece.length - last_linebreak;
+        }
+        longest_linebreak
+    }
+
     pub fn insert(&mut self, position: usize, bytes: &[u8]) {
         let piece = Piece {
             file: PieceFile::Add,
@@ -294,7 +314,7 @@ impl PieceTable {
                 self.pieces[i].length = position - current_position;
                 let last_piece_linebreaks = self.pieces[i]
                     .linebreaks
-                    .drain_filter(|i| *i >= position - current_position)
+                    .extract_if(|i| *i >= position - current_position)
                     .map(|i| i - (position - current_position))
                     .collect();
 
@@ -341,14 +361,12 @@ impl PieceTable {
                 self.pieces[i].length -= next_position - start;
                 self.pieces[i]
                     .linebreaks
-                    .drain_filter(|i| *i >= start - current_position);
+                    .retain(|i| *i < start - current_position);
             // Delete the beginning of slices where the end is in [current; next]
             } else if (current_position..=next_position).contains(&end) && start <= current_position
             {
                 let delete_count = end - current_position;
-                self.pieces[i]
-                    .linebreaks
-                    .drain_filter(|i| *i < delete_count);
+                self.pieces[i].linebreaks.retain(|i| *i >= delete_count);
                 for linebreak in &mut self.pieces[i].linebreaks {
                     *linebreak -= delete_count;
                 }
@@ -360,7 +378,7 @@ impl PieceTable {
 
                 let last_piece_linebreaks: Vec<usize> = self.pieces[i]
                     .linebreaks
-                    .drain_filter(|i| *i >= start - current_position)
+                    .extract_if(|i| *i >= start - current_position)
                     .collect();
 
                 let deleted_count = end - current_position;
