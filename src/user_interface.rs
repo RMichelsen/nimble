@@ -4,7 +4,7 @@ use std::{
     ffi::{CStr, CString},
     path::PathBuf,
     ptr::null,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use imgui::{
@@ -145,7 +145,9 @@ impl UserInterface {
             && ui.is_key_pressed(Key::O)
         {
             if let Some(file) = editor.open_file_prompt(window, theme) {
-                let window_name = CString::new(Into::<String>::into(file.clone())).unwrap();
+                let window_name = CString::new(file.to_file_path().unwrap().file_name().unwrap().to_str().unwrap().to_string()
+                    + "###"
+                    + Into::<String>::into(file.clone()).as_str()).unwrap();
                 let window = unsafe { igFindWindowByName(window_name.as_ptr()) };
                 if !window.is_null() && unsafe { (*window).Appearing } {
                     unsafe {
@@ -241,7 +243,9 @@ impl UserInterface {
 
             if let Some(file) = file_to_open {
                 if let Some(file) = editor.open_file(window, theme, file.to_str().unwrap()) {let window_name = CString::new(Into::<String>::into(file.clone())).unwrap();
-                    let window_name = CString::new(Into::<String>::into(file.clone())).unwrap();
+                    let window_name = CString::new(file.to_file_path().unwrap().file_name().unwrap().to_str().unwrap().to_string()
+                        + "###"
+                        + Into::<String>::into(file.clone()).as_str()).unwrap();
                     let window = unsafe { igFindWindowByName(window_name.as_ptr()) };
                     if !window.is_null() && unsafe { !(*window).DockNode.is_null() } {
                         unsafe {
@@ -287,7 +291,11 @@ impl UserInterface {
 
             let mut remain_open = true;
 
-            ui.window(Into::<String>::into(file.clone()).as_str())
+
+            let window_name = file.to_file_path().unwrap().file_name().unwrap().to_str().unwrap().to_string()
+                + "###"
+                + Into::<String>::into(file.clone()).as_str();
+            ui.window(&window_name)
                 .opened(&mut remain_open)
                 .content_size([document_width, document_height])
                 .horizontal_scrollbar(true)
@@ -309,11 +317,20 @@ impl UserInterface {
                         if !dock_node.is_null() {
                             self.active_view = unsafe { *dock_node }.ID;
                         }
-                        handle_buffer_input(
+                        if handle_buffer_input(
                             ui,
                             renderer.font_size,
                             editor.buffers.get_mut(file).unwrap(),
-                        );
+                        ) {
+                            let buffer = editor.buffers.get(file).unwrap();
+                            if let Some(last_cursor) = buffer.cursors.last() {
+                                let (line, col) = last_cursor.get_line_col(&buffer.piece_table);
+                                let rect = line_col_to_rect(ui, line, col, (1, 1), renderer.font_size);
+                                unsafe {
+                                    igScrollToBringRectIntoView(igGetCurrentWindow(), rect);
+                                }
+                            }
+                        }
                     }
                 });
 
@@ -343,11 +360,11 @@ fn cycle_theme(theme: &mut Theme) {
     *theme = THEMES[(i + 1) % THEMES.len()];
 }
 
-fn handle_buffer_input(ui: &Ui, font_size: (f32, f32), buffer: &mut Buffer) {
-    let mut adjust_view = false;
+fn handle_buffer_input(ui: &Ui, font_size: (f32, f32), buffer: &mut Buffer) -> bool {
+    let mut key_handled = false;
     for c in ui.io().input_queue_characters().filter(|c| c.is_ascii()) {
         buffer.handle_char(c);
-        adjust_view = true;
+        key_handled = true;
     }
 
     for key in [
@@ -368,19 +385,11 @@ fn handle_buffer_input(ui: &Ui, font_size: (f32, f32), buffer: &mut Buffer) {
     ] {
         if ui.is_key_pressed(key) {
             buffer.handle_key(key, ui.is_key_down(Key::LeftCtrl));
-            adjust_view = true;
+            key_handled = true;
         }
     }
 
-    if adjust_view {
-        if let Some(last_cursor) = buffer.cursors.last() {
-            let (line, col) = last_cursor.get_line_col(&buffer.piece_table);
-            let rect = line_col_to_rect(ui, line, col, (1, 1), font_size);
-            unsafe {
-                igScrollToBringRectIntoView(igGetCurrentWindow(), rect);
-            }
-        }
-    }
+    key_handled
 }
 
 fn line_col_to_rect(

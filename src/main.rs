@@ -25,7 +25,7 @@ mod text_utils;
 mod theme;
 mod user_interface;
 
-use std::time::Instant;
+use std::time::{Instant, Duration};
 
 use editor::Editor;
 use imgui_winit_support::winit::{
@@ -53,6 +53,7 @@ fn main() {
     let mut theme = THEMES[0];
 
     let mut last_frame = Instant::now();
+    let mut highlight_timer = Instant::now();
     event_loop.run(move |event, _, control_flow| match event {
         Event::NewEvents(_) => {
             let now = Instant::now();
@@ -66,7 +67,11 @@ fn main() {
             if let Some(render_data) =
                 user_interface.run(&window, &renderer, &mut editor, &mut theme)
             {
-                editor.update_highlights(&render_data);
+                if highlight_timer.elapsed() > Duration::from_millis(50) {
+                    editor.update_highlights(&render_data);
+                    highlight_timer = Instant::now();
+                }
+
                 unsafe {
                     renderer.draw(&theme, &editor.buffers, &render_data);
                 }

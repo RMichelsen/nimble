@@ -703,27 +703,18 @@ impl Buffer {
         None
     }
 
-    pub fn update_highlights(&mut self) -> bool {
+    pub fn update_highlights(&mut self) {
         if let Some(syntect) = &mut self.syntect {
             if let Some(line) = self.highlight_queue.pop_front() {
                 syntect.queue.lock().unwrap().push_back(IndexedLine {
+                    version: *syntect.version.read().unwrap(),
                     index: line,
                     text: self
                         .piece_table
                         .text_between_lines(line, line + SYNTECT_CACHE_FREQUENCY.saturating_sub(1)),
                 });
             }
-
-            {
-                use std::borrow::BorrowMut;
-                let mut cache_updated = syntect.cache_updated.borrow_mut().lock().unwrap();
-                if *cache_updated {
-                    *cache_updated = false;
-                    return true;
-                }
-            }
         }
-        false
     }
 
     pub fn update_completions(&mut self, server: &mut RefMut<LanguageServer>) {
@@ -787,6 +778,7 @@ impl Buffer {
 
     pub fn update_syntect(&mut self, line: usize) {
         if let Some(syntect) = &mut self.syntect {
+            *syntect.version.write().unwrap() += 1;
             syntect.queue.lock().unwrap().clear();
             self.highlight_queue.clear();
 

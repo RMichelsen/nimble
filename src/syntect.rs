@@ -36,13 +36,14 @@ impl From<crate::renderer::Color> for Color {
 pub const SYNTECT_CACHE_FREQUENCY: usize = 100;
 
 pub struct IndexedLine {
+    pub version: usize,
     pub index: usize,
     pub text: Vec<u8>,
 }
 
 pub struct Syntect {
     pub queue: Arc<Mutex<VecDeque<IndexedLine>>>,
-    pub cache_updated: Arc<Mutex<bool>>,
+    pub version: Arc<RwLock<usize>>,
     cache: Arc<RwLock<HashMap<usize, Vec<TextEffect>>>>,
     theme: Theme,
     syntax_set: SyntaxSet,
@@ -52,7 +53,7 @@ pub struct Syntect {
 impl Syntect {
     pub fn new(path: &str, theme: &crate::theme::Theme) -> Option<Self> {
         let queue = Arc::new(Mutex::new(VecDeque::new()));
-        let cache_updated = Arc::new(Mutex::new(false));
+        let version = Arc::new(RwLock::new(0));
         let cache = Arc::new(RwLock::new(HashMap::new()));
 
         let theme = convert_theme(theme);
@@ -65,13 +66,13 @@ impl Syntect {
             path,
             theme.clone(),
             Arc::clone(&queue),
-            Arc::clone(&cache_updated),
+            Arc::clone(&version),
             Arc::clone(&cache),
         )?;
 
         Some(Self {
             queue,
-            cache_updated,
+            version,
             cache,
             theme,
             syntax_set,
@@ -229,7 +230,7 @@ fn start_highlight_thread(
     path: &str,
     theme: Theme,
     queue: Arc<Mutex<VecDeque<IndexedLine>>>,
-    cache_updated: Arc<Mutex<bool>>,
+    version: Arc<RwLock<usize>>,
     cache: Arc<RwLock<HashMap<usize, Vec<TextEffect>>>>,
 ) -> Option<()> {
     let extension = Path::new(path).extension()?.to_str()?.to_string();
@@ -247,8 +248,8 @@ fn start_highlight_thread(
 
         loop {
             thread::sleep(Duration::from_micros(8333));
-            let (start, text) = if let Some(indexed_line) = queue.lock().unwrap().pop_front() {
-                (indexed_line.index, indexed_line.text)
+            let (request_version, start, text) = if let Some(indexed_line) = queue.lock().unwrap().pop_front() {
+                (indexed_line.version, indexed_line.index, indexed_line.text)
             } else {
                 continue;
             };
@@ -288,10 +289,13 @@ fn start_highlight_thread(
                 offset += line.len();
             }
 
+            if *version.read().unwrap() != request_version {
+                continue;
+            }
+
             {
                 let mut cache = cache.write().unwrap();
                 cache.insert(index, effects);
-                *cache_updated.lock().unwrap() = true;
             }
 
             internal_cache.insert(index, (parse_state, highlight_state));

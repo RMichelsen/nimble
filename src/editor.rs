@@ -6,7 +6,7 @@ use std::{
     io::{BufRead, BufReader},
     os::windows::fs::FileTypeExt,
     path::{Path, PathBuf},
-    rc::Rc,
+    rc::Rc, time::Duration,
 };
 
 use imgui_winit_support::winit::{dpi::LogicalPosition, window::Window};
@@ -64,9 +64,9 @@ pub struct Workspace {
 }
 
 pub struct Editor {
+    pub buffers: HashMap<Url, Buffer>,
     pub workspace: Option<Workspace>,
     file_finder: Option<FileFinder>,
-    pub buffers: HashMap<Url, Buffer>,
     language_servers: HashMap<&'static str, Rc<RefCell<LanguageServer>>>,
 }
 
@@ -80,16 +80,14 @@ impl Editor {
         }
     }
 
-    pub fn update_highlights(&mut self, render_data: &RenderData) -> bool {
-        let mut updated = false;
+    pub fn update_highlights(&mut self, render_data: &RenderData) {
         for buffer in render_data.buffers.iter() {
-            updated |= self
+            self
                 .buffers
                 .get_mut(buffer)
                 .unwrap()
                 .update_highlights();
         }
-        updated
     }
 
     pub fn open_workspace(&mut self, window: &Window) -> bool {
