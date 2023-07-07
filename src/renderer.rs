@@ -454,7 +454,7 @@ impl Renderer {
                     DWRITE_FONT_WEIGHT_NORMAL,
                     DWRITE_FONT_STYLE_NORMAL,
                     DWRITE_FONT_STRETCH_NORMAL,
-                    24.0,
+                    36.0,
                     w!("en-us"),
                 )
                 .unwrap()
@@ -667,12 +667,7 @@ impl Renderer {
                             .RSSetScissorRects(Some(&[scissor]));
 
                         if texture_id.id() != usize::MAX {
-                            let url = match texture_id.id() {
-                                0 => render_data.left_buffer.as_ref(),
-                                1 => render_data.right_buffer.as_ref(),
-                                _ => panic!(),
-                            };
-
+                            let url = render_data.buffers.get(texture_id.id());
                             if let Some(url) = &url {
                                 let (buffer, scroll_state, clip_rect) = (
                                     buffers.get(url).unwrap(),

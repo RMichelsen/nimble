@@ -1,6 +1,7 @@
 use std::{
     cmp::{max, min},
     collections::HashMap,
+    ffi::{CStr, CString},
     path::PathBuf,
     ptr::null,
     time::Duration,
@@ -8,13 +9,17 @@ use std::{
 
 use imgui::{
     sys::{
-        igDockBuilderAddNode, igDockBuilderFinish, igDockBuilderRemoveNode,
-        igDockBuilderSetNodeSize, igDockBuilderSplitNode, igDockSpaceOverViewport,
-        igGetCurrentWindow, igGetMainViewport, igScrollToBringRectIntoView, igSetNextWindowClass,
-        igSetNextWindowDockID, ImGuiDir_Left, ImGuiDockNodeFlags_NoCloseButton,
-        ImGuiDockNodeFlags_NoDocking, ImGuiDockNodeFlags_NoDockingSplitOther,
-        ImGuiDockNodeFlags_NoSplit, ImGuiDockNodeFlags_NoTabBar, ImGuiDockNodeFlags_None,
-        ImGuiDockNodeFlags_PassthruCentralNode, ImGuiWindowClass, ImRect,
+        igDockBuilderAddNode, igDockBuilderDockWindow, igDockBuilderFinish, igDockBuilderGetNode,
+        igDockBuilderRemoveNode, igDockBuilderSetNodeSize, igDockBuilderSplitNode,
+        igDockNodeGetRootNode, igDockSpaceOverViewport, igFindWindowByName, igFocusWindow,
+        igGetCurrentWindow, igGetMainViewport, igGetWindowDockID, igGetWindowDockNode,
+        igScrollToBringRectIntoView, igSetNextWindowClass, igSetNextWindowDockID, ImGuiDir_Left,
+        ImGuiDir_Right, ImGuiDockNodeFlags_CentralNode, ImGuiDockNodeFlags_DockSpace,
+        ImGuiDockNodeFlags_NoCloseButton, ImGuiDockNodeFlags_NoDocking,
+        ImGuiDockNodeFlags_NoDockingSplitOther, ImGuiDockNodeFlags_NoSplit,
+        ImGuiDockNodeFlags_NoTabBar, ImGuiDockNodeFlags_None,
+        ImGuiDockNodeFlags_PassthruCentralNode, ImGuiDockNodeState_HostWindowVisible,
+        ImGuiWindowClass, ImRect,
     },
     Condition, ConfigFlags, Context, DrawData, FontAtlasTexture, FontConfig, FontSource, Key,
     TextureId, TreeNodeFlags, Ui,
@@ -42,22 +47,20 @@ pub struct UserInterface {
     context: Context,
     platform: WinitPlatform,
 
-    left_view_open_files: Vec<Url>,
-    right_view_open_files: Vec<Url>,
+    open_files: Vec<Url>,
+    initial_docks: HashMap<Url, u32>,
 
     first_frame: bool,
     file_tree_view: u32,
-    left_view: u32,
-    right_view: u32,
-    active_view: View,
+    central_view: u32,
+    active_view: u32,
 }
 
 pub struct RenderData<'a> {
     pub draw_data: &'a DrawData,
+    pub buffers: Vec<Url>,
     pub scroll_state: HashMap<Url, (f32, f32)>,
     pub clip_rects: HashMap<Url, ImRect>,
-    pub left_buffer: Option<Url>,
-    pub right_buffer: Option<Url>,
 }
 
 impl UserInterface {
@@ -65,11 +68,11 @@ impl UserInterface {
         let mut context = Context::create();
         context.set_ini_filename(None);
         context.io_mut().config_flags |= ConfigFlags::DOCKING_ENABLE;
-        context.style_mut().scale_all_sizes(1.0);
+        context.style_mut().scale_all_sizes(1.5);
 
         context.fonts().add_font(&[FontSource::TtfData {
-            data: include_bytes!("C:/Users/Rasmus/Downloads/Roboto/Roboto-Regular.ttf"),
-            size_pixels: 24.0,
+            data: include_bytes!("C:/Windows/Fonts/segoeuisl.ttf"),
+            size_pixels: 36.0,
             config: Some(FontConfig {
                 oversample_h: 4,
                 oversample_v: 4,
@@ -87,13 +90,12 @@ impl UserInterface {
         Self {
             context,
             platform,
-            left_view_open_files: Vec::new(),
-            right_view_open_files: Vec::new(),
+            open_files: Vec::new(),
+            initial_docks: HashMap::new(),
             first_frame: true,
             file_tree_view: 0,
-            left_view: 0,
-            right_view: 0,
-            active_view: View::Left,
+            central_view: 0,
+            active_view: 0,
         }
     }
 
@@ -143,7 +145,16 @@ impl UserInterface {
             && ui.is_key_pressed(Key::O)
         {
             if let Some(file) = editor.open_file_prompt(window, theme) {
-                self.left_view_open_files.push(file);
+                let window_name = CString::new(Into::<String>::into(file.clone())).unwrap();
+                let window = unsafe { igFindWindowByName(window_name.as_ptr()) };
+                if !window.is_null() && unsafe { (*window).Appearing } {
+                    unsafe {
+                        igFocusWindow(window);
+                    }
+                } else {
+                    self.open_files.push(file.clone());
+                    self.initial_docks.insert(file.clone(), self.active_view);
+                }
             }
         }
 
@@ -159,24 +170,23 @@ impl UserInterface {
                 igDockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_None as i32);
                 igDockBuilderSetNodeSize(dockspace_id, (*igGetMainViewport()).Size);
 
-                let mut main_view = 0;
                 igDockBuilderSplitNode(
                     dockspace_id,
                     ImGuiDir_Left,
                     0.1,
                     &mut self.file_tree_view,
-                    &mut main_view,
+                    &mut self.central_view,
                 );
-                igDockBuilderSplitNode(
-                    main_view,
-                    ImGuiDir_Left,
-                    0.5,
-                    &mut self.left_view,
-                    &mut self.right_view,
-                );
+
+                (*igDockBuilderGetNode(self.central_view)).LocalFlags =
+                    ImGuiDockNodeFlags_CentralNode;
+                (*igDockBuilderGetNode(self.file_tree_view)).LocalFlags =
+                    ImGuiDockNodeFlags_NoTabBar | ImGuiDockNodeFlags_NoDocking;
+                igDockBuilderDockWindow(b"File Tree\0".as_ptr().cast(), self.file_tree_view);
 
                 igDockBuilderFinish(dockspace_id);
 
+                self.active_view = self.central_view;
                 self.first_frame = false;
             }
         }
@@ -188,21 +198,6 @@ impl UserInterface {
             menu.end();
         }
 
-        let mut scroll_state = HashMap::new();
-        let mut clip_rects = HashMap::new();
-        let mut left_buffer = None;
-        let mut right_buffer = None;
-
-        unsafe {
-            igSetNextWindowDockID(self.file_tree_view, Condition::FirstUseEver as i32);
-        }
-        unsafe {
-            igSetNextWindowClass(&ImGuiWindowClass {
-                DockNodeFlagsOverrideSet: ImGuiDockNodeFlags_NoTabBar
-                    | ImGuiDockNodeFlags_NoDocking,
-                ..Default::default()
-            });
-        }
         ui.window("File Tree").horizontal_scrollbar(true).build(|| {
             let mut file_to_open: Option<PathBuf> = None;
             if let Some(workspace) = &editor.workspace {
@@ -245,115 +240,100 @@ impl UserInterface {
             }
 
             if let Some(file) = file_to_open {
-                if let Some(file) = editor.open_file(window, theme, file.to_str().unwrap()) {
-                    match self.active_view {
-                        View::Left => self.left_view_open_files.push(file),
-                        View::Right => self.right_view_open_files.push(file),
+                if let Some(file) = editor.open_file(window, theme, file.to_str().unwrap()) {let window_name = CString::new(Into::<String>::into(file.clone())).unwrap();
+                    let window_name = CString::new(Into::<String>::into(file.clone())).unwrap();
+                    let window = unsafe { igFindWindowByName(window_name.as_ptr()) };
+                    if !window.is_null() && unsafe { !(*window).DockNode.is_null() } {
+                        unsafe {
+                            igFocusWindow(window);
+                        }
+                    } else {
+                        self.open_files.push(file.clone());
+                        self.initial_docks.insert(file.clone(), self.active_view);
                     }
                 }
             }
         });
 
-        let mut build_view = |open_files: &mut Vec<Url>, buffer: &mut Option<Url>, view| {
-            let (node, title, index) = match view {
-                View::Left => (self.left_view, "empty_left", 0),
-                View::Right => (self.right_view, "empty_right", 1),
-            };
-            if open_files.is_empty() {
-                unsafe {
-                    igSetNextWindowDockID(node, Condition::FirstUseEver as i32);
-                    igSetNextWindowClass(&ImGuiWindowClass {
-                        DockNodeFlagsOverrideSet: ImGuiDockNodeFlags_NoTabBar,
-                        ..Default::default()
-                    });
-                }
-                ui.window(title).build(|| {
-                    if ui.is_window_focused() {
-                        self.active_view = view;
-                    }
+        let mut buffers = Vec::new();
+        let mut scroll_state = HashMap::new();
+        let mut clip_rects = HashMap::new();
+        let mut file_to_remove = None;
+        for file in &self.open_files {
+            unsafe {
+                igSetNextWindowClass(&ImGuiWindowClass {
+                    DockNodeFlagsOverrideSet: ImGuiDockNodeFlags_NoCloseButton as i32,
+                    ..Default::default()
                 });
-            } else {
-                let mut file_to_remove = None;
-                for file in &mut *open_files {
-                    unsafe {
-                        igSetNextWindowDockID(node, Condition::FirstUseEver as i32);
-                        igSetNextWindowClass(&ImGuiWindowClass {
-                            DockNodeFlagsOverrideSet: ImGuiDockNodeFlags_NoCloseButton
-                                | ImGuiDockNodeFlags_NoDockingSplitOther
-                                | ImGuiDockNodeFlags_NoSplit as i32,
-                            ..Default::default()
-                        });
-                    }
-
-                    let document_width = editor.buffers[file].piece_table.longest_line() as f32
-                        * renderer.font_size.0;
-                    let document_height = (editor.buffers[file].piece_table.num_lines()) as f32
-                        * renderer.font_size.1;
-
-                    let mut remain_open = true;
-
-                    ui.window(
-                        file.to_file_path()
-                            .unwrap()
-                            .file_name()
-                            .unwrap()
-                            .to_str()
-                            .unwrap(),
-                    )
-                    .opened(&mut remain_open)
-                    .content_size([document_width, document_height])
-                    .horizontal_scrollbar(true)
-                    .build(|| {
-                        add_selections(ui, theme, renderer.font_size, &editor.buffers[file]);
-                        add_cursor_leads(ui, theme, renderer.font_size, &editor.buffers[file]);
-
-                        ui.get_window_draw_list()
-                            .add_image(TextureId::new(index), [0.0, 0.0], [0.0, 0.0])
-                            .build();
-                        *buffer = Some(file.clone());
-
-                        scroll_state.insert(file.clone(), (ui.scroll_x(), ui.scroll_y()));
-                        clip_rects.insert(file.clone(), unsafe {
-                            (*igGetCurrentWindow()).InnerClipRect
-                        });
-
-                        if ui.is_window_focused() {
-                            self.active_view = view;
-                            handle_buffer_input(
-                                ui,
-                                renderer.font_size,
-                                editor.buffers.get_mut(file).unwrap(),
-                            );
-                        }
-                    });
-
-                    if !remain_open {
-                        *buffer = None;
-                        editor.close_file(file);
-                        file_to_remove = Some(file.clone());
-                    }
-                }
-
-                if let Some(file) = &file_to_remove {
-                    open_files.retain(|f| f != file);
+                if let Some(dock_id) = self.initial_docks.remove(file) {
+                    let dock_node = igDockBuilderGetNode(dock_id);
+                    igSetNextWindowDockID(
+                        if !dock_node.is_null()
+                            && (*dock_node).State == ImGuiDockNodeState_HostWindowVisible
+                        {
+                            (*dock_node).ID
+                        } else {
+                            self.central_view
+                        },
+                        Condition::Always as i32,
+                    );
                 }
             }
-        };
 
-        build_view(
-            &mut self.right_view_open_files,
-            &mut right_buffer,
-            View::Right,
-        );
-        build_view(&mut self.left_view_open_files, &mut left_buffer, View::Left);
+            let document_width =
+                editor.buffers[file].piece_table.longest_line() as f32 * renderer.font_size.0;
+            let document_height =
+                (editor.buffers[file].piece_table.num_lines()) as f32 * renderer.font_size.1;
+
+            let mut remain_open = true;
+
+            ui.window(Into::<String>::into(file.clone()).as_str())
+                .opened(&mut remain_open)
+                .content_size([document_width, document_height])
+                .horizontal_scrollbar(true)
+                .build(|| {
+                    add_selections(ui, theme, renderer.font_size, &editor.buffers[file]);
+                    add_cursor_leads(ui, theme, renderer.font_size, &editor.buffers[file]);
+
+                    ui.get_window_draw_list()
+                        .add_image(TextureId::new(buffers.len()), [0.0, 0.0], [0.0, 0.0])
+                        .build();
+                    buffers.push(file.clone());
+                    scroll_state.insert(file.clone(), (ui.scroll_x(), ui.scroll_y()));
+                    clip_rects.insert(file.clone(), unsafe {
+                        (*igGetCurrentWindow()).InnerClipRect
+                    });
+
+                    if ui.is_window_focused() {
+                        let dock_node = unsafe { igGetWindowDockNode() };
+                        if !dock_node.is_null() {
+                            self.active_view = unsafe { *dock_node }.ID;
+                        }
+                        handle_buffer_input(
+                            ui,
+                            renderer.font_size,
+                            editor.buffers.get_mut(file).unwrap(),
+                        );
+                    }
+                });
+
+            if !remain_open {
+                buffers.pop();
+                editor.close_file(file);
+                file_to_remove = Some(file.clone());
+            }
+        }
+
+        if let Some(file) = &file_to_remove {
+            self.open_files.retain(|f| f != file);
+        }
 
         self.platform.prepare_render(ui, window);
         Some(RenderData {
             draw_data: self.context.render(),
+            buffers,
             scroll_state,
             clip_rects,
-            left_buffer,
-            right_buffer,
         })
     }
 }

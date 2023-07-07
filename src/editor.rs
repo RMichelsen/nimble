@@ -82,17 +82,10 @@ impl Editor {
 
     pub fn update_highlights(&mut self, render_data: &RenderData) -> bool {
         let mut updated = false;
-        if let Some(left_buffer) = &render_data.left_buffer {
+        for buffer in render_data.buffers.iter() {
             updated |= self
                 .buffers
-                .get_mut(left_buffer)
-                .unwrap()
-                .update_highlights();
-        }
-        if let Some(right_buffer) = &render_data.right_buffer {
-            updated |= self
-                .buffers
-                .get_mut(right_buffer)
+                .get_mut(buffer)
                 .unwrap()
                 .update_highlights();
         }
@@ -227,8 +220,8 @@ impl Editor {
                             .send_did_open(&mut server);
                     }
                 }
-                return Some(uri);
             }
+            return Some(uri);
         }
         None
     }
