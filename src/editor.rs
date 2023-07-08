@@ -6,7 +6,7 @@ use std::{
     io::{BufRead, BufReader},
     os::windows::fs::FileTypeExt,
     path::{Path, PathBuf},
-    rc::Rc, time::Duration,
+    rc::Rc, 
 };
 
 use imgui_winit_support::winit::{dpi::LogicalPosition, window::Window};

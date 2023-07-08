@@ -1,22 +1,20 @@
 use std::{
     cmp::{max, min},
     collections::HashMap,
-    ffi::{CStr, CString},
+    ffi::CString,
     path::PathBuf,
     ptr::null,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use imgui::{
     sys::{
         igDockBuilderAddNode, igDockBuilderDockWindow, igDockBuilderFinish, igDockBuilderGetNode,
         igDockBuilderRemoveNode, igDockBuilderSetNodeSize, igDockBuilderSplitNode,
-        igDockNodeGetRootNode, igDockSpaceOverViewport, igFindWindowByName, igFocusWindow,
-        igGetCurrentWindow, igGetMainViewport, igGetWindowDockID, igGetWindowDockNode,
-        igScrollToBringRectIntoView, igSetNextWindowClass, igSetNextWindowDockID, ImGuiDir_Left,
-        ImGuiDir_Right, ImGuiDockNodeFlags_CentralNode, ImGuiDockNodeFlags_DockSpace,
+        igDockSpaceOverViewport, igFindWindowByName, igFocusWindow, igGetCurrentWindow,
+        igGetMainViewport, igGetWindowDockNode, igScrollToBringRectIntoView, igSetNextWindowClass,
+        igSetNextWindowDockID, ImGuiDir_Left, ImGuiDockNodeFlags_CentralNode,
         ImGuiDockNodeFlags_NoCloseButton, ImGuiDockNodeFlags_NoDocking,
-        ImGuiDockNodeFlags_NoDockingSplitOther, ImGuiDockNodeFlags_NoSplit,
         ImGuiDockNodeFlags_NoTabBar, ImGuiDockNodeFlags_None,
         ImGuiDockNodeFlags_PassthruCentralNode, ImGuiDockNodeState_HostWindowVisible,
         ImGuiWindowClass, ImRect,
@@ -145,9 +143,18 @@ impl UserInterface {
             && ui.is_key_pressed(Key::O)
         {
             if let Some(file) = editor.open_file_prompt(window, theme) {
-                let window_name = CString::new(file.to_file_path().unwrap().file_name().unwrap().to_str().unwrap().to_string()
-                    + "###"
-                    + Into::<String>::into(file.clone()).as_str()).unwrap();
+                let window_name = CString::new(
+                    file.to_file_path()
+                        .unwrap()
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .to_string()
+                        + "###"
+                        + Into::<String>::into(file.clone()).as_str(),
+                )
+                .unwrap();
                 let window = unsafe { igFindWindowByName(window_name.as_ptr()) };
                 if !window.is_null() && unsafe { (*window).Appearing } {
                     unsafe {
@@ -242,10 +249,20 @@ impl UserInterface {
             }
 
             if let Some(file) = file_to_open {
-                if let Some(file) = editor.open_file(window, theme, file.to_str().unwrap()) {let window_name = CString::new(Into::<String>::into(file.clone())).unwrap();
-                    let window_name = CString::new(file.to_file_path().unwrap().file_name().unwrap().to_str().unwrap().to_string()
-                        + "###"
-                        + Into::<String>::into(file.clone()).as_str()).unwrap();
+                if let Some(file) = editor.open_file(window, theme, file.to_str().unwrap()) {
+                    let window_name = CString::new(Into::<String>::into(file.clone())).unwrap();
+                    let window_name = CString::new(
+                        file.to_file_path()
+                            .unwrap()
+                            .file_name()
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                            .to_string()
+                            + "###"
+                            + Into::<String>::into(file.clone()).as_str(),
+                    )
+                    .unwrap();
                     let window = unsafe { igFindWindowByName(window_name.as_ptr()) };
                     if !window.is_null() && unsafe { !(*window).DockNode.is_null() } {
                         unsafe {
@@ -266,7 +283,7 @@ impl UserInterface {
         for file in &self.open_files {
             unsafe {
                 igSetNextWindowClass(&ImGuiWindowClass {
-                    DockNodeFlagsOverrideSet: ImGuiDockNodeFlags_NoCloseButton as i32,
+                    DockNodeFlagsOverrideSet: ImGuiDockNodeFlags_NoCloseButton,
                     ..Default::default()
                 });
                 if let Some(dock_id) = self.initial_docks.remove(file) {
@@ -291,8 +308,14 @@ impl UserInterface {
 
             let mut remain_open = true;
 
-
-            let window_name = file.to_file_path().unwrap().file_name().unwrap().to_str().unwrap().to_string()
+            let window_name = file
+                .to_file_path()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string()
                 + "###"
                 + Into::<String>::into(file.clone()).as_str();
             ui.window(&window_name)
@@ -325,7 +348,8 @@ impl UserInterface {
                             let buffer = editor.buffers.get(file).unwrap();
                             if let Some(last_cursor) = buffer.cursors.last() {
                                 let (line, col) = last_cursor.get_line_col(&buffer.piece_table);
-                                let rect = line_col_to_rect(ui, line, col, (1, 1), renderer.font_size);
+                                let rect =
+                                    line_col_to_rect(ui, line, col, (1, 1), renderer.font_size);
                                 unsafe {
                                     igScrollToBringRectIntoView(igGetCurrentWindow(), rect);
                                 }

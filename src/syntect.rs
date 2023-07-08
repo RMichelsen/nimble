@@ -164,7 +164,9 @@ impl Syntect {
             if let Ok(ref mut cache) = self.cache.as_ref().write() {
                 if let Some(effects) = cache.get_mut(&start_index) {
                     for effect in effects {
-                        if (effect.start..effect.start + effect.length).contains(&start_effects_offset) {
+                        if (effect.start..effect.start + effect.length)
+                            .contains(&start_effects_offset)
+                        {
                             effect.length += count;
                         }
                         if effect.start >= start_effects_offset {
@@ -251,11 +253,12 @@ fn start_highlight_thread(
 
         loop {
             thread::sleep(Duration::from_micros(8333));
-            let (request_version, start, text) = if let Some(indexed_line) = queue.lock().unwrap().pop_front() {
-                (indexed_line.version, indexed_line.index, indexed_line.text)
-            } else {
-                continue;
-            };
+            let (request_version, start, text) =
+                if let Some(indexed_line) = queue.lock().unwrap().pop_front() {
+                    (indexed_line.version, indexed_line.index, indexed_line.text)
+                } else {
+                    continue;
+                };
 
             let index = start / SYNTECT_CACHE_FREQUENCY;
 
