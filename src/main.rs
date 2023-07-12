@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+// #![windows_subsystem = "windows"]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![feature(iterator_try_collect)]
@@ -25,7 +25,7 @@ mod text_utils;
 mod theme;
 mod user_interface;
 
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 use editor::Editor;
 use imgui_winit_support::winit::{
@@ -64,6 +64,7 @@ fn main() {
             user_interface.prepare_frame(&window);
         }
         Event::RedrawEventsCleared => {
+            editor.handle_lsp_responses();
             if let Some(render_data) =
                 user_interface.run(&window, &renderer, &mut editor, &mut theme)
             {

@@ -12,26 +12,30 @@ use imgui::{
         igDockBuilderAddNode, igDockBuilderDockWindow, igDockBuilderFinish, igDockBuilderGetNode,
         igDockBuilderRemoveNode, igDockBuilderSetNodeSize, igDockBuilderSplitNode,
         igDockSpaceOverViewport, igFindWindowByName, igFocusWindow, igGetCurrentWindow,
-        igGetMainViewport, igGetWindowDockNode, igScrollToBringRectIntoView, igSetNextWindowClass,
-        igSetNextWindowDockID, ImGuiDir_Left, ImGuiDockNodeFlags_CentralNode,
-        ImGuiDockNodeFlags_NoCloseButton, ImGuiDockNodeFlags_NoDocking,
-        ImGuiDockNodeFlags_NoTabBar, ImGuiDockNodeFlags_None,
+        igGetMainViewport, igGetWindowDockNode, igScrollToBringRectIntoView, igScrollToItem,
+        igScrollToRect, igSetFocusID, igSetNextWindowClass, igSetNextWindowDockID,
+        igSetNextWindowFocus, igSetNextWindowSizeConstraints, ImGuiDir_Left,
+        ImGuiDockNodeFlags_CentralNode, ImGuiDockNodeFlags_NoCloseButton,
+        ImGuiDockNodeFlags_NoDocking, ImGuiDockNodeFlags_NoTabBar, ImGuiDockNodeFlags_None,
         ImGuiDockNodeFlags_PassthruCentralNode, ImGuiDockNodeState_HostWindowVisible,
-        ImGuiWindowClass, ImRect,
+        ImGuiScrollFlags_None, ImGuiWindowClass, ImRect,
     },
     Condition, ConfigFlags, Context, DrawData, FontAtlasTexture, FontConfig, FontSource, Key,
-    TextureId, TreeNodeFlags, Ui,
+    TextureId, TreeNodeFlags, Ui, WindowFlags,
 };
 use imgui_winit_support::{
     winit::{event::Event, window::Window},
     WinitPlatform,
 };
 use url::Url;
+use windows::Win32::Foundation::STATUS_RTPM_CONTEXT_COMPLETE;
 
 use crate::{
     buffer::{Buffer, BufferMode},
+    cursor::get_filtered_completions,
     editor::{Editor, FileTreeEntry},
     renderer::Renderer,
+    text_utils::{self, CharType},
     theme::{Theme, THEMES},
 };
 
@@ -69,11 +73,12 @@ impl UserInterface {
         context.style_mut().scale_all_sizes(1.5);
 
         context.fonts().add_font(&[FontSource::TtfData {
-            data: include_bytes!("C:/Windows/Fonts/segoeuisl.ttf"),
+            // data: include_bytes!("C:/Windows/Fonts/segoeuisl.ttf"),
+            data: include_bytes!("C:/Windows/Fonts/consola.ttf"),
             size_pixels: 36.0,
             config: Some(FontConfig {
-                oversample_h: 4,
-                oversample_v: 4,
+                oversample_h: 3,
+                oversample_v: 1,
                 ..Default::default()
             }),
         }]);
@@ -307,6 +312,7 @@ impl UserInterface {
                 (editor.buffers[file].piece_table.num_lines()) as f32 * renderer.font_size.1;
 
             let mut remain_open = true;
+            ui.show_demo_window(&mut true);
 
             let window_name = file
                 .to_file_path()
@@ -329,6 +335,16 @@ impl UserInterface {
                     ui.get_window_draw_list()
                         .add_image(TextureId::new(buffers.len()), [0.0, 0.0], [0.0, 0.0])
                         .build();
+
+                    add_diagnostics(ui, theme, renderer.font_size, &editor.buffers[file]);
+                    add_signature_helps(ui, theme, renderer.font_size, &editor.buffers[file]);
+                    add_completions(
+                        ui,
+                        theme,
+                        renderer.font_size,
+                        editor.buffers.get_mut(file).unwrap(),
+                    );
+
                     buffers.push(file.clone());
                     scroll_state.insert(file.clone(), (ui.scroll_x(), ui.scroll_y()));
                     clip_rects.insert(file.clone(), unsafe {
@@ -440,25 +456,6 @@ fn line_col_to_rect(
     }
 }
 
-fn add_cursor_leads(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &Buffer) {
-    for cursor in &buffer.cursors {
-        let (line, col) = cursor.get_line_col(&buffer.piece_table);
-        let mut rect = line_col_to_rect(ui, line, col, (1, 1), font_size);
-        if buffer.mode == BufferMode::Insert {
-            rect.Max.x -= 0.85 * font_size.0;
-        }
-
-        ui.get_window_draw_list()
-            .add_rect(
-                [rect.Min.x, rect.Min.y],
-                [rect.Max.x, rect.Max.y],
-                theme.cursor_color.into_imgui(),
-            )
-            .filled(true)
-            .build();
-    }
-}
-
 fn add_selections(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &Buffer) {
     if buffer.mode == BufferMode::VisualLine {
         for cursor in buffer.cursors.iter() {
@@ -496,6 +493,275 @@ fn add_selections(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &Buffer
                     )
                     .filled(true)
                     .build();
+            }
+        }
+    }
+}
+
+fn add_cursor_leads(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &Buffer) {
+    for cursor in &buffer.cursors {
+        let (line, col) = cursor.get_line_col(&buffer.piece_table);
+        let mut rect = line_col_to_rect(ui, line, col, (1, 1), font_size);
+        if buffer.mode == BufferMode::Insert {
+            rect.Max.x -= 0.85 * font_size.0;
+        }
+
+        ui.get_window_draw_list()
+            .add_rect(
+                [rect.Min.x, rect.Min.y],
+                [rect.Max.x, rect.Max.y],
+                theme.cursor_color.into_imgui(),
+            )
+            .filled(true)
+            .build();
+    }
+}
+
+fn add_diagnostics(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &Buffer) {
+    if let Some(server) = &buffer.language_server {
+        if let Some(diagnostics) = server
+            .borrow()
+            .saved_diagnostics
+            .get(&buffer.uri.to_lowercase())
+        {
+            for diagnostic in diagnostics {
+                let (start_line, start_col) = (
+                    diagnostic.range.start.line as usize,
+                    diagnostic.range.start.character as usize,
+                );
+                let (end_line, end_col) = (
+                    diagnostic.range.end.line as usize,
+                    diagnostic.range.end.character as usize,
+                );
+
+                let diagnostic_on_cursor_line = buffer.mode == BufferMode::Insert
+                    && buffer.cursors.iter().any(|cursor| {
+                        (start_line..=end_line)
+                            .contains(&buffer.piece_table.line_index(cursor.position))
+                    });
+
+                if diagnostic.severity.is_some_and(|s| s > 2) || diagnostic_on_cursor_line {
+                    continue;
+                }
+
+                if start_line == end_line {
+                    let mut rect = line_col_to_rect(
+                        ui,
+                        start_line,
+                        start_col,
+                        (end_col.saturating_sub(start_col) + 1, 1),
+                        font_size,
+                    );
+                    if ui.is_mouse_hovering_rect([rect.Min.x, rect.Min.y], [rect.Max.x, rect.Max.y])
+                    {
+                        ui.tooltip_text(&diagnostic.message);
+                    }
+                    rect.Min.y += 0.85 * font_size.1;
+                    ui.get_window_draw_list()
+                        .add_rect(
+                            [rect.Min.x, rect.Min.y],
+                            [rect.Max.x, rect.Max.y],
+                            theme.diagnostic_color.into_imgui(),
+                        )
+                        .filled(true)
+                        .build();
+                } else {
+                    let mut rect = line_col_to_rect(
+                        ui,
+                        start_line,
+                        start_col,
+                        (
+                            buffer.piece_table.line_at_index(start_line).unwrap().length
+                                - start_col
+                                + 1,
+                            1,
+                        ),
+                        font_size,
+                    );
+                    if ui.is_mouse_hovering_rect([rect.Min.x, rect.Min.y], [rect.Max.x, rect.Max.y])
+                    {
+                        ui.tooltip_text(&diagnostic.message);
+                    }
+                    rect.Min.y += 0.85 * font_size.1;
+                    ui.get_window_draw_list()
+                        .add_rect(
+                            [rect.Min.x, rect.Min.y],
+                            [rect.Max.x, rect.Max.y],
+                            theme.diagnostic_color.into_imgui(),
+                        )
+                        .rounding(1.0)
+                        .filled(true)
+                        .build();
+
+                    for line in start_line + 1..end_line {
+                        let mut rect = line_col_to_rect(
+                            ui,
+                            line,
+                            0,
+                            (
+                                buffer.piece_table.line_at_index(line).unwrap().length + 1,
+                                1,
+                            ),
+                            font_size,
+                        );
+                        if ui.is_mouse_hovering_rect(
+                            [rect.Min.x, rect.Min.y],
+                            [rect.Max.x, rect.Max.y],
+                        ) {
+                            ui.tooltip_text(&diagnostic.message);
+                        }
+                        rect.Min.y += 0.85 * font_size.1;
+                        ui.get_window_draw_list()
+                            .add_rect(
+                                [rect.Min.x, rect.Min.y],
+                                [rect.Max.x, rect.Max.y],
+                                theme.diagnostic_color.into_imgui(),
+                            )
+                            .rounding(1.0)
+                            .filled(true)
+                            .build();
+                    }
+
+                    let mut rect = line_col_to_rect(ui, end_line, 0, (end_col + 1, 1), font_size);
+                    if ui.is_mouse_hovering_rect([rect.Min.x, rect.Min.y], [rect.Max.x, rect.Max.y])
+                    {
+                        ui.tooltip_text(&diagnostic.message);
+                    }
+                    rect.Min.y += 0.85 * font_size.1;
+                    ui.get_window_draw_list()
+                        .add_rect(
+                            [rect.Min.x, rect.Min.y],
+                            [rect.Max.x, rect.Max.y],
+                            theme.diagnostic_color.into_imgui(),
+                        )
+                        .rounding(1.0)
+                        .filled(true)
+                        .build();
+                }
+            }
+        }
+    }
+}
+
+fn add_signature_helps(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &Buffer) {
+    if let Some(server) = &buffer.language_server {
+        for cursor in buffer.cursors.iter() {
+            if let Some(request) = cursor.signature_help_request {
+                if let Some(signature_help) = server.borrow().saved_signature_helps.get(&request.id)
+                {
+                    if signature_help.signatures.is_empty() {
+                        return;
+                    }
+                    let (line, col) = (
+                        buffer.piece_table.line_index(request.position),
+                        buffer.piece_table.col_index(request.position),
+                    );
+                    let rect = line_col_to_rect(ui, line.saturating_sub(1), col, (1, 1), font_size);
+                    ui.window(format!("###SignatureHelp"))
+                        .position(
+                            [
+                                rect.Min.x,
+                                rect.Min.y - unsafe { ui.style().window_padding[1] },
+                            ],
+                            Condition::Always,
+                        )
+                        .no_inputs()
+                        .no_decoration()
+                        .movable(false)
+                        .resizable(false)
+                        .focused(false)
+                        .focus_on_appearing(false)
+                        .build(|| {
+                            ui.text(&signature_help.signatures[0].label);
+                        });
+                }
+            }
+        }
+    }
+}
+
+fn add_completions(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &mut Buffer) {
+    if let Some(server) = &buffer.language_server {
+        for (i, cursor) in buffer.cursors.iter_mut().enumerate() {
+            let start_of_word = cursor
+                .chars_until_pred_rev(&buffer.piece_table, |c| {
+                    text_utils::char_type(c) != CharType::Word
+                })
+                .unwrap_or(0);
+            if let Some(request) = cursor.completion_request.as_mut() {
+                if let Some(completion_list) = server.borrow().saved_completions.get(&request.id) {
+                    if completion_list.items.is_empty() {
+                        continue;
+                    }
+
+                    let filtered_completions = get_filtered_completions(
+                        &buffer.piece_table,
+                        completion_list,
+                        &request,
+                        cursor.position,
+                    );
+
+                    // Filter from start of word if manually triggered or
+                    let request_position = if request.manually_triggered {
+                        cursor.position.saturating_sub(start_of_word)
+                    // Filter from start of request if triggered by a trigger character
+                    } else {
+                        request.initial_position
+                    };
+
+                    let (line, col) = (
+                        buffer.piece_table.line_index(request_position),
+                        buffer.piece_table.col_index(request_position),
+                    );
+                    let rect = line_col_to_rect(ui, line + 1, col, (1, 1), font_size);
+                    let y_size = unsafe { ui.style().window_padding[1] }
+                        + ui.text_line_height_with_spacing()
+                            * 8.0f32.min(filtered_completions.len() as f32).min(
+                                (ui.window_size()[1] - rect.Min.y)
+                                    / ui.text_line_height_with_spacing(),
+                            );
+                    ui.window(format!("###Completion {}", i))
+                        .position([rect.Min.x, rect.Min.y], Condition::Always)
+                        .size([-1.0, y_size], Condition::Always)
+                        .no_inputs()
+                        .no_decoration()
+                        .movable(false)
+                        .resizable(false)
+                        .focused(false)
+                        .focus_on_appearing(false)
+                        .build(|| {
+                            if ui.is_key_down(Key::LeftCtrl) && ui.is_key_pressed(Key::J) {
+                                request.selection_index = min(
+                                    request.selection_index + 1,
+                                    filtered_completions.len().saturating_sub(1),
+                                );
+                            }
+                            if ui.is_key_down(Key::LeftCtrl) && ui.is_key_pressed(Key::K) {
+                                request.selection_index = request.selection_index.saturating_sub(1);
+                            }
+
+                            for (i, completion) in filtered_completions.iter().enumerate() {
+                                if i == request.selection_index {
+                                    ui.text(
+                                        completion
+                                            .insert_text
+                                            .as_ref()
+                                            .unwrap_or(&completion.label),
+                                    );
+                                    unsafe {
+                                        igScrollToItem(ImGuiScrollFlags_None as i32);
+                                    }
+                                } else {
+                                    ui.text_disabled(
+                                        completion
+                                            .insert_text
+                                            .as_ref()
+                                            .unwrap_or(&completion.label),
+                                    );
+                                }
+                            }
+                        });
+                }
             }
         }
     }

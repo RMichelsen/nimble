@@ -297,53 +297,6 @@ impl Buffer {
                 self.command(Redo);
             }
 
-            (Insert, imgui::Key::J) if ctrl_down => {
-                for cursor in &mut self.cursors {
-                    if let Some(ref mut request) = cursor.completion_request {
-                        if let Some(server) = &self.language_server {
-                            if let Some(completion_list) =
-                                server.borrow().saved_completions.get(&request.id)
-                            {
-                                let filtered_completions = get_filtered_completions(
-                                    &self.piece_table,
-                                    completion_list,
-                                    request,
-                                    cursor.position,
-                                );
-
-                                // if let Some(completion_view) = view.get_completion_view(
-                                //     &self.piece_table,
-                                //     &filtered_completions,
-                                //     request.position,
-                                //     layout,
-                                // ) {
-                                //     request.selection_index = min(
-                                //         request.selection_index + 1,
-                                //         filtered_completions.len().saturating_sub(1),
-                                //     );
-
-                                //     if request.selection_index
-                                //         >= request.selection_view_offset + completion_view.height
-                                //     {
-                                //         request.selection_view_offset += 1;
-                                //     }
-                                // }
-                            }
-                        }
-                    }
-                }
-            }
-            (Insert, imgui::Key::K) if ctrl_down => {
-                for cursor in &mut self.cursors {
-                    if let Some(ref mut request) = cursor.completion_request {
-                        request.selection_index = request.selection_index.saturating_sub(1);
-                        if request.selection_index < request.selection_view_offset {
-                            request.selection_view_offset -= 1;
-                        }
-                    }
-                }
-            }
-
             (Normal | Visual | VisualLine, imgui::Key::Slash) if ctrl_down => {
                 self.push_undo_state();
                 self.command(ToggleComment);
@@ -1065,7 +1018,7 @@ impl Buffer {
 
                     // Special case for moving over end brackets
                     match c {
-                        b')' | b'}' | b']' | b'>' if self.piece_table.char_at(start) == Some(c) => {
+                        b')' | b'}' | b']' if self.piece_table.char_at(start) == Some(c) => {
                             self.motion(Forward(1));
                             continue;
                         }
@@ -1101,7 +1054,7 @@ impl Buffer {
                 // Special case for inserting brackets
                 // Here we don't call InsertChar(c) because we don't want lsp_completion for the closing bracket
                 match c {
-                    b'(' | b'{' | b'[' | b'<' => {
+                    b'(' | b'{' | b'[' => {
                         for i in 0..self.cursors.len() {
                             let start = self.cursors[i].position;
                             let changes =

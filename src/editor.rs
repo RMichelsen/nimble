@@ -6,7 +6,7 @@ use std::{
     io::{BufRead, BufReader},
     os::windows::fs::FileTypeExt,
     path::{Path, PathBuf},
-    rc::Rc, 
+    rc::Rc,
 };
 
 use imgui_winit_support::winit::{dpi::LogicalPosition, window::Window};
@@ -82,11 +82,7 @@ impl Editor {
 
     pub fn update_highlights(&mut self, render_data: &RenderData) {
         for buffer in render_data.buffers.iter() {
-            self
-                .buffers
-                .get_mut(buffer)
-                .unwrap()
-                .update_highlights();
+            self.buffers.get_mut(buffer).unwrap().update_highlights();
         }
     }
 
@@ -98,18 +94,7 @@ impl Editor {
         false
     }
 
-    pub fn handle_lsp_responses(
-        &mut self,
-        mouse_position: Option<LogicalPosition<f64>>,
-        window: &Window,
-    ) -> bool {
-        let mut require_redraw = false;
-
-        let window_size = (
-            window.inner_size().width as f64,
-            window.inner_size().height as f64,
-        );
-
+    pub fn handle_lsp_responses(&mut self) {
         for (identifier, server) in &mut self.language_servers {
             let mut server = server.borrow_mut();
             match server.handle_responses() {
@@ -132,7 +117,6 @@ impl Editor {
                                 for buffer in self.buffers.values_mut() {
                                     buffer.update_completions(&mut server);
                                 }
-                                require_redraw = true;
                             }
                             "textDocument/signatureHelp" => {
                                 if let Some(value) = response.value {
@@ -141,14 +125,12 @@ impl Editor {
                                 for buffer in self.buffers.values_mut() {
                                     buffer.update_signature_helps(&mut server);
                                 }
-                                require_redraw = true;
                             }
                             "textDocument/definition" | "textDocument/implementation" => {
                                 // TODO
                             }
                             "textDocument/hover" => {
                                 // TODO
-                                require_redraw = true;
                             }
                             _ => (),
                         }
@@ -158,15 +140,12 @@ impl Editor {
                             if let Some(value) = notification.value {
                                 server.save_diagnostics(value);
                             }
-                            require_redraw = true;
                         }
                     }
                 }
                 None => panic!(),
             }
         }
-
-        require_redraw
     }
 
     pub fn lsp_shutdown(&mut self) {
@@ -190,19 +169,20 @@ impl Editor {
     pub fn open_file(&mut self, window: &Window, theme: &Theme, path: &str) -> Option<Url> {
         if let Ok(uri) = Url::from_file_path(path) {
             if !self.buffers.contains_key(&uri) {
-                // TODO
-                // let language_server = language_from_path(path).map(|language| {
-                //     if !self.language_servers.contains_key(language.identifier) {
-                //         LanguageServer::new(language, self.workspace.as_ref().unwrap()).and_then(
-                //             |server| {
-                //                 self.language_servers
-                //                     .insert(language.identifier, Rc::new(RefCell::new(server)))
-                //             },
-                //         );
-                //     }
-                //     Rc::clone(self.language_servers.get(language.identifier).unwrap())
-                // });
-                let language_server = None;
+                let language_server = if self.workspace.is_some() {
+                    language_from_path(path).map(|language| {
+                        if !self.language_servers.contains_key(language.identifier) {
+                            LanguageServer::new(language, self.workspace.as_ref().unwrap())
+                                .and_then(|server| {
+                                    self.language_servers
+                                        .insert(language.identifier, Rc::new(RefCell::new(server)))
+                                });
+                        }
+                        Rc::clone(self.language_servers.get(language.identifier).unwrap())
+                    })
+                } else {
+                    None
+                };
                 self.buffers.insert(
                     uri.clone(),
                     Buffer::new(window, &uri, theme, language_server),
@@ -244,7 +224,12 @@ impl Workspace {
 
         fn walk_folder(path: &Path) -> Vec<FileTreeEntry> {
             let mut file_tree = vec![];
-            for entry in WalkDir::new(path).sort_by_file_name().max_depth(1).into_iter().flatten() {
+            for entry in WalkDir::new(path)
+                .sort_by_file_name()
+                .max_depth(1)
+                .into_iter()
+                .flatten()
+            {
                 if entry.path() == path {
                     continue;
                 }

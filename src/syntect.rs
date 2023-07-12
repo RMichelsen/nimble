@@ -164,7 +164,7 @@ impl Syntect {
             if let Ok(ref mut cache) = self.cache.as_ref().write() {
                 if let Some(effects) = cache.get_mut(&start_index) {
                     for effect in effects {
-                        if (effect.start..effect.start + effect.length)
+                        if (effect.start..=effect.start + effect.length)
                             .contains(&start_effects_offset)
                         {
                             effect.length += count;
