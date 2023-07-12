@@ -13,27 +13,26 @@ use imgui::{
         igDockBuilderRemoveNode, igDockBuilderSetNodeSize, igDockBuilderSplitNode,
         igDockSpaceOverViewport, igFindWindowByName, igFocusWindow, igGetCurrentWindow,
         igGetMainViewport, igGetWindowDockNode, igScrollToBringRectIntoView, igScrollToItem,
-        igScrollToRect, igSetFocusID, igSetNextWindowClass, igSetNextWindowDockID,
-        igSetNextWindowFocus, igSetNextWindowSizeConstraints, ImGuiDir_Left,
-        ImGuiDockNodeFlags_CentralNode, ImGuiDockNodeFlags_NoCloseButton,
-        ImGuiDockNodeFlags_NoDocking, ImGuiDockNodeFlags_NoTabBar, ImGuiDockNodeFlags_None,
+        igSetNextWindowClass, igSetNextWindowDockID, ImGuiDir_Left, ImGuiDockNodeFlags_CentralNode,
+        ImGuiDockNodeFlags_NoCloseButton, ImGuiDockNodeFlags_NoDocking,
+        ImGuiDockNodeFlags_NoTabBar, ImGuiDockNodeFlags_None,
         ImGuiDockNodeFlags_PassthruCentralNode, ImGuiDockNodeState_HostWindowVisible,
         ImGuiScrollFlags_None, ImGuiWindowClass, ImRect,
     },
     Condition, ConfigFlags, Context, DrawData, FontAtlasTexture, FontConfig, FontSource, Key,
-    TextureId, TreeNodeFlags, Ui, WindowFlags,
+    TextureId, TreeNodeFlags, Ui,
 };
 use imgui_winit_support::{
     winit::{event::Event, window::Window},
     WinitPlatform,
 };
 use url::Url;
-use windows::Win32::Foundation::STATUS_RTPM_CONTEXT_COMPLETE;
 
 use crate::{
     buffer::{Buffer, BufferMode},
     cursor::get_filtered_completions,
     editor::{Editor, FileTreeEntry},
+    language_server_types::ParameterLabelType,
     renderer::Renderer,
     text_utils::{self, CharType},
     theme::{Theme, THEMES},
@@ -156,7 +155,7 @@ impl UserInterface {
                         .to_str()
                         .unwrap()
                         .to_string()
-                        + "###"
+                        + "##"
                         + Into::<String>::into(file.clone()).as_str(),
                 )
                 .unwrap();
@@ -264,7 +263,7 @@ impl UserInterface {
                             .to_str()
                             .unwrap()
                             .to_string()
-                            + "###"
+                            + "##"
                             + Into::<String>::into(file.clone()).as_str(),
                     )
                     .unwrap();
@@ -312,7 +311,6 @@ impl UserInterface {
                 (editor.buffers[file].piece_table.num_lines()) as f32 * renderer.font_size.1;
 
             let mut remain_open = true;
-            ui.show_demo_window(&mut true);
 
             let window_name = file
                 .to_file_path()
@@ -322,7 +320,7 @@ impl UserInterface {
                 .to_str()
                 .unwrap()
                 .to_string()
-                + "###"
+                + "##"
                 + Into::<String>::into(file.clone()).as_str();
             ui.window(&window_name)
                 .opened(&mut remain_open)
@@ -657,7 +655,7 @@ fn add_signature_helps(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &B
                         buffer.piece_table.col_index(request.position),
                     );
                     let rect = line_col_to_rect(ui, line.saturating_sub(1), col, (1, 1), font_size);
-                    ui.window(format!("###SignatureHelp"))
+                    ui.window("Signature Help")
                         .position(
                             [
                                 rect.Min.x,
@@ -668,11 +666,61 @@ fn add_signature_helps(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &B
                         .no_inputs()
                         .no_decoration()
                         .movable(false)
-                        .resizable(false)
                         .focused(false)
                         .focus_on_appearing(false)
+                        .always_auto_resize(true)
                         .build(|| {
-                            ui.text(&signature_help.signatures[0].label);
+                            let active_parameter = signature_help.signatures[0]
+                                .active_parameter
+                                .or(signature_help.active_parameter);
+                            if let Some(parameters) = &signature_help.signatures[0].parameters {
+                                let mut active_parameter_range = (0, 0);
+                                if let Some(active_parameter) =
+                                    active_parameter.and_then(|i| parameters.get(i as usize))
+                                {
+                                    match &active_parameter.label {
+                                        ParameterLabelType::String(label) => {
+                                            for (start, _) in signature_help.signatures[0]
+                                                .label
+                                                .match_indices(label.as_str())
+                                            {
+                                                if !signature_help.signatures[0].label.as_bytes()
+                                                    [start + label.len()]
+                                                .is_ascii_alphanumeric()
+                                                {
+                                                    active_parameter_range =
+                                                        (start, start + label.len());
+                                                }
+                                            }
+                                        }
+                                        ParameterLabelType::Offsets(start, end) => {
+                                            active_parameter_range =
+                                                (*start as usize, *end as usize);
+                                        }
+                                    }
+                                }
+                                ui.text(
+                                    &signature_help.signatures[0].label
+                                        [0..active_parameter_range.0],
+                                );
+                                ui.same_line_with_spacing(0.0, 0.0);
+                                ui.text_colored(
+                                    [
+                                        theme.active_parameter_color.r,
+                                        theme.active_parameter_color.g,
+                                        theme.active_parameter_color.b,
+                                        1.0,
+                                    ],
+                                    &signature_help.signatures[0].label
+                                        [active_parameter_range.0..active_parameter_range.1],
+                                );
+                                ui.same_line_with_spacing(0.0, 0.0);
+                                ui.text(
+                                    &signature_help.signatures[0].label[active_parameter_range.1..],
+                                );
+                            } else {
+                                ui.text(&signature_help.signatures[0].label);
+                            }
                         });
                 }
             }
@@ -697,7 +745,7 @@ fn add_completions(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &mut B
                     let filtered_completions = get_filtered_completions(
                         &buffer.piece_table,
                         completion_list,
-                        &request,
+                        request,
                         cursor.position,
                     );
 
@@ -720,13 +768,12 @@ fn add_completions(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &mut B
                                 (ui.window_size()[1] - rect.Min.y)
                                     / ui.text_line_height_with_spacing(),
                             );
-                    ui.window(format!("###Completion {}", i))
+                    ui.window(format!("Completion {}", i))
                         .position([rect.Min.x, rect.Min.y], Condition::Always)
                         .size([-1.0, y_size], Condition::Always)
                         .no_inputs()
                         .no_decoration()
                         .movable(false)
-                        .resizable(false)
                         .focused(false)
                         .focus_on_appearing(false)
                         .build(|| {

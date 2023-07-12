@@ -518,8 +518,8 @@ impl Renderer {
         let viewport = D3D11_VIEWPORT {
             TopLeftX: 0.0,
             TopLeftY: 0.0,
-            Width: draw_data.display_size[0] * draw_data.framebuffer_scale[0],
-            Height: draw_data.display_size[1] * draw_data.framebuffer_scale[1],
+            Width: draw_data.display_size[0],
+            Height: draw_data.display_size[1],
             MinDepth: 0.0,
             MaxDepth: 1.0,
         };
@@ -638,7 +638,6 @@ impl Renderer {
             .Unmap(&self.d3d11_constant_buffer, 0);
 
         let clip_off = draw_data.display_pos;
-        let clip_scale = draw_data.framebuffer_scale;
         let mut vertex_offset = 0;
         let mut index_offset = 0;
         self.d3d11_device_context
@@ -658,10 +657,10 @@ impl Renderer {
                             },
                     } => {
                         let scissor = RECT {
-                            left: ((clip_rect[0] - clip_off[0]) * clip_scale[0]) as i32,
-                            top: ((clip_rect[1] - clip_off[1]) * clip_scale[1]) as i32,
-                            right: ((clip_rect[2] - clip_off[0]) * clip_scale[0]) as i32,
-                            bottom: ((clip_rect[3] - clip_off[1]) * clip_scale[1]) as i32,
+                            left: (clip_rect[0] - clip_off[0]) as i32,
+                            top: (clip_rect[1] - clip_off[1]) as i32,
+                            right: (clip_rect[2] - clip_off[0]) as i32,
+                            bottom: (clip_rect[3] - clip_off[1]) as i32,
                         };
                         self.d3d11_device_context
                             .RSSetScissorRects(Some(&[scissor]));

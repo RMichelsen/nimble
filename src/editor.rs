@@ -9,7 +9,7 @@ use std::{
     rc::Rc,
 };
 
-use imgui_winit_support::winit::{dpi::LogicalPosition, window::Window};
+use imgui_winit_support::winit::window::Window;
 use url::Url;
 use walkdir::WalkDir;
 
