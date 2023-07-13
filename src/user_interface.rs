@@ -19,8 +19,8 @@ use imgui::{
         ImGuiDockNodeFlags_PassthruCentralNode, ImGuiDockNodeState_HostWindowVisible,
         ImGuiScrollFlags_None, ImGuiWindowClass, ImRect,
     },
-    Condition, ConfigFlags, Context, DrawData, FontAtlasTexture, FontConfig, FontSource, Key,
-    TextureId, TreeNodeFlags, Ui,
+    Condition, ConfigFlags, Context, DrawData, FontAtlasTexture, FontConfig, FontId, FontSource,
+    Key, TextureId, TreeNodeFlags, Ui,
 };
 use imgui_winit_support::{
     winit::{event::Event, window::Window},
@@ -55,6 +55,9 @@ pub struct UserInterface {
     file_tree_view: u32,
     central_view: u32,
     active_view: u32,
+
+    monospace_font: FontId,
+    regular_font: FontId,
 }
 
 pub struct RenderData<'a> {
@@ -71,13 +74,21 @@ impl UserInterface {
         context.io_mut().config_flags |= ConfigFlags::DOCKING_ENABLE;
         context.style_mut().scale_all_sizes(1.5);
 
-        context.fonts().add_font(&[FontSource::TtfData {
-            // data: include_bytes!("C:/Windows/Fonts/segoeuisl.ttf"),
-            data: include_bytes!("C:/Windows/Fonts/consola.ttf"),
-            size_pixels: 36.0,
+        let monospace_font = context.fonts().add_font(&[FontSource::TtfData {
+            data: include_bytes!("../resources/FiraMono-Regular.ttf"),
+            size_pixels: 30.0,
             config: Some(FontConfig {
-                oversample_h: 3,
-                oversample_v: 1,
+                oversample_h: 4,
+                oversample_v: 4,
+                ..Default::default()
+            }),
+        }]);
+        let regular_font = context.fonts().add_font(&[FontSource::TtfData {
+            data: include_bytes!("../resources/FiraSans-Regular.ttf"),
+            size_pixels: 30.0,
+            config: Some(FontConfig {
+                oversample_h: 4,
+                oversample_v: 4,
                 ..Default::default()
             }),
         }]);
@@ -98,6 +109,8 @@ impl UserInterface {
             file_tree_view: 0,
             central_view: 0,
             active_view: 0,
+            monospace_font,
+            regular_font,
         }
     }
 
@@ -129,6 +142,8 @@ impl UserInterface {
     ) -> Option<RenderData> {
         self.context.fonts().tex_id = TextureId::from(usize::MAX);
         let ui = self.context.new_frame();
+
+        let font = ui.push_font(self.regular_font);
 
         if ui.is_key_down(Key::LeftCtrl) && ui.is_key_pressed(Key::C) {
             cycle_theme(theme);
@@ -335,6 +350,8 @@ impl UserInterface {
                         .build();
 
                     add_diagnostics(ui, theme, renderer.font_size, &editor.buffers[file]);
+
+                    let font = ui.push_font(self.monospace_font);
                     add_signature_helps(ui, theme, renderer.font_size, &editor.buffers[file]);
                     add_completions(
                         ui,
@@ -342,6 +359,7 @@ impl UserInterface {
                         renderer.font_size,
                         editor.buffers.get_mut(file).unwrap(),
                     );
+                    font.pop();
 
                     buffers.push(file.clone());
                     scroll_state.insert(file.clone(), (ui.scroll_x(), ui.scroll_y()));
@@ -383,7 +401,10 @@ impl UserInterface {
             self.open_files.retain(|f| f != file);
         }
 
+        font.pop();
+
         self.platform.prepare_render(ui, window);
+
         Some(RenderData {
             draw_data: self.context.render(),
             buffers,
@@ -655,11 +676,15 @@ fn add_signature_helps(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &B
                         buffer.piece_table.col_index(request.position),
                     );
                     let rect = line_col_to_rect(ui, line.saturating_sub(1), col, (1, 1), font_size);
+
+                    let label_size = ui.calc_text_size(&signature_help.signatures[0].label);
                     ui.window("Signature Help")
                         .position(
                             [
                                 rect.Min.x,
-                                rect.Min.y - unsafe { ui.style().window_padding[1] },
+                                rect.Min.y
+                                    - label_size[1]
+                                    - unsafe { ui.style().frame_padding[1] * 2.0 },
                             ],
                             Condition::Always,
                         )
@@ -764,12 +789,18 @@ fn add_completions(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &mut B
                     let rect = line_col_to_rect(ui, line + 1, col, (1, 1), font_size);
                     let y_size = unsafe { ui.style().window_padding[1] }
                         + ui.text_line_height_with_spacing()
-                            * 8.0f32.min(filtered_completions.len() as f32).min(
+                            * 10.0f32.min(filtered_completions.len() as f32).min(
                                 (ui.window_size()[1] - rect.Min.y)
                                     / ui.text_line_height_with_spacing(),
                             );
                     ui.window(format!("Completion {}", i))
-                        .position([rect.Min.x, rect.Min.y], Condition::Always)
+                        .position(
+                            [
+                                rect.Min.x,
+                                rect.Min.y + unsafe { ui.style().window_padding[1] },
+                            ],
+                            Condition::Always,
+                        )
                         .size([-1.0, y_size], Condition::Always)
                         .no_inputs()
                         .no_decoration()

@@ -1,4 +1,4 @@
-// #![windows_subsystem = "windows"]
+#![windows_subsystem = "windows"]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![feature(iterator_try_collect)]
@@ -68,11 +68,10 @@ fn main() {
             if let Some(render_data) =
                 user_interface.run(&window, &renderer, &mut editor, &mut theme)
             {
-                if highlight_timer.elapsed() > Duration::from_millis(50) {
+                if highlight_timer.elapsed() > Duration::from_micros(8333) {
                     editor.update_highlights(&render_data);
                     highlight_timer = Instant::now();
                 }
-
                 unsafe {
                     renderer.draw(&theme, &editor.buffers, &render_data);
                 }

@@ -344,7 +344,7 @@ fn start_reader_thread(
     })
 }
 
-pub fn send_request<T: serde::Serialize>(
+fn send_request<T: serde::Serialize>(
     sender: &mut Sender<String>,
     request_id: i32,
     method: &'static str,
@@ -368,5 +368,3 @@ fn send_notification<T: serde::Serialize>(
     let composed = header + message.as_str();
     sender.send(composed)
 }
-
-// stdin.write_all(composed.as_bytes())

@@ -1019,6 +1019,9 @@ impl Buffer {
                     // Special case for moving over end brackets
                     match c {
                         b')' | b'}' | b']' if self.piece_table.char_at(start) == Some(c) => {
+                            if c == b')' {
+                                self.cursors[i].reset_signature_help(&mut self.language_server);
+                            }
                             self.motion(Forward(1));
                             continue;
                         }
@@ -1640,7 +1643,7 @@ impl Buffer {
             if self.mode == Insert
                 && cursor
                     .completion_request
-                    .is_some_and(|request| request.position > cursor.position)
+                    .is_some_and(|request| request.initial_position > cursor.position)
             {
                 cursor.reset_completion(&mut self.language_server);
             }

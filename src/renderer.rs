@@ -43,10 +43,10 @@ use windows::{
                 D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
             },
             DirectWrite::{
-                DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout1,
-                DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_WEIGHT_NORMAL, DWRITE_HIT_TEST_METRICS, DWRITE_TEXT_RANGE,
-                DWRITE_WORD_WRAPPING_NO_WRAP,
+                DWriteCreateFactory, IDWriteFactory5, IDWriteInMemoryFontFileLoader,
+                IDWriteTextFormat, IDWriteTextLayout1, DWRITE_FACTORY_TYPE_SHARED,
+                DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_NORMAL,
+                DWRITE_HIT_TEST_METRICS, DWRITE_TEXT_RANGE, DWRITE_WORD_WRAPPING_NO_WRAP,
             },
             Dxgi::{
                 Common::{
@@ -115,7 +115,18 @@ pub struct Renderer {
     d2d1_device_context: ID2D1DeviceContext,
     dxgi_swap_chain: IDXGISwapChain1,
     text_format: IDWriteTextFormat,
-    dwrite_factory: IDWriteFactory,
+    dwrite_factory: IDWriteFactory5,
+    dwrite_font_file_loader: IDWriteInMemoryFontFileLoader,
+}
+
+impl Drop for Renderer {
+    fn drop(&mut self) {
+        unsafe {
+            self.dwrite_factory
+                .UnregisterFontFileLoader(&self.dwrite_font_file_loader)
+                .unwrap();
+        }
+    }
 }
 
 impl Renderer {
@@ -443,18 +454,41 @@ impl Renderer {
             d2d1_device_context.SetTarget(&bitmap);
         }
 
-        let dwrite_factory: IDWriteFactory =
+        let dwrite_factory: IDWriteFactory5 =
             unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).unwrap() };
+
+        let font_data = include_bytes!("../resources/FiraMono-Regular.ttf");
+        let dwrite_font_file_loader =
+            unsafe { dwrite_factory.CreateInMemoryFontFileLoader().unwrap() };
+        let font_collection = unsafe {
+            dwrite_factory
+                .RegisterFontFileLoader(&dwrite_font_file_loader)
+                .unwrap();
+            let font_file = dwrite_font_file_loader
+                .CreateInMemoryFontFileReference(
+                    &dwrite_factory,
+                    font_data.as_ptr() as *const _,
+                    font_data.len() as u32,
+                    None,
+                )
+                .unwrap();
+            let font_set_builder = dwrite_factory.CreateFontSetBuilder2().unwrap();
+            font_set_builder.AddFontFile(&font_file).unwrap();
+            let font_set = font_set_builder.CreateFontSet().unwrap();
+            dwrite_factory
+                .CreateFontCollectionFromFontSet(&font_set)
+                .unwrap()
+        };
 
         let text_format = unsafe {
             dwrite_factory
                 .CreateTextFormat(
-                    w!("Consolas"),
-                    None,
+                    w!("Fira Mono"),
+                    &font_collection,
                     DWRITE_FONT_WEIGHT_NORMAL,
                     DWRITE_FONT_STYLE_NORMAL,
                     DWRITE_FONT_STRETCH_NORMAL,
-                    36.0,
+                    26.0,
                     w!("en-us"),
                 )
                 .unwrap()
@@ -504,6 +538,7 @@ impl Renderer {
             text_format,
             character_spacing,
             dwrite_factory,
+            dwrite_font_file_loader,
         }
     }
 
