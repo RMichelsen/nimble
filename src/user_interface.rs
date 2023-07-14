@@ -12,10 +12,21 @@ use imgui::{
         igDockBuilderAddNode, igDockBuilderDockWindow, igDockBuilderFinish, igDockBuilderGetNode,
         igDockBuilderRemoveNode, igDockBuilderSetNodeSize, igDockBuilderSplitNode,
         igDockSpaceOverViewport, igFindWindowByName, igFocusWindow, igGetCurrentWindow,
-        igGetMainViewport, igGetWindowDockNode, igScrollToBringRectIntoView, igScrollToItem,
-        igSetNextWindowClass, igSetNextWindowDockID, ImGuiDir_Left, ImGuiDockNodeFlags_CentralNode,
-        ImGuiDockNodeFlags_NoCloseButton, ImGuiDockNodeFlags_NoDocking,
-        ImGuiDockNodeFlags_NoTabBar, ImGuiDockNodeFlags_None,
+        igGetMainViewport, igGetStyle, igGetWindowDockNode, igScrollToBringRectIntoView,
+        igScrollToItem, igSetNextWindowClass, igSetNextWindowDockID, igStyleColorsDark,
+        igStyleColorsLight, ImGuiCol_Border, ImGuiCol_Button, ImGuiCol_ButtonActive,
+        ImGuiCol_ButtonHovered, ImGuiCol_CheckMark, ImGuiCol_ChildBg, ImGuiCol_DockingEmptyBg,
+        ImGuiCol_DockingPreview, ImGuiCol_FrameBg, ImGuiCol_FrameBgActive, ImGuiCol_FrameBgHovered,
+        ImGuiCol_Header, ImGuiCol_HeaderActive, ImGuiCol_HeaderHovered, ImGuiCol_MenuBarBg,
+        ImGuiCol_NavHighlight, ImGuiCol_PopupBg, ImGuiCol_ResizeGrip, ImGuiCol_ResizeGripActive,
+        ImGuiCol_ResizeGripHovered, ImGuiCol_ScrollbarBg, ImGuiCol_ScrollbarGrab,
+        ImGuiCol_ScrollbarGrabActive, ImGuiCol_ScrollbarGrabHovered, ImGuiCol_Separator,
+        ImGuiCol_SeparatorActive, ImGuiCol_SeparatorHovered, ImGuiCol_SliderGrab,
+        ImGuiCol_SliderGrabActive, ImGuiCol_Tab, ImGuiCol_TabActive, ImGuiCol_TabHovered,
+        ImGuiCol_TabUnfocused, ImGuiCol_TabUnfocusedActive, ImGuiCol_Text, ImGuiCol_TextDisabled,
+        ImGuiCol_TextSelectedBg, ImGuiCol_TitleBg, ImGuiCol_TitleBgActive, ImGuiCol_WindowBg,
+        ImGuiDir_Left, ImGuiDockNodeFlags_CentralNode, ImGuiDockNodeFlags_NoCloseButton,
+        ImGuiDockNodeFlags_NoDocking, ImGuiDockNodeFlags_NoTabBar, ImGuiDockNodeFlags_None,
         ImGuiDockNodeFlags_PassthruCentralNode, ImGuiDockNodeState_HostWindowVisible,
         ImGuiScrollFlags_None, ImGuiWindowClass, ImRect,
     },
@@ -68,15 +79,15 @@ pub struct RenderData<'a> {
 }
 
 impl UserInterface {
-    pub fn new(window: &Window) -> Self {
+    pub fn new(window: &Window, theme: &Theme) -> Self {
         let mut context = Context::create();
         context.set_ini_filename(None);
         context.io_mut().config_flags |= ConfigFlags::DOCKING_ENABLE;
         context.style_mut().scale_all_sizes(1.5);
 
         let monospace_font = context.fonts().add_font(&[FontSource::TtfData {
-            data: include_bytes!("../resources/FiraMono-Regular.ttf"),
-            size_pixels: 30.0,
+            data: include_bytes!("C:/Windows/Fonts/consola.ttf"),
+            size_pixels: 26.0,
             config: Some(FontConfig {
                 oversample_h: 4,
                 oversample_v: 4,
@@ -99,6 +110,8 @@ impl UserInterface {
             window,
             imgui_winit_support::HiDpiMode::Locked(1.0),
         );
+
+        set_theme(theme);
 
         Self {
             context,
@@ -150,6 +163,7 @@ impl UserInterface {
             for buffer in editor.buffers.values_mut() {
                 buffer.syntect_reload(theme);
             }
+            set_theme(theme);
         }
         if ui.is_key_down(Key::LeftCtrl)
             && ui.is_key_down(Key::LeftShift)
@@ -419,6 +433,61 @@ fn cycle_theme(theme: &mut Theme) {
     *theme = THEMES[(i + 1) % THEMES.len()];
 }
 
+fn set_theme(theme: &Theme) {
+    let average_background =
+        (theme.background_color.r + theme.background_color.g + theme.background_color.b) / 3.0;
+    unsafe {
+        let style = igGetStyle();
+        if average_background < 0.5 {
+            igStyleColorsDark(style);
+        } else {
+            igStyleColorsLight(style);
+        }
+        (*style).Colors[ImGuiCol_WindowBg as usize] = theme.background_color.into_imvec(1.0);
+        (*style).Colors[ImGuiCol_PopupBg as usize] = theme.background_color.into_imvec(1.0);
+        (*style).Colors[ImGuiCol_MenuBarBg as usize] = theme.background_color.into_imvec(1.0);
+        (*style).Colors[ImGuiCol_ScrollbarBg as usize] = theme.background_color.into_imvec(1.0);
+        (*style).Colors[ImGuiCol_TitleBg as usize] = theme.background_color.into_imvec(1.0);
+        (*style).Colors[ImGuiCol_Text as usize] = theme.foreground_color.into_imvec(1.0);
+        (*style).Colors[ImGuiCol_Border as usize] = theme.foreground_color.into_imvec(1.0);
+        (*style).Colors[ImGuiCol_TextDisabled as usize] = theme.foreground_color.into_imvec(0.5);
+        (*style).Colors[ImGuiCol_ScrollbarGrab as usize] = theme.foreground_color.into_imvec(0.6);
+        (*style).Colors[ImGuiCol_ScrollbarGrabHovered as usize] =
+            theme.foreground_color.into_imvec(0.7);
+        (*style).Colors[ImGuiCol_ScrollbarGrabActive as usize] =
+            theme.foreground_color.into_imvec(0.95);
+        (*style).Colors[ImGuiCol_Separator as usize] = theme.foreground_color.into_imvec(0.3);
+        (*style).Colors[ImGuiCol_SeparatorHovered as usize] =
+            theme.foreground_color.into_imvec(0.5);
+        (*style).Colors[ImGuiCol_SeparatorActive as usize] = theme.foreground_color.into_imvec(0.7);
+
+        (*style).Colors[ImGuiCol_TitleBgActive as usize] = theme.palette.aqua.into_imvec(0.2);
+        (*style).Colors[ImGuiCol_FrameBg as usize] = theme.palette.aqua.into_imvec(0.2);
+        (*style).Colors[ImGuiCol_FrameBgHovered as usize] = theme.palette.aqua.into_imvec(0.3);
+        (*style).Colors[ImGuiCol_FrameBgActive as usize] = theme.palette.aqua.into_imvec(0.4);
+        (*style).Colors[ImGuiCol_CheckMark as usize] = theme.palette.aqua.into_imvec(1.0);
+        (*style).Colors[ImGuiCol_SliderGrab as usize] = theme.palette.aqua.into_imvec(0.8);
+        (*style).Colors[ImGuiCol_SliderGrabActive as usize] = theme.palette.aqua.into_imvec(1.0);
+        (*style).Colors[ImGuiCol_Button as usize] = theme.palette.aqua.into_imvec(0.4);
+        (*style).Colors[ImGuiCol_ButtonHovered as usize] = theme.palette.aqua.into_imvec(1.0);
+        (*style).Colors[ImGuiCol_ButtonActive as usize] = theme.palette.aqua.into_imvec(1.0);
+        (*style).Colors[ImGuiCol_Header as usize] = theme.palette.aqua.into_imvec(0.31);
+        (*style).Colors[ImGuiCol_HeaderHovered as usize] = theme.palette.aqua.into_imvec(0.8);
+        (*style).Colors[ImGuiCol_HeaderActive as usize] = theme.palette.aqua.into_imvec(1.0);
+        (*style).Colors[ImGuiCol_ResizeGrip as usize] = theme.palette.aqua.into_imvec(0.2);
+        (*style).Colors[ImGuiCol_ResizeGripHovered as usize] = theme.palette.aqua.into_imvec(0.67);
+        (*style).Colors[ImGuiCol_ResizeGripActive as usize] = theme.palette.aqua.into_imvec(0.95);
+        (*style).Colors[ImGuiCol_Tab as usize] = theme.palette.aqua.into_imvec(0.2);
+        (*style).Colors[ImGuiCol_TabHovered as usize] = theme.palette.aqua.into_imvec(0.3);
+        (*style).Colors[ImGuiCol_TabActive as usize] = theme.palette.aqua.into_imvec(0.4);
+        (*style).Colors[ImGuiCol_TabUnfocused as usize] = theme.palette.aqua.into_imvec(0.1);
+        (*style).Colors[ImGuiCol_TabUnfocusedActive as usize] = theme.palette.aqua.into_imvec(0.2);
+        (*style).Colors[ImGuiCol_DockingPreview as usize] = theme.palette.aqua.into_imvec(0.7);
+        (*style).Colors[ImGuiCol_NavHighlight as usize] = theme.palette.aqua.into_imvec(1.0);
+        (*style).Colors[ImGuiCol_TextSelectedBg as usize] = theme.palette.aqua.into_imvec(0.35);
+    }
+}
+
 fn handle_buffer_input(ui: &Ui, font_size: (f32, f32), buffer: &mut Buffer) -> bool {
     let mut key_handled = false;
     for c in ui.io().input_queue_characters().filter(|c| c.is_ascii()) {
@@ -488,7 +557,7 @@ fn add_selections(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &Buffer
                     .add_rect(
                         [rect.Min.x, rect.Min.y],
                         [rect.Max.x, rect.Max.y],
-                        theme.selection_background_color.into_imgui(),
+                        theme.selection_background_color.into_imcol(),
                     )
                     .filled(true)
                     .build();
@@ -508,7 +577,7 @@ fn add_selections(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &Buffer
                     .add_rect(
                         [rect.Min.x, rect.Min.y],
                         [rect.Max.x, rect.Max.y],
-                        theme.selection_background_color.into_imgui(),
+                        theme.selection_background_color.into_imcol(),
                     )
                     .filled(true)
                     .build();
@@ -529,7 +598,7 @@ fn add_cursor_leads(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &Buff
             .add_rect(
                 [rect.Min.x, rect.Min.y],
                 [rect.Max.x, rect.Max.y],
-                theme.cursor_color.into_imgui(),
+                theme.cursor_color.into_imcol(),
             )
             .filled(true)
             .build();
@@ -580,7 +649,7 @@ fn add_diagnostics(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &Buffe
                         .add_rect(
                             [rect.Min.x, rect.Min.y],
                             [rect.Max.x, rect.Max.y],
-                            theme.diagnostic_color.into_imgui(),
+                            theme.diagnostic_color.into_imcol(),
                         )
                         .filled(true)
                         .build();
@@ -606,7 +675,7 @@ fn add_diagnostics(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &Buffe
                         .add_rect(
                             [rect.Min.x, rect.Min.y],
                             [rect.Max.x, rect.Max.y],
-                            theme.diagnostic_color.into_imgui(),
+                            theme.diagnostic_color.into_imcol(),
                         )
                         .rounding(1.0)
                         .filled(true)
@@ -634,7 +703,7 @@ fn add_diagnostics(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &Buffe
                             .add_rect(
                                 [rect.Min.x, rect.Min.y],
                                 [rect.Max.x, rect.Max.y],
-                                theme.diagnostic_color.into_imgui(),
+                                theme.diagnostic_color.into_imcol(),
                             )
                             .rounding(1.0)
                             .filled(true)
@@ -651,7 +720,7 @@ fn add_diagnostics(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &Buffe
                         .add_rect(
                             [rect.Min.x, rect.Min.y],
                             [rect.Max.x, rect.Max.y],
-                            theme.diagnostic_color.into_imgui(),
+                            theme.diagnostic_color.into_imcol(),
                         )
                         .rounding(1.0)
                         .filled(true)

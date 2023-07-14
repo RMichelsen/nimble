@@ -47,10 +47,10 @@ fn main() {
         .build(&event_loop)
         .unwrap();
 
-    let mut user_interface = UserInterface::new(&window);
+    let mut theme = THEMES[0];
+    let mut user_interface = UserInterface::new(&window, &theme);
     let mut editor = Editor::new(&window);
     let renderer = Renderer::new(&window, &user_interface.font_atlas_texture());
-    let mut theme = THEMES[0];
 
     let mut last_frame = Instant::now();
     let mut highlight_timer = Instant::now();

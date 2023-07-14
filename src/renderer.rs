@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Debug, slice};
 
-use imgui::{DrawCmd, DrawCmdParams, DrawIdx, DrawVert, FontAtlasTexture, ImColor32};
+use imgui::{sys::ImVec4, DrawCmd, DrawCmdParams, DrawIdx, DrawVert, FontAtlasTexture, ImColor32};
 use imgui_winit_support::winit::{platform::windows::WindowExtWindows, window::Window};
 use url::Url;
 use windows::{
@@ -43,10 +43,10 @@ use windows::{
                 D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
             },
             DirectWrite::{
-                DWriteCreateFactory, IDWriteFactory5, IDWriteInMemoryFontFileLoader,
-                IDWriteTextFormat, IDWriteTextLayout1, DWRITE_FACTORY_TYPE_SHARED,
-                DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_NORMAL,
-                DWRITE_HIT_TEST_METRICS, DWRITE_TEXT_RANGE, DWRITE_WORD_WRAPPING_NO_WRAP,
+                DWriteCreateFactory, IDWriteFactory5, IDWriteTextFormat, IDWriteTextLayout1,
+                DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_WEIGHT_NORMAL, DWRITE_HIT_TEST_METRICS, DWRITE_TEXT_RANGE,
+                DWRITE_WORD_WRAPPING_NO_WRAP,
             },
             Dxgi::{
                 Common::{
@@ -89,8 +89,12 @@ pub struct Color {
 }
 
 impl Color {
-    pub fn into_imgui(self) -> ImColor32 {
+    pub fn into_imcol(self) -> ImColor32 {
         ImColor32::from_rgb(self.r_u8, self.g_u8, self.b_u8)
+    }
+
+    pub fn into_imvec(self, alpha: f32) -> ImVec4 {
+        ImVec4::new(self.r, self.g, self.b, alpha)
     }
 }
 
@@ -116,17 +120,6 @@ pub struct Renderer {
     dxgi_swap_chain: IDXGISwapChain1,
     text_format: IDWriteTextFormat,
     dwrite_factory: IDWriteFactory5,
-    dwrite_font_file_loader: IDWriteInMemoryFontFileLoader,
-}
-
-impl Drop for Renderer {
-    fn drop(&mut self) {
-        unsafe {
-            self.dwrite_factory
-                .UnregisterFontFileLoader(&self.dwrite_font_file_loader)
-                .unwrap();
-        }
-    }
 }
 
 impl Renderer {
@@ -457,34 +450,11 @@ impl Renderer {
         let dwrite_factory: IDWriteFactory5 =
             unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).unwrap() };
 
-        let font_data = include_bytes!("../resources/FiraMono-Regular.ttf");
-        let dwrite_font_file_loader =
-            unsafe { dwrite_factory.CreateInMemoryFontFileLoader().unwrap() };
-        let font_collection = unsafe {
-            dwrite_factory
-                .RegisterFontFileLoader(&dwrite_font_file_loader)
-                .unwrap();
-            let font_file = dwrite_font_file_loader
-                .CreateInMemoryFontFileReference(
-                    &dwrite_factory,
-                    font_data.as_ptr() as *const _,
-                    font_data.len() as u32,
-                    None,
-                )
-                .unwrap();
-            let font_set_builder = dwrite_factory.CreateFontSetBuilder2().unwrap();
-            font_set_builder.AddFontFile(&font_file).unwrap();
-            let font_set = font_set_builder.CreateFontSet().unwrap();
-            dwrite_factory
-                .CreateFontCollectionFromFontSet(&font_set)
-                .unwrap()
-        };
-
         let text_format = unsafe {
             dwrite_factory
                 .CreateTextFormat(
-                    w!("Fira Mono"),
-                    &font_collection,
+                    w!("Consolas"),
+                    None,
                     DWRITE_FONT_WEIGHT_NORMAL,
                     DWRITE_FONT_STYLE_NORMAL,
                     DWRITE_FONT_STRETCH_NORMAL,
@@ -538,7 +508,6 @@ impl Renderer {
             text_format,
             character_spacing,
             dwrite_factory,
-            dwrite_font_file_loader,
         }
     }
 
@@ -569,8 +538,10 @@ impl Renderer {
         };
         self.d3d11_device_context
             .OMSetRenderTargets(Some(&[Some(d3d11_rtv.clone())]), None);
-        self.d3d11_device_context
-            .ClearRenderTargetView(&d3d11_rtv, [0.0, 0.0, 0.0, 0.0].as_ptr());
+        self.d3d11_device_context.ClearRenderTargetView(
+            &d3d11_rtv,
+            &theme.background_color.into_imvec(1.0) as *const ImVec4 as *const _,
+        );
         self.d3d11_device_context.RSSetViewports(Some(&[viewport]));
         self.d3d11_device_context
             .IASetInputLayout(&self.d3d11_input_layout);
