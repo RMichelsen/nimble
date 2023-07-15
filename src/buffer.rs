@@ -134,7 +134,7 @@ impl Buffer {
         server.send_notification("textDocument/didOpen", Some(open_params));
     }
 
-    pub fn set_cursor(&mut self, line: usize, col: usize) {
+    pub fn handle_click(&mut self, line: usize, col: usize) {
         if let Some(mouse_line) = self.piece_table.line_at_index(line) {
             if let Some(position) = self
                 .piece_table
@@ -154,7 +154,7 @@ impl Buffer {
         }
     }
 
-    pub fn set_drag(&mut self, line: usize, col: usize) {
+    pub fn handle_drag(&mut self, line: usize, col: usize) {
         if let Some(mouse_line) = self.piece_table.line_at_index(line) {
             if let Some(position) = self
                 .piece_table
@@ -178,7 +178,7 @@ impl Buffer {
         }
     }
 
-    pub fn handle_mouse_double_click(&mut self, line: usize, col: usize) -> bool {
+    pub fn handle_double_click(&mut self, line: usize, col: usize) -> bool {
         if let Some(cursor_line) = self.piece_table.line_at_index(line) {
             if let Some(position) = self
                 .piece_table
@@ -191,7 +191,7 @@ impl Buffer {
                 }
             }
         }
-        self.set_cursor(line, col);
+        self.handle_click(line, col);
         false
     }
 

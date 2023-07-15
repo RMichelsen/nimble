@@ -31,7 +31,7 @@ use imgui::{
         ImGuiScrollFlags_None, ImGuiWindowClass, ImRect,
     },
     Condition, ConfigFlags, Context, DrawData, FontAtlasTexture, FontConfig, FontId, FontSource,
-    Key, TextureId, TreeNodeFlags, Ui,
+    Key, MouseButton, TextureId, TreeNodeFlags, Ui,
 };
 use imgui_winit_support::{
     winit::{event::Event, window::Window},
@@ -205,7 +205,7 @@ impl UserInterface {
                     }
                 } else {
                     self.open_files.push(file.clone());
-                    self.initial_docks.insert(file.clone(), self.active_view);
+                    self.initial_docks.insert(file, self.active_view);
                 }
             }
         }
@@ -313,7 +313,7 @@ impl UserInterface {
                         }
                     } else {
                         self.open_files.push(file.clone());
-                        self.initial_docks.insert(file.clone(), self.active_view);
+                        self.initial_docks.insert(file, self.active_view);
                     }
                 }
             }
@@ -366,6 +366,34 @@ impl UserInterface {
                 .content_size([document_width, document_height])
                 .horizontal_scrollbar(true)
                 .build(|| {
+                    let mouse_pos = ui.io().mouse_pos;
+                    let window_pos = ui.window_pos();
+                    let relative_mouse_pos = (
+                        mouse_pos[0] - window_pos[0] + ui.scroll_x(),
+                        mouse_pos[1] - (window_pos[1] * 2.0) + ui.scroll_y(),
+                    );
+
+                    let line = (relative_mouse_pos.1 / renderer.font_size.1) as usize;
+                    let col = (relative_mouse_pos.0 / renderer.font_size.0) as usize;
+
+                    if ui.is_mouse_clicked(MouseButton::Left) && ui.is_window_hovered() {
+                        editor
+                            .buffers
+                            .get_mut(file)
+                            .unwrap()
+                            .handle_click(line, col);
+                    }
+                    if ui.is_mouse_dragging(MouseButton::Left) && ui.is_window_hovered() {
+                        editor.buffers.get_mut(file).unwrap().handle_drag(line, col);
+                    }
+                    if ui.is_mouse_double_clicked(MouseButton::Left) && ui.is_window_hovered() {
+                        editor
+                            .buffers
+                            .get_mut(file)
+                            .unwrap()
+                            .handle_double_click(line, col);
+                    }
+
                     add_selections(ui, theme, renderer.font_size, &editor.buffers[file]);
                     add_cursor_leads(ui, theme, renderer.font_size, &editor.buffers[file]);
 
