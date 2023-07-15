@@ -60,6 +60,7 @@ pub struct Buffer {
     pub language_server: Option<Rc<RefCell<LanguageServer>>>,
     pub syntect: Option<Syntect>,
     pub input: String,
+    pub hover_request: (usize, usize, Option<i32>),
     last_executed_command: Option<String>,
     insertion_command_stack: Vec<BufferCommand>,
     insertion_stack_dirty: bool,
@@ -100,6 +101,7 @@ impl Buffer {
             language_server,
             syntect: Syntect::new(&path, theme),
             input: String::default(),
+            hover_request: (0, 0, None),
             last_executed_command: None,
             insertion_command_stack: vec![],
             insertion_stack_dirty: false,
@@ -195,9 +197,10 @@ impl Buffer {
         false
     }
 
-    pub fn handle_mouse_hover(&mut self, line: usize, col: usize) {
+    pub fn handle_hover(&mut self, line: usize, col: usize) {
         if let Some(cursor_line) = self.piece_table.line_at_index(line) {
             if col >= cursor_line.length {
+                self.hover_request = (line, col, None);
                 return;
             }
             self.lsp_hover(line, col);
@@ -1880,9 +1883,13 @@ impl Buffer {
                     character: col as u32,
                 },
             };
-            server
-                .borrow_mut()
-                .send_request("textDocument/hover", hover_params);
+            self.hover_request = (
+                line,
+                col,
+                server
+                    .borrow_mut()
+                    .send_request("textDocument/hover", hover_params),
+            );
         }
     }
 

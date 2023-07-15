@@ -14,8 +14,12 @@ use url::Url;
 use walkdir::WalkDir;
 
 use crate::{
-    buffer::Buffer, language_server::LanguageServer, language_server_types::VoidParams,
-    language_support::language_from_path, platform_resources, text_utils, theme::Theme,
+    buffer::Buffer,
+    language_server::LanguageServer,
+    language_server_types::{Hover, VoidParams},
+    language_support::language_from_path,
+    platform_resources, text_utils,
+    theme::Theme,
     user_interface::RenderData,
 };
 
@@ -130,7 +134,9 @@ impl Editor {
                                 // TODO
                             }
                             "textDocument/hover" => {
-                                // TODO
+                                if let Some(value) = response.value {
+                                    server.save_hover(response.id, value);
+                                }
                             }
                             _ => (),
                         }

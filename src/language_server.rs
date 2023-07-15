@@ -28,7 +28,7 @@ use windows::Win32::{
 use crate::{
     editor::Workspace,
     language_server_types::{
-        ClientCapabilities, CompletionList, Diagnostic, GeneralClientCapabilities,
+        ClientCapabilities, CompletionList, Diagnostic, GeneralClientCapabilities, Hover,
         HoverClientCapabilities, InitializeParams, InitializeResult, InitializedParams,
         MarkdownClientCapabilities, Notification, PublishDiagnosticParams, Request, ServerMessage,
         SignatureHelp, TextDocumentClientCapabilities,
@@ -57,6 +57,7 @@ pub struct LanguageServer {
     terminated: bool,
     pub saved_completions: HashMap<i32, CompletionList>,
     pub saved_signature_helps: HashMap<i32, SignatureHelp>,
+    pub saved_hover_messages: HashMap<i32, Hover>,
     pub saved_diagnostics: HashMap<String, Vec<Diagnostic>>,
     pub trigger_characters: Vec<u8>,
     pub signature_help_trigger_characters: Vec<u8>,
@@ -163,6 +164,7 @@ impl LanguageServer {
             terminated: false,
             saved_completions: HashMap::new(),
             saved_signature_helps: HashMap::new(),
+            saved_hover_messages: HashMap::new(),
             saved_diagnostics: HashMap::new(),
             trigger_characters: Vec::new(),
             signature_help_trigger_characters: Vec::new(),
@@ -180,6 +182,11 @@ impl LanguageServer {
             request_id,
             serde_json::from_value::<CompletionList>(value).unwrap(),
         );
+    }
+
+    pub fn save_hover(&mut self, request_id: i32, value: serde_json::Value) {
+        let hover = serde_json::from_value::<Hover>(value).unwrap();
+        self.saved_hover_messages.insert(request_id, hover);
     }
 
     pub fn save_signature_help(&mut self, request_id: i32, value: serde_json::Value) {
