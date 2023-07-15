@@ -81,6 +81,13 @@ fn main() {
             }
         }
         Event::WindowEvent {
+            event: WindowEvent::Resized(_),
+            ..
+        } => {
+            user_interface.resize(&window);
+            renderer.resize();
+        }
+        Event::WindowEvent {
             event: WindowEvent::CloseRequested,
             ..
         } => {

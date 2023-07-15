@@ -15,9 +15,9 @@ use imgui::{
         igGetMainViewport, igGetStyle, igGetWindowDockNode, igScrollToBringRectIntoView,
         igScrollToItem, igSetNextWindowClass, igSetNextWindowDockID, igStyleColorsDark,
         igStyleColorsLight, ImGuiCol_Border, ImGuiCol_Button, ImGuiCol_ButtonActive,
-        ImGuiCol_ButtonHovered, ImGuiCol_CheckMark, ImGuiCol_ChildBg, ImGuiCol_DockingEmptyBg,
-        ImGuiCol_DockingPreview, ImGuiCol_FrameBg, ImGuiCol_FrameBgActive, ImGuiCol_FrameBgHovered,
-        ImGuiCol_Header, ImGuiCol_HeaderActive, ImGuiCol_HeaderHovered, ImGuiCol_MenuBarBg,
+        ImGuiCol_ButtonHovered, ImGuiCol_CheckMark, ImGuiCol_DockingPreview, ImGuiCol_FrameBg,
+        ImGuiCol_FrameBgActive, ImGuiCol_FrameBgHovered, ImGuiCol_Header, ImGuiCol_HeaderActive,
+        ImGuiCol_HeaderHovered, ImGuiCol_MenuBarBg, ImGuiCol_ModalWindowDimBg,
         ImGuiCol_NavHighlight, ImGuiCol_PopupBg, ImGuiCol_ResizeGrip, ImGuiCol_ResizeGripActive,
         ImGuiCol_ResizeGripHovered, ImGuiCol_ScrollbarBg, ImGuiCol_ScrollbarGrab,
         ImGuiCol_ScrollbarGrabActive, ImGuiCol_ScrollbarGrabHovered, ImGuiCol_Separator,
@@ -110,6 +110,7 @@ impl UserInterface {
             window,
             imgui_winit_support::HiDpiMode::Locked(1.0),
         );
+        context.io_mut().display_size = window.inner_size().into();
 
         set_theme(theme);
 
@@ -144,6 +145,15 @@ impl UserInterface {
     pub fn handle_event(&mut self, window: &Window, event: &Event<()>) {
         self.platform
             .handle_event(self.context.io_mut(), window, event);
+    }
+
+    pub fn resize(&mut self, window: &Window) {
+        self.platform.attach_window(
+            self.context.io_mut(),
+            window,
+            imgui_winit_support::HiDpiMode::Locked(1.0),
+        );
+        self.context.io_mut().display_size = window.inner_size().into();
     }
 
     pub fn run(
@@ -448,6 +458,9 @@ fn set_theme(theme: &Theme) {
         (*style).Colors[ImGuiCol_MenuBarBg as usize] = theme.background_color.into_imvec(1.0);
         (*style).Colors[ImGuiCol_ScrollbarBg as usize] = theme.background_color.into_imvec(1.0);
         (*style).Colors[ImGuiCol_TitleBg as usize] = theme.background_color.into_imvec(1.0);
+        (*style).Colors[ImGuiCol_ModalWindowDimBg as usize] =
+            theme.background_color.into_imvec(0.0);
+        (*style).Colors[ImGuiCol_TitleBgActive as usize] = theme.background_color.into_imvec(1.2);
         (*style).Colors[ImGuiCol_Text as usize] = theme.foreground_color.into_imvec(1.0);
         (*style).Colors[ImGuiCol_Border as usize] = theme.foreground_color.into_imvec(1.0);
         (*style).Colors[ImGuiCol_TextDisabled as usize] = theme.foreground_color.into_imvec(0.5);
@@ -460,20 +473,18 @@ fn set_theme(theme: &Theme) {
         (*style).Colors[ImGuiCol_SeparatorHovered as usize] =
             theme.foreground_color.into_imvec(0.5);
         (*style).Colors[ImGuiCol_SeparatorActive as usize] = theme.foreground_color.into_imvec(0.7);
-
-        (*style).Colors[ImGuiCol_TitleBgActive as usize] = theme.palette.aqua.into_imvec(0.2);
         (*style).Colors[ImGuiCol_FrameBg as usize] = theme.palette.aqua.into_imvec(0.2);
         (*style).Colors[ImGuiCol_FrameBgHovered as usize] = theme.palette.aqua.into_imvec(0.3);
         (*style).Colors[ImGuiCol_FrameBgActive as usize] = theme.palette.aqua.into_imvec(0.4);
         (*style).Colors[ImGuiCol_CheckMark as usize] = theme.palette.aqua.into_imvec(1.0);
         (*style).Colors[ImGuiCol_SliderGrab as usize] = theme.palette.aqua.into_imvec(0.8);
         (*style).Colors[ImGuiCol_SliderGrabActive as usize] = theme.palette.aqua.into_imvec(1.0);
-        (*style).Colors[ImGuiCol_Button as usize] = theme.palette.aqua.into_imvec(0.4);
-        (*style).Colors[ImGuiCol_ButtonHovered as usize] = theme.palette.aqua.into_imvec(1.0);
-        (*style).Colors[ImGuiCol_ButtonActive as usize] = theme.palette.aqua.into_imvec(1.0);
+        (*style).Colors[ImGuiCol_Button as usize] = theme.palette.aqua.into_imvec(0.2);
+        (*style).Colors[ImGuiCol_ButtonHovered as usize] = theme.palette.aqua.into_imvec(0.3);
+        (*style).Colors[ImGuiCol_ButtonActive as usize] = theme.palette.aqua.into_imvec(0.4);
         (*style).Colors[ImGuiCol_Header as usize] = theme.palette.aqua.into_imvec(0.31);
-        (*style).Colors[ImGuiCol_HeaderHovered as usize] = theme.palette.aqua.into_imvec(0.8);
-        (*style).Colors[ImGuiCol_HeaderActive as usize] = theme.palette.aqua.into_imvec(1.0);
+        (*style).Colors[ImGuiCol_HeaderHovered as usize] = theme.palette.aqua.into_imvec(0.4);
+        (*style).Colors[ImGuiCol_HeaderActive as usize] = theme.palette.aqua.into_imvec(0.5);
         (*style).Colors[ImGuiCol_ResizeGrip as usize] = theme.palette.aqua.into_imvec(0.2);
         (*style).Colors[ImGuiCol_ResizeGripHovered as usize] = theme.palette.aqua.into_imvec(0.67);
         (*style).Colors[ImGuiCol_ResizeGripActive as usize] = theme.palette.aqua.into_imvec(0.95);

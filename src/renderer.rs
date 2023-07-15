@@ -511,6 +511,32 @@ impl Renderer {
         }
     }
 
+    pub fn resize(&self) {
+        unsafe {
+            self.d3d11_device_context.OMSetRenderTargets(None, None);
+            self.d2d1_device_context.SetTarget(None);
+            self.dxgi_swap_chain
+                .ResizeBuffers(0, 0, 0, DXGI_FORMAT_B8G8R8A8_UNORM, 0)
+                .unwrap();
+            let d2d1_back_buffer: IDXGISurface = self.dxgi_swap_chain.GetBuffer(0).unwrap();
+            let bitmap = self
+                .d2d1_device_context
+                .CreateBitmapFromDxgiSurface(
+                    &d2d1_back_buffer,
+                    Some(&D2D1_BITMAP_PROPERTIES1 {
+                        pixelFormat: D2D1_PIXEL_FORMAT {
+                            format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                            alphaMode: D2D1_ALPHA_MODE_IGNORE,
+                        },
+                        bitmapOptions: D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+                        ..Default::default()
+                    }),
+                )
+                .unwrap();
+            self.d2d1_device_context.SetTarget(&bitmap);
+        }
+    }
+
     pub unsafe fn draw(
         &self,
         theme: &Theme,
