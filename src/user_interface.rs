@@ -31,7 +31,7 @@ use imgui::{
         ImGuiScrollFlags_None, ImGuiWindowClass, ImRect,
     },
     Condition, ConfigFlags, Context, DrawData, FontAtlasTexture, FontConfig, FontId, FontSource,
-    Key, MouseButton, TextureId, TreeNodeFlags, Ui,
+    Key, MouseButton, TextureId, TreeNodeFlags, Ui, 
 };
 use imgui_winit_support::{
     winit::{event::Event, window::Window},
@@ -61,6 +61,7 @@ pub struct UserInterface {
 
     open_files: Vec<Url>,
     initial_docks: HashMap<Url, u32>,
+    hover_active_last_frame: HashMap<Url, bool>,
     hovers: HashMap<Url, (Instant, usize, usize)>,
 
     first_frame: bool,
@@ -120,6 +121,7 @@ impl UserInterface {
             platform,
             open_files: Vec::new(),
             initial_docks: HashMap::new(),
+            hover_active_last_frame: HashMap::new(),
             hovers: HashMap::new(),
             first_frame: true,
             file_tree_view: 0,
@@ -377,16 +379,6 @@ impl UserInterface {
 
                     add_diagnostics(ui, theme, renderer.font_size, &editor.buffers[file]);
 
-                    let hovering_hover_message = if self
-                        .hovers
-                        .get(file)
-                        .is_some_and(|hover| hover.0.elapsed() > Duration::from_millis(200))
-                    {
-                        add_hovers(ui, theme, renderer.font_size, &editor.buffers[file])
-                    } else {
-                        false
-                    };
-
                     let font = ui.push_font(self.monospace_font);
                     add_signature_helps(ui, theme, renderer.font_size, &editor.buffers[file]);
                     add_completions(
@@ -407,45 +399,61 @@ impl UserInterface {
                         let mouse_pos = ui.io().mouse_pos;
                         let window_pos = ui.window_pos();
                         let relative_mouse_pos = (
-                            mouse_pos[0] - window_pos[0] + ui.scroll_x(),
-                            mouse_pos[1] - (window_pos[1] * 2.0) + ui.scroll_y(),
+                            mouse_pos[0] - window_pos[0] - unsafe { ui.style() }.frame_padding[0] + ui.scroll_x(),
+                            mouse_pos[1] - window_pos[1] - (unsafe { ui.style() }.frame_padding[1] * 2.0 + ui.current_font_size()) + ui.scroll_y(),
                         );
+                        if relative_mouse_pos.0 > 0.0 && relative_mouse_pos.1 > 0.0 {
+                            let line = (relative_mouse_pos.1 / renderer.font_size.1) as usize;
+                            let col = (relative_mouse_pos.0 / renderer.font_size.0) as usize;
 
-                        let line = (relative_mouse_pos.1 / renderer.font_size.1) as usize;
-                        let col = (relative_mouse_pos.0 / renderer.font_size.0) as usize;
-
-                        if ui.is_mouse_double_clicked(MouseButton::Left) {
-                            editor
-                                .buffers
-                                .get_mut(file)
-                                .unwrap()
-                                .handle_double_click(line, col);
-                        } else if ui.is_mouse_dragging(MouseButton::Left) {
-                            editor.buffers.get_mut(file).unwrap().handle_drag(line, col);
-                        } else if ui.is_mouse_clicked(MouseButton::Left) {
-                            editor
-                                .buffers
-                                .get_mut(file)
-                                .unwrap()
-                                .handle_click(line, col);
-                        } else if !hovering_hover_message {
-                            if let Some(hover) = self.hovers.get_mut(file) {
-                                if hover.1 != line || hover.2 != col {
-                                    hover.0 = Instant::now();
-                                    hover.1 = line;
-                                    hover.2 = col;
-                                    editor
-                                        .buffers
-                                        .get_mut(file)
-                                        .unwrap()
-                                        .handle_hover(line, col);
+                            if ui.is_window_focused() && ui.is_mouse_double_clicked(MouseButton::Left) {
+                                editor
+                                    .buffers
+                                    .get_mut(file)
+                                    .unwrap()
+                                    .handle_double_click(line, col);
+                            } else if ui.is_window_focused() && ui.is_mouse_dragging(MouseButton::Left) {
+                                editor.buffers.get_mut(file).unwrap().handle_drag(line, col);
+                            } else if ui.is_window_focused() && ui.is_mouse_clicked(MouseButton::Left) {
+                                editor
+                                    .buffers
+                                    .get_mut(file)
+                                    .unwrap()
+                                    .handle_click(line, col);
+                            } else if !self.hover_active_last_frame.get(&file).is_some_and(|b| *b) {
+                                if let Some(hover) = self.hovers.get_mut(file) {
+                                    if hover.1 != line || hover.2 != col {
+                                        hover.0 = Instant::now();
+                                        hover.1 = line;
+                                        hover.2 = col;
+                                        editor
+                                            .buffers
+                                            .get_mut(file)
+                                            .unwrap()
+                                            .handle_hover(line, col);
+                                    }
+                                } else {
+                                    self.hovers
+                                        .insert(file.clone(), (Instant::now(), line, col));
+                                        editor
+                                            .buffers
+                                            .get_mut(file)
+                                            .unwrap()
+                                            .handle_hover(line, col);
                                 }
-                            } else {
-                                self.hovers
-                                    .insert(file.clone(), (Instant::now(), line, col));
                             }
                         }
                     }
+
+                    self.hover_active_last_frame.insert(file.clone(), if self
+                        .hovers
+                        .get(file)
+                        .is_some_and(|hover| hover.0.elapsed() > Duration::from_millis(200))
+                    {
+                        add_hovers(ui, theme, renderer.font_size, &editor.buffers[file])
+                    } else {
+                        false
+                    });
 
                     if ui.is_window_focused() {
                         let dock_node = unsafe { igGetWindowDockNode() };
@@ -803,7 +811,7 @@ fn add_hovers(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &Buffer) ->
     if let Some(server) = &buffer.language_server {
         if let (line, col, Some(request)) = &buffer.hover_request {
             if let Some(hover) = server.borrow().saved_hover_messages.get(request) {
-                let rect = line_col_to_rect(ui, *line, *col, (1, 1), font_size);
+                let rect = line_col_to_rect(ui, *line + 1, *col, (1, 1), font_size);
                 let min_width = ui.window_size()[0] / 2.0;
                 let longest_string = hover
                     .contents
@@ -811,7 +819,7 @@ fn add_hovers(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &Buffer) ->
                     .lines()
                     .max_by(|x, y| x.len().cmp(&y.len()));
                 let max_text_width = ui.calc_text_size(longest_string.unwrap_or(""));
-                ui.window("Hover")
+                ui.window(format!("Hover##{}", request))
                     .position([rect.Min.x, rect.Min.y], Condition::Always)
                     .size_constraints(
                         [min_width.min(max_text_width[0]), 0.0],

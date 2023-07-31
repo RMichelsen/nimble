@@ -16,7 +16,7 @@ use walkdir::WalkDir;
 use crate::{
     buffer::Buffer,
     language_server::LanguageServer,
-    language_server_types::{Hover, VoidParams},
+    language_server_types::VoidParams,
     language_support::language_from_path,
     platform_resources, text_utils,
     theme::Theme,
