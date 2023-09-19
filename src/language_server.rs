@@ -142,7 +142,7 @@ impl LanguageServer {
                     text_document: TextDocumentClientCapabilities {
                         hover: HoverClientCapabilities {
                             content_format: vec![
-                                String::from("markdown"),
+                                // String::from("markdown"),
                                 String::from("plaintext"),
                             ],
                         },
@@ -304,10 +304,11 @@ impl LanguageServer {
 
 fn start_writer_thread(mut stdin: File, receiver: Receiver<String>) -> JoinHandle<()> {
     thread::spawn(move || loop {
-        let message = receiver.recv().unwrap();
-        match stdin.write_all(message.as_bytes()) {
-            Ok(()) => (),
-            _ => break,
+        if let Ok(message) = receiver.recv() {
+            match stdin.write_all(message.as_bytes()) {
+                Ok(()) => (),
+                _ => break,
+            }
         }
     })
 }

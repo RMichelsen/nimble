@@ -422,7 +422,7 @@ impl UserInterface {
                                     .handle_click(line, col);
                             } else if !self.hover_active_last_frame.get(&file).is_some_and(|b| *b) {
                                 if let Some(hover) = self.hovers.get_mut(file) {
-                                    if hover.1 != line || hover.2 != col {
+                                    if hover.1 != line || hover.2.abs_diff(col) > 2 {
                                         hover.0 = Instant::now();
                                         hover.1 = line;
                                         hover.2 = col;
@@ -445,6 +445,10 @@ impl UserInterface {
                         }
                     }
 
+                    if editor.buffers[file].mode == BufferMode::Insert {
+                        self.hovers.remove(file);
+                    } 
+
                     self.hover_active_last_frame.insert(file.clone(), if self
                         .hovers
                         .get(file)
@@ -465,6 +469,9 @@ impl UserInterface {
                             renderer.font_size,
                             editor.buffers.get_mut(file).unwrap(),
                         ) {
+                            // Release hovers on key press
+                            self.hovers.remove(file);
+
                             let buffer = editor.buffers.get(file).unwrap();
                             if let Some(last_cursor) = buffer.cursors.last() {
                                 let (line, col) = last_cursor.get_line_col(&buffer.piece_table);
