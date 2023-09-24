@@ -726,7 +726,7 @@ fn add_diagnostics(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &Buffe
                     {
                         ui.tooltip_text(&diagnostic.message);
                     }
-                    rect.Min.y += 0.85 * font_size.1;
+                    rect.Min.y += 0.925 * font_size.1;
                     ui.get_window_draw_list()
                         .add_rect(
                             [rect.Min.x, rect.Min.y],
@@ -752,7 +752,7 @@ fn add_diagnostics(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &Buffe
                     {
                         ui.tooltip_text(&diagnostic.message);
                     }
-                    rect.Min.y += 0.85 * font_size.1;
+                    rect.Min.y += 0.925 * font_size.1;
                     ui.get_window_draw_list()
                         .add_rect(
                             [rect.Min.x, rect.Min.y],
@@ -978,7 +978,7 @@ fn add_completions(ui: &Ui, theme: &Theme, font_size: (f32, f32), buffer: &mut B
                                 (ui.window_size()[1] - rect.Min.y)
                                     / ui.text_line_height_with_spacing(),
                             );
-                    ui.window(format!("Completion {}", i))
+                    ui.window(format!("Completion##{}_{}", buffer.uri, i))
                         .position(
                             [
                                 rect.Min.x,
